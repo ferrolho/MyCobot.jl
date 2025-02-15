@@ -42,6 +42,39 @@ function power_off(sp::LibSerialPort.SerialPort; verbose::Bool=false)
     LibSerialPort.write(sp, request_frame)
 end
 
+"""
+    query_atom_state(sp::LibSerialPort.SerialPort; verbose::Bool=false)
+
+Query the power state of the Atom (main controller). Returns `true` if the Atom is powered on, `false` if it is powered off.
+
+# Arguments
+- `sp::LibSerialPort.SerialPort`: The serial port connection to the robot.
+- `verbose::Bool`: If `true`, print debugging information.
+"""
+function query_atom_state(sp::LibSerialPort.SerialPort; verbose::Bool=false)
+    # Prepare the request frame
+    request_frame = prepare_frame(ProtocolCode.IS_POWER_ON)
+    verbose && println("Request frame: ", request_frame)
+
+    # Send the request frame and receive the response
+    LibSerialPort.write(sp, request_frame)
+    response = LibSerialPort.read(sp)
+
+    # Extract the response frame
+    response_frame = extract_frame(response)
+    verbose && println("Response frame: ", response_frame)
+
+    # Parse the power state
+    power_state_byte = response_frame[5]
+    if power_state_byte == 0x01
+        return true  # Atom is powered on
+    elseif power_state_byte == 0x00
+        return false  # Atom is powered off
+    else
+        error("Invalid power state byte in response: ", power_state_byte)
+    end
+end
+
 function get_angles(sp::LibSerialPort.SerialPort; verbose::Bool=false)
     # Prepare the request frame
     request_frame = MyCobot.prepare_frame(MyCobot.ProtocolCode.GET_ANGLES)

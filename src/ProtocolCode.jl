@@ -11,6 +11,7 @@ using Base: @enum
     # Overall status
     POWER_ON = 0x10
     POWER_OFF = 0x11
+    IS_POWER_ON = 0x12
 
     # MDI MODE AND OPERATION
     GET_ANGLES = 0x20
