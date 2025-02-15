@@ -13,3 +13,12 @@ using Test
     frames = MyCobot.extract_all_frames(response)
     @test frames == [[0xFE, 0xFE, 0x02, 0x20, 0xFA], [0xFE, 0xFE, 0x03, 0x20, 0x01, 0xFA]]
 end
+
+@testset "Motion Mode" begin
+    # Test set_fresh_mode
+    frame = MyCobot.prepare_frame(ProtocolCode.SET_FRESH_MODE, [0x01])
+    @test frame == [0xFE, 0xFE, 0x03, 0x16, 0x01, 0xFA]
+
+    frame = MyCobot.prepare_frame(ProtocolCode.SET_FRESH_MODE, [0x00])
+    @test frame == [0xFE, 0xFE, 0x03, 0x16, 0x00, 0xFA]
+end

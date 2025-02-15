@@ -116,6 +116,50 @@ function is_controller_connected(sp::LibSerialPort.SerialPort; verbose::Bool=fal
     end
 end
 
+"""
+    set_fresh_mode(sp::LibSerialPort.SerialPort, mode::Bool; verbose::Bool=false)
+
+Set the motion mode of the robot. Note that this mode seems to persist across power cycles.
+
+- `mode::Bool`: The motion mode to set.
+  - `true`: Always execute the latest command first.
+  - `false`: Execute instructions sequentially in the form of a queue.
+"""
+function set_fresh_mode(sp::LibSerialPort.SerialPort, mode::Bool; verbose::Bool=false)
+    # Convert the mode to a byte value
+    mode_byte = mode ? 0x01 : 0x00
+
+    # Prepare and send the request frame
+    request_frame = prepare_frame(ProtocolCode.SET_FRESH_MODE, [mode_byte])
+    verbose && println("Request frame: ", request_frame)
+    LibSerialPort.write(sp, request_frame)
+end
+
+"""
+    get_fresh_mode(sp::LibSerialPort.SerialPort; verbose::Bool=false)
+
+Get the current motion mode of the robot.
+"""
+function get_fresh_mode(sp::LibSerialPort.SerialPort; verbose::Bool=false)
+    # Prepare and send the request frame
+    request_frame = prepare_frame(ProtocolCode.GET_FRESH_MODE)
+    verbose && println("Request frame: ", request_frame)
+    LibSerialPort.write(sp, request_frame)
+
+    # Wait for a response frame with the expected command ID
+    response_frame = wait_for_command_response(sp, ProtocolCode.GET_FRESH_MODE; verbose)
+
+    # Parse the mode byte
+    mode_byte = response_frame[5]
+    if mode_byte == 0x01
+        return true
+    elseif mode_byte == 0x00
+        return false
+    else
+        error("Invalid mode byte in response: ", mode_byte)
+    end
+end
+
 function get_angles(sp::LibSerialPort.SerialPort; verbose::Bool=false)
     # Prepare and send the request frame
     request_frame = MyCobot.prepare_frame(MyCobot.ProtocolCode.GET_ANGLES)
@@ -180,7 +224,7 @@ function send_angles(sp::LibSerialPort.SerialPort, angles::Vector{Float32}, spee
     angle_bytes = UInt8[]
     for angle in angles
         # Multiply the angle by 100 and convert to an integer
-        angle_int = Int16(angle * 100)
+        angle_int = round(Int16, angle * 100)
 
         # Extract the high and low bytes
         angle_high = UInt8((angle_int >> 8) & 0xFF)
