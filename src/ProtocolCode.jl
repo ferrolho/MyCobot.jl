@@ -114,7 +114,7 @@ function extract_all_frames(response::Vector{UInt8})::Vector{Vector{UInt8}}
 end
 
 """
-    wait_for_command_response(sp::LibSerialPort.SerialPort, expected_command::ProtocolCodeEnum; verbose::Bool=false)
+    wait_for_command_response(sp::LibSerialPort.SerialPort, expected_command::ProtocolCodeEnum; verbose::Bool=false, timeout::Real=5.0)
 
 Wait for a response frame with the expected command ID.
 
@@ -122,15 +122,25 @@ Wait for a response frame with the expected command ID.
 - `sp::LibSerialPort.SerialPort`: The serial port connection to the robot.
 - `expected_command::ProtocolCodeEnum`: The expected command ID in the response frame.
 - `verbose::Bool`: If `true`, print debugging information.
+- `timeout::Real`: Maximum time (in seconds) to wait for a response.
 
 # Returns
 - `response_frame::Vector{UInt8}`: The most recent response frame matching the expected command.
+
+# Throws
+- `TimeoutError`: If no valid response is received within the timeout period.
 """
-function wait_for_command_response(sp::LibSerialPort.SerialPort, expected_command::ProtocolCodeEnum; verbose::Bool=false)
+function wait_for_command_response(sp::LibSerialPort.SerialPort, expected_command::ProtocolCodeEnum; verbose::Bool=false, timeout::Real=5.0)
     response_buffer = UInt8[]
     matching_frames = Vector{UInt8}[]
+    start_time = time()
 
     while isempty(matching_frames)
+        # Check for timeout
+        if time() - start_time > timeout
+            error("Timeout while waiting for response to command $expected_command")
+        end
+
         # Read the response and append it to the buffer
         response = LibSerialPort.read(sp)
         isempty(response) && continue
