@@ -112,3 +112,51 @@ function extract_all_frames(response::Vector{UInt8})::Vector{Vector{UInt8}}
 
     return frames
 end
+
+"""
+    wait_for_command_response(sp::LibSerialPort.SerialPort, expected_command::ProtocolCodeEnum; verbose::Bool=false)
+
+Wait for a response frame with the expected command ID.
+
+# Arguments
+- `sp::LibSerialPort.SerialPort`: The serial port connection to the robot.
+- `expected_command::ProtocolCodeEnum`: The expected command ID in the response frame.
+- `verbose::Bool`: If `true`, print debugging information.
+
+# Returns
+- `response_frame::Vector{UInt8}`: The most recent response frame matching the expected command.
+"""
+function wait_for_command_response(sp::LibSerialPort.SerialPort, expected_command::ProtocolCodeEnum; verbose::Bool=false)
+    response_buffer = UInt8[]
+    matching_frames = Vector{UInt8}[]
+
+    while isempty(matching_frames)
+        # Read the response and append it to the buffer
+        response = LibSerialPort.read(sp)
+        isempty(response) && continue
+        append!(response_buffer, response)
+        verbose && println("Response buffer: ", response_buffer)
+
+        # Extract all frames from the response buffer
+        frames = extract_all_frames(response_buffer)
+        if verbose && !isempty(frames)
+            println("All frames:")
+            for frame in frames
+                println("  ", frame)
+            end
+        end
+
+        # Filter frames by command ID
+        matching_frames = filter(frame -> frame[4] == UInt8(expected_command), frames)
+
+        if isempty(matching_frames)
+            verbose && println("No valid response frame found for command $expected_command. Retrying...")
+        end
+    end
+
+    # Use the most recent frame (last in the list)
+    response_frame = matching_frames[end]
+    verbose && println("Selected response frame: ", response_frame)
+
+    return response_frame
+end
