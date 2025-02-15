@@ -8,6 +8,10 @@ using Base: @enum
     HEADER = 0xFE
     FOOTER = 0xFA
 
+    # Overall status
+    POWER_ON = 0x10
+    POWER_OFF = 0x11
+
     # MDI MODE AND OPERATION
     GET_ANGLES = 0x20
     SEND_ANGLES = 0x22

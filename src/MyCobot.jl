@@ -6,6 +6,42 @@ greet() = print("Hello World!")
 
 include("ProtocolCode.jl")
 
+"""
+    power_on(sp::LibSerialPort.SerialPort; verbose::Bool=false)
+
+Power on the robot arm.
+
+# Arguments
+- `sp::LibSerialPort.SerialPort`: The serial port connection to the robot.
+- `verbose::Bool`: If `true`, print debugging information.
+"""
+function power_on(sp::LibSerialPort.SerialPort; verbose::Bool=false)
+    # Prepare the request frame
+    request_frame = prepare_frame(ProtocolCode.POWER_ON)
+    verbose && println("Request frame: ", request_frame)
+
+    # Send the frame
+    LibSerialPort.write(sp, request_frame)
+end
+
+"""
+    power_off(sp::LibSerialPort.SerialPort; verbose::Bool=false)
+
+Power off the robot arm and disconnect.
+
+# Arguments
+- `sp::LibSerialPort.SerialPort`: The serial port connection to the robot.
+- `verbose::Bool`: If `true`, print debugging information.
+"""
+function power_off(sp::LibSerialPort.SerialPort; verbose::Bool=false)
+    # Prepare the request frame
+    request_frame = prepare_frame(ProtocolCode.POWER_OFF)
+    verbose && println("Request frame: ", request_frame)
+
+    # Send the frame
+    LibSerialPort.write(sp, request_frame)
+end
+
 function get_angles(sp::LibSerialPort.SerialPort; verbose::Bool=false)
     # Prepare the request frame
     request_frame = MyCobot.prepare_frame(MyCobot.ProtocolCode.GET_ANGLES)
