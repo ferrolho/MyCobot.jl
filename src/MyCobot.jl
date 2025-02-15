@@ -43,7 +43,7 @@ function power_off(sp::LibSerialPort.SerialPort; verbose::Bool=false)
 end
 
 """
-    query_atom_state(sp::LibSerialPort.SerialPort; verbose::Bool=false)
+    is_power_on(sp::LibSerialPort.SerialPort; verbose::Bool=false)
 
 Query the power state of the Atom (main controller). Returns `true` if the Atom is powered on, `false` if it is powered off.
 
@@ -51,7 +51,7 @@ Query the power state of the Atom (main controller). Returns `true` if the Atom 
 - `sp::LibSerialPort.SerialPort`: The serial port connection to the robot.
 - `verbose::Bool`: If `true`, print debugging information.
 """
-function query_atom_state(sp::LibSerialPort.SerialPort; verbose::Bool=false)
+function is_power_on(sp::LibSerialPort.SerialPort; verbose::Bool=false)
     # Prepare the request frame
     request_frame = prepare_frame(ProtocolCode.IS_POWER_ON)
     verbose && println("Request frame: ", request_frame)
