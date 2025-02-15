@@ -15,8 +15,12 @@ println("Atom is powered on: ", atom_state)
 # Power on the robot arm
 MyCobot.power_on(sp)
 
+# Check the robot system status
+controller_connected = MyCobot.is_controller_connected(sp, verbose=true)
+println("Connected to Atom: ", controller_connected)
+
 # Get the current joint angles
-MyCobot.get_angles(sp)
+MyCobot.get_angles(sp, verbose=true)
 
 # Set all joint angles to zero and move at 30% speed
 angles = Float32[0, 0, 0, 0, 0, 0]  # in degrees

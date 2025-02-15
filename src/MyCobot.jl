@@ -93,6 +93,43 @@ function release_all_servos(sp::LibSerialPort.SerialPort; verbose::Bool=false)
     LibSerialPort.write(sp, request_frame)
 end
 
+"""
+    is_controller_connected(sp::LibSerialPort.SerialPort; verbose::Bool=false)
+
+Check if the robot system is functioning normally.
+
+# Arguments
+- `sp::LibSerialPort.SerialPort`: The serial port connection to the robot.
+- `verbose::Bool`: If `true`, print debugging information.
+
+# Returns
+- `true`: The robot system is functioning normally.
+- `false`: The robot system is not functioning normally.
+"""
+function is_controller_connected(sp::LibSerialPort.SerialPort; verbose::Bool=false)
+    # Prepare the request frame
+    request_frame = prepare_frame(ProtocolCode.IS_CONTROLLER_CONNECTED)
+    verbose && println("Request frame: ", request_frame)
+
+    # Send the request frame and receive the response
+    LibSerialPort.write(sp, request_frame)
+    response = LibSerialPort.read(sp)
+
+    # Extract the response frame
+    response_frame = extract_frame(response)
+    verbose && println("Response frame: ", response_frame)
+
+    # Parse the system status
+    status_byte = response_frame[5]
+    if status_byte == 0x01
+        return true  # System is functioning normally
+    elseif status_byte == 0x00
+        return false  # System is not functioning normally
+    else
+        error("Invalid status byte in response: ", status_byte)
+    end
+end
+
 function get_angles(sp::LibSerialPort.SerialPort; verbose::Bool=false)
     # Prepare the request frame
     request_frame = MyCobot.prepare_frame(MyCobot.ProtocolCode.GET_ANGLES)
