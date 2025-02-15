@@ -1,22 +1,32 @@
 module MyCobot
 
-using LibSerialPort
+import LibSerialPort
 
 greet() = print("Hello World!")
 
-@enum ProtocolCode begin
-    # BASIC
-    HEADER = 0xFE
-    FOOTER = 0xFA
+include("ProtocolCode.jl")
 
-    # MDI MODE AND OPERATION
-    GET_ANGLES = 0x20
+function send_command(sp::LibSerialPort.SerialPort, command::ProtocolCodeEnum, data::Vector{UInt8}=UInt8[])
+    # Construct the command frame
+    frame = UInt8[]
+    push!(frame, UInt8(ProtocolCode.HEADER))
+    push!(frame, UInt8(ProtocolCode.HEADER))
 
-    # ATOM IO
-    GET_DIGITAL_INPUT = 0x62
+    # Command length: 2 (header) + 1 (length byte) + 1 (command) + length(data) + 1 (footer)
+    length_byte = UInt8(2 + 1 + 1 + length(data) + 1)
+    push!(frame, length_byte)
 
-    # Basic
-    GET_BASIC_INPUT = 0xA1
+    # Command ID
+    push!(frame, UInt8(command))
+
+    # Command content (if any)
+    append!(frame, data)
+
+    # Footer
+    push!(frame, UInt8(ProtocolCode.FOOTER))
+
+    # Send the frame
+    write(sp, frame)
 end
 
 end # module MyCobot
