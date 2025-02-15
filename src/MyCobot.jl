@@ -75,6 +75,24 @@ function query_atom_state(sp::LibSerialPort.SerialPort; verbose::Bool=false)
     end
 end
 
+"""
+    release_all_servos(sp::LibSerialPort.SerialPort; verbose::Bool=false)
+
+Power off the robot arm only (without disconnecting).
+
+# Arguments
+- `sp::LibSerialPort.SerialPort`: The serial port connection to the robot.
+- `verbose::Bool`: If `true`, print debugging information.
+"""
+function release_all_servos(sp::LibSerialPort.SerialPort; verbose::Bool=false)
+    # Prepare the request frame
+    request_frame = prepare_frame(ProtocolCode.RELEASE_ALL_SERVOS)
+    verbose && println("Request frame: ", request_frame)
+
+    # Send the frame
+    LibSerialPort.write(sp, request_frame)
+end
+
 function get_angles(sp::LibSerialPort.SerialPort; verbose::Bool=false)
     # Prepare the request frame
     request_frame = MyCobot.prepare_frame(MyCobot.ProtocolCode.GET_ANGLES)

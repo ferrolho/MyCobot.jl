@@ -23,6 +23,9 @@ angles = Float32[0, 0, 0, 0, 0, 0]  # in degrees
 speed = UInt8(30)  # in percentage
 MyCobot.send_angles(sp, angles, speed)
 
+# Release all servos
+MyCobot.release_all_servos(sp)
+
 # Power off the robot (WARNING: All motors will be turned off)
 MyCobot.power_off(sp)
 
