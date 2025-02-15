@@ -20,7 +20,7 @@ function power_on(sp::LibSerialPort.SerialPort; verbose::Bool=false)
     request_frame = prepare_frame(ProtocolCode.POWER_ON)
     verbose && println("Request frame: ", request_frame)
 
-    # Send the frame
+    # Send the request frame
     LibSerialPort.write(sp, request_frame)
 end
 
@@ -38,7 +38,7 @@ function power_off(sp::LibSerialPort.SerialPort; verbose::Bool=false)
     request_frame = prepare_frame(ProtocolCode.POWER_OFF)
     verbose && println("Request frame: ", request_frame)
 
-    # Send the frame
+    # Send the request frame
     LibSerialPort.write(sp, request_frame)
 end
 
@@ -56,13 +56,39 @@ function is_power_on(sp::LibSerialPort.SerialPort; verbose::Bool=false)
     request_frame = prepare_frame(ProtocolCode.IS_POWER_ON)
     verbose && println("Request frame: ", request_frame)
 
-    # Send the request frame and receive the response
+    # Send the request frame
     LibSerialPort.write(sp, request_frame)
-    response = LibSerialPort.read(sp)
 
-    # Extract the response frame
-    response_frame = extract_frame(response)
-    verbose && println("Response frame: ", response_frame)
+    response_buffer = UInt8[]
+    matching_frames = Vector{UInt8}[]
+
+    while isempty(matching_frames)
+        # Read the response and append it to the buffer
+        response = LibSerialPort.read(sp)
+        isempty(response) && continue
+        append!(response_buffer, response)
+        verbose && println("Response buffer: ", response_buffer)
+
+        # Extract all frames from the response buffer
+        frames = extract_all_frames(response_buffer)
+        if verbose && !isempty(frames)
+            println("All frames:")
+            for frame in frames
+                println("  ", frame)
+            end
+        end
+
+        # Filter frames by command ID
+        matching_frames = filter(frame -> frame[4] == UInt8(ProtocolCode.IS_POWER_ON), frames)
+
+        if isempty(matching_frames)
+            verbose && println("No valid response frame found for IS_POWER_ON command. Retrying...")
+        end
+    end
+
+    # Use the most recent frame (last in the list)
+    response_frame = matching_frames[end]
+    verbose && println("Selected response frame: ", response_frame)
 
     # Parse the power state
     power_state_byte = response_frame[5]
@@ -89,7 +115,7 @@ function release_all_servos(sp::LibSerialPort.SerialPort; verbose::Bool=false)
     request_frame = prepare_frame(ProtocolCode.RELEASE_ALL_SERVOS)
     verbose && println("Request frame: ", request_frame)
 
-    # Send the frame
+    # Send the request frame
     LibSerialPort.write(sp, request_frame)
 end
 
@@ -111,13 +137,39 @@ function is_controller_connected(sp::LibSerialPort.SerialPort; verbose::Bool=fal
     request_frame = prepare_frame(ProtocolCode.IS_CONTROLLER_CONNECTED)
     verbose && println("Request frame: ", request_frame)
 
-    # Send the request frame and receive the response
+    # Send the request frame
     LibSerialPort.write(sp, request_frame)
-    response = LibSerialPort.read(sp)
 
-    # Extract the response frame
-    response_frame = extract_frame(response)
-    verbose && println("Response frame: ", response_frame)
+    response_buffer = UInt8[]
+    matching_frames = Vector{UInt8}[]
+
+    while isempty(matching_frames)
+        # Read the response and append it to the buffer
+        response = LibSerialPort.read(sp)
+        isempty(response) && continue
+        append!(response_buffer, response)
+        verbose && println("Response buffer: ", response_buffer)
+
+        # Extract all frames from the response buffer
+        frames = extract_all_frames(response_buffer)
+        if verbose && !isempty(frames)
+            println("All frames:")
+            for frame in frames
+                println("  ", frame)
+            end
+        end
+
+        # Filter frames by command ID
+        matching_frames = filter(frame -> frame[4] == UInt8(ProtocolCode.IS_CONTROLLER_CONNECTED), frames)
+
+        if isempty(matching_frames)
+            verbose && println("No valid response frame found for IS_CONTROLLER_CONNECTED command. Retrying...")
+        end
+    end
+
+    # Use the most recent frame (last in the list)
+    response_frame = matching_frames[end]
+    verbose && println("Selected response frame: ", response_frame)
 
     # Parse the system status
     status_byte = response_frame[5]
@@ -135,13 +187,39 @@ function get_angles(sp::LibSerialPort.SerialPort; verbose::Bool=false)
     request_frame = MyCobot.prepare_frame(MyCobot.ProtocolCode.GET_ANGLES)
     verbose && println("Request frame: ", request_frame)
 
-    # Send the request frame and receive the response
+    # Send the request frame
     LibSerialPort.write(sp, request_frame)
-    response = LibSerialPort.read(sp)
 
-    # Extract the response frame from the response
-    response_frame = MyCobot.extract_frame(response)
-    verbose && println("Response frame: ", response_frame)
+    response_buffer = UInt8[]
+    matching_frames = Vector{UInt8}[]
+
+    while isempty(matching_frames)
+        # Read the response and append it to the buffer
+        response = LibSerialPort.read(sp)
+        isempty(response) && continue
+        append!(response_buffer, response)
+        verbose && println("Response buffer: ", response_buffer)
+
+        # Extract all frames from the response buffer
+        frames = extract_all_frames(response_buffer)
+        if verbose && !isempty(frames)
+            println("All frames:")
+            for frame in frames
+                println("  ", frame)
+            end
+        end
+
+        # Filter frames by command ID
+        matching_frames = filter(frame -> frame[4] == UInt8(ProtocolCode.GET_ANGLES), frames)
+
+        if isempty(matching_frames)
+            verbose && println("No valid response frame found for GET_ANGLES command. Retrying...")
+        end
+    end
+
+    # Use the most recent frame (last in the list)
+    response_frame = matching_frames[end]
+    verbose && println("Selected response frame: ", response_frame)
 
     # Parse the angles from the response frame
     angles = MyCobot.parse_response_frame_get_angles(response_frame)
@@ -218,11 +296,11 @@ function send_angles(sp::LibSerialPort.SerialPort, angles::Vector{Float32}, spee
     # Prepare the data for the frame
     data = vcat(angle_bytes, speed)
 
-    # Prepare and send the frame
+    # Prepare the request frame
     request_frame = prepare_frame(ProtocolCode.SEND_ANGLES, data)
     verbose && println("Request frame: ", request_frame)
 
-    # Send the frame
+    # Send the request frame
     LibSerialPort.write(sp, request_frame)
 end
 

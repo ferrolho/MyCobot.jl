@@ -20,7 +20,7 @@ controller_connected = MyCobot.is_controller_connected(sp, verbose=true)
 println("Connected to Atom: ", controller_connected)
 
 # Get the current joint angles
-MyCobot.get_angles(sp, verbose=true)
+MyCobot.get_angles(sp)
 
 # Set all joint angles to zero and move at 30% speed
 angles = Float32[0, 0, 0, 0, 0, 0]  # in degrees

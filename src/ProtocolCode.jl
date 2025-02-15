@@ -54,6 +54,7 @@ function prepare_frame(command::ProtocolCodeEnum, data::Vector{UInt8}=UInt8[])
         error("Data length exceeds maximum allowed size (16 bytes)")
     end
 
+    # 1 length byte + 1 command byte + the actual data
     data_length = 2 + length(data)
 
     frame = UInt8[
@@ -65,66 +66,49 @@ function prepare_frame(command::ProtocolCodeEnum, data::Vector{UInt8}=UInt8[])
         UInt(ProtocolCode.FOOTER)
     ]
 
+    # Ensure the frame length is correct
+    # 2 header bytes + `data_length` bytes + 1 footer byte
+    @assert length(frame) == 3 + data_length
+
     return frame
 end
 
 """
-    extract_frame(response::Vector{UInt8})
+    extract_all_frames(response::Vector{UInt8})::Vector{Vector{UInt8}}
 
-Extract a single frame from the response byte vector. The frame is identified by the two consecutive header bytes (0xFE) and the footer byte (0xFA).
-
-The frame has the following structure:
-
-    1st byte: Header byte (0xFE)
-    2nd byte: Header byte (0xFE)
-    3rd byte: Data length byte (excluding the header bytes and the footer byte)
-    4th byte: Command byte (e.g., ProtocolCode.GET_ANGLES)
-    5th byte: First data byte (if any)
-    ...
-    Last byte: Footer byte (0xFA)
+Extract all complete frames from a response buffer. Returns a vector of frame vectors.
 """
-function extract_frame(response::Vector{UInt8})
-    # Initialise the index of the frame start
-    # (i.e., the index of the first header byte)
-    idx_frame_start = 0
+function extract_all_frames(response::Vector{UInt8})::Vector{Vector{UInt8}}
+    frames = Vector{UInt8}[]
+    i = 1
 
-    # Find the first pair of consecutive header bytes
-    for i in 1:length(response)-1
-        # Check if the current byte and the next byte are both header bytes
+    while i <= length(response) - 4  # Minimum frame length is 5 bytes
+        # Check for two consecutive header bytes
         if response[i] == response[i+1] == UInt8(ProtocolCode.HEADER)
-            # Found the first pair of consecutive header bytes
-            idx_frame_start = i
-            # Exit the loop
-            break
+            # Extract the data length byte
+            data_length = response[i+2]
+
+            # Calculate the frame length
+            frame_length = 3 + data_length
+
+            # Check if the frame is complete
+            if i + frame_length - 1 <= length(response)
+                # Extract the frame
+                frame = response[i:i+frame_length-1]
+
+                # Verify the footer byte and then save the frame
+                if frame[end] == UInt8(ProtocolCode.FOOTER)
+                    push!(frames, frame)
+                end
+            end
+
+            # Move to the next potential frame
+            i += frame_length
+        else
+            # Move to the next byte
+            i += 1
         end
     end
 
-    if idx_frame_start == 0
-        # If the frame start index is still 0, it means that no
-        # valid frame header was found and so we throw an error
-        error("Could not find a frame to extract")
-    end
-
-    # Extract the data length byte
-    # Note: the data length byte includes the command byte and the data bytes
-    idx_data_length = idx_frame_start + 2
-    data_length = response[idx_data_length]
-
-    # Extract the command byte
-    idx_command = idx_frame_start + 3
-    command = response[idx_command]
-
-    # Calculate the index of the footer byte (end of the frame)
-    idx_footer = idx_data_length + data_length
-    footer = response[idx_footer]
-
-    # If the footer byte is not valid, throw an error
-    if footer != UInt8(ProtocolCode.FOOTER)
-        error("Invalid footer byte")
-    end
-
-    # Extract the frame
-    frame = response[idx_frame_start:idx_footer]
-
-    return frame
+    return frames
 end
