@@ -41,6 +41,11 @@ The frame consists of the following parts:
 The `command` argument specifies the command to be sent to the robot, and the `data` argument is an optional vector of data bytes to be included in the frame.
 """
 function prepare_frame(command::ProtocolCodeEnum, data::Vector{UInt8}=UInt8[])
+    # Ensure the data length is within the protocol limits
+    if length(data) > 16
+        error("Data length exceeds maximum allowed size (16 bytes)")
+    end
+
     data_length = 2 + length(data)
 
     frame = UInt8[
@@ -48,7 +53,7 @@ function prepare_frame(command::ProtocolCodeEnum, data::Vector{UInt8}=UInt8[])
         UInt(ProtocolCode.HEADER)
         UInt(data_length)
         UInt(command)
-        data
+        data...
         UInt(ProtocolCode.FOOTER)
     ]
 
