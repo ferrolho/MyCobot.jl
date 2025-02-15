@@ -50,4 +50,56 @@ function parse_response_frame_get_angles(frame::Vector{UInt8})
     return angles
 end
 
+"""
+    send_angles(sp::LibSerialPort.SerialPort, angles::Vector{Float32}, speed::UInt8; verbose::Bool=false)
+
+Send all joint angles to the robot arm.
+
+# Arguments
+- `sp::LibSerialPort.SerialPort`: The serial port connection to the robot.
+- `angles::Vector{Float32}`: A vector of 6 joint angles (in degrees).
+- `speed::UInt8`: The movement speed (0-100, where 100 is maximum speed).
+- `verbose::Bool`: If `true`, print debugging information.
+
+# Example
+```julia
+angles = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # All angles set to zero
+speed = 30  # 30% speed
+send_angles(sp, angles, speed, verbose=true)
+```
+"""
+function send_angles(sp::LibSerialPort.SerialPort, angles::Vector{Float32}, speed::UInt8; verbose::Bool=false)
+    # Validate the input
+    if length(angles) != 6
+        error("The angles vector must contain exactly 6 values.")
+    end
+    if speed > 100
+        error("The speed value must be between 0 and 100.")
+    end
+
+    # Convert angles to high and low bytes
+    angle_bytes = UInt8[]
+    for angle in angles
+        # Multiply the angle by 100 and convert to an integer
+        angle_int = Int16(angle * 100)
+
+        # Extract the high and low bytes
+        angle_high = UInt8((angle_int >> 8) & 0xFF)
+        angle_low = UInt8(angle_int & 0xFF)
+
+        push!(angle_bytes, angle_high)
+        push!(angle_bytes, angle_low)
+    end
+
+    # Prepare the data for the frame
+    data = vcat(angle_bytes, speed)
+
+    # Prepare and send the frame
+    request_frame = prepare_frame(ProtocolCode.SEND_ANGLES, data)
+    verbose && println("Request frame: ", request_frame)
+
+    # Send the frame
+    LibSerialPort.write(sp, request_frame)
+end
+
 end # module MyCobot

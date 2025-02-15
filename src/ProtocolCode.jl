@@ -10,6 +10,7 @@ using Base: @enum
 
     # MDI MODE AND OPERATION
     GET_ANGLES = 0x20
+    SEND_ANGLES = 0x22
 
     # ATOM IO
     GET_DIGITAL_INPUT = 0x62
