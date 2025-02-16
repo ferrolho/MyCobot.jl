@@ -132,7 +132,7 @@ Wait for a response frame with the expected command ID.
 # Throws
 - `TimeoutError`: If no valid response is received within the timeout period.
 """
-function wait_for_command_response(sp::LibSerialPort.SerialPort, expected_command::ProtocolCodeEnum; verbose::Bool=false, timeout::Real=5.0)
+function wait_for_command_response(sp::LibSerialPort.SerialPort, expected_command::ProtocolCodeEnum; verbose::Bool=false, timeout::Real=0.1)
     response_buffer = UInt8[]
     matching_frames = Vector{UInt8}[]
     start_time = time()
@@ -140,6 +140,7 @@ function wait_for_command_response(sp::LibSerialPort.SerialPort, expected_comman
     while isempty(matching_frames)
         # Check for timeout
         if time() - start_time > timeout
+            verbose && println("Response buffer: ", response_buffer)
             error("Timeout while waiting for response to command $expected_command")
         end
 
