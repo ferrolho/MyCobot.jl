@@ -1,5 +1,32 @@
 # MyCobot.jl
 
+MyCobot.jl is a Julia package for the [myCobot 280 (for Arduino)][product-en] robotic arm. It provides a high-level interface to control the robotic arm using the [Julia](https://julialang.org/) programming language. The package is built on top of [LibSerialPort.jl](https://github.com/JuliaIO/LibSerialPort.jl) for serial communication with the robot.
+
+> [!WARNING]
+> This package is a work in progress and is not yet feature-complete.
+
+## Installation
+
+First, install Julia by following the instructions on the [official website](https://julialang.org/downloads/).
+
+Then, MyCobot.jl can be installed with the Julia package manager.
+
+From the Julia REPL, type `]` to enter the Pkg REPL mode and run:
+```julia
+(@v1.11) pkg> add https://github.com/ferrolho/MyCobot.jl
+```
+
+Or, equivalently, via the Pkg API:
+```julia
+julia> import Pkg; Pkg.add("https://github.com/ferrolho/MyCobot.jl")
+```
+
+## Highlights
+
+https://github.com/user-attachments/assets/d0974d83-21ab-439b-a25e-b0ce1fc81bdb
+
+**Video 1.** Demo showing the real robot on the left and the robot model visualisation on the right. The visualisation is in real time and so when the robot joints are backdriven, the model moves accordingly.
+
 ## Resources
 
 - Product page
