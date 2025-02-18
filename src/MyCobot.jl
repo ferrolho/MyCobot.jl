@@ -6,6 +6,7 @@ greet() = print("Hello World!")
 
 include("ProtocolCode.jl")
 
+include("atom_io_control.jl")
 include("gripper_control.jl")
 include("robot_status.jl")
 include("servo_control.jl")

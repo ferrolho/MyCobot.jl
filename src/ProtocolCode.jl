@@ -4,9 +4,9 @@ using Base: @enum
 
 @enum ProtocolCodeEnum begin
 
-    # BASIC
-    HEADER = 0xFE
-    FOOTER = 0xFA
+    # Serial data framing
+    FRAME_HEADER = 0xFE  # Frame start flag (2 bytes)
+    FRAME_FOOTER = 0xFA  # Frame end flag (1 byte)
 
     # System status
     ROBOT_VERSION = 0x01
@@ -24,7 +24,7 @@ using Base: @enum
     SET_FREE_MODE = 0x1A
     IS_FREE_MODE = 0x1B
 
-    # MDI MODE AND OPERATION
+    # Manual Data Input (MDI) mode
     GET_ANGLES = 0x20
     SEND_ANGLES = 0x22
 
@@ -38,10 +38,11 @@ using Base: @enum
     POWER_OFF_SERVO = 0x56
     POWER_ON_SERVO = 0x57
 
-    # ATOM IO
+    # ATOM IO control
     SET_PIN_MODE = 0x60
     SET_DIGITAL_OUTPUT = 0x61
     GET_DIGITAL_INPUT = 0x62
+    SET_COLOR = 0x6A
 
     # Gripper control
     GET_GRIPPER_VALUE = 0x65
@@ -49,11 +50,6 @@ using Base: @enum
     SET_GRIPPER_VALUE = 0x67
     SET_GRIPPER_CALIBRATION = 0x68
     IS_GRIPPER_MOVING = 0x69
-
-    SET_COLOR = 0x6A
-
-    # Basic
-    GET_BASIC_INPUT = 0xA1
 
 end
 
@@ -88,12 +84,12 @@ function prepare_frame(command::ProtocolCodeEnum, data::Vector{UInt8}=UInt8[])
     data_length = 2 + length(data)
 
     frame = UInt8[
-        UInt(ProtocolCode.HEADER)
-        UInt(ProtocolCode.HEADER)
+        UInt(ProtocolCode.FRAME_HEADER)
+        UInt(ProtocolCode.FRAME_HEADER)
         UInt(data_length)
         UInt(command)
         data...
-        UInt(ProtocolCode.FOOTER)
+        UInt(ProtocolCode.FRAME_FOOTER)
     ]
 
     # Ensure the frame length is correct
@@ -114,7 +110,7 @@ function extract_all_frames(response::Vector{UInt8})::Vector{Vector{UInt8}}
 
     while i <= length(response) - 4  # Minimum frame length is 5 bytes
         # Check for two consecutive header bytes
-        if response[i] == response[i+1] == UInt8(ProtocolCode.HEADER)
+        if response[i] == response[i+1] == UInt8(ProtocolCode.FRAME_HEADER)
             # Extract the data length byte
             data_length = response[i+2]
 
@@ -127,7 +123,7 @@ function extract_all_frames(response::Vector{UInt8})::Vector{Vector{UInt8}}
                 frame = response[i:i+frame_length-1]
 
                 # Verify the footer byte and then save the frame
-                if frame[end] == UInt8(ProtocolCode.FOOTER)
+                if frame[end] == UInt8(ProtocolCode.FRAME_FOOTER)
                     push!(frames, frame)
                 end
             end
