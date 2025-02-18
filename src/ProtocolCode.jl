@@ -42,11 +42,14 @@ using Base: @enum
     SET_PIN_MODE = 0x60
     SET_DIGITAL_OUTPUT = 0x61
     GET_DIGITAL_INPUT = 0x62
+
+    # Gripper control
     GET_GRIPPER_VALUE = 0x65
     SET_GRIPPER_STATE = 0x66
     SET_GRIPPER_VALUE = 0x67
     SET_GRIPPER_CALIBRATION = 0x68
     IS_GRIPPER_MOVING = 0x69
+
     SET_COLOR = 0x6A
 
     # Basic
