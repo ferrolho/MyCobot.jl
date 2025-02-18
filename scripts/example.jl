@@ -64,38 +64,22 @@ MyCobot.send_angles(sp, angles, speed)
 angles_sleep = Float32[0, -135, 140, 65, 90, 25]
 MyCobot.send_angles(sp, angles_sleep, UInt8(50))
 
-# Utility function to run a function for a specified duration
-function run_for_duration(duration::Real, fn::Function)
-    start_time = time()
-    while time() - start_time < duration
-        fn()
-    end
-end
-
-# Utility function to read the value of pin 39 (ATOM button)
-function read_atom_button()
+run_for_duration(5) do
     # Get ATOM button state
     pin_value = MyCobot.get_digital_input(sp, 39)
     print("\rPin 39 value: ", pin_value)
     sleep(0.010)
 end
 
-# Run the `read_atom_button` function for 5 seconds
-run_for_duration(5, read_atom_button)
-
 # Release all servos
 MyCobot.release_all_servos(sp)
 
-# Utility function to read and print the current joint angles
-function read_and_print_angles()
+run_for_duration(10) do
     # Get the current joint angles
     angles = MyCobot.get_angles(sp)
     print("\rCurrent joint angles: ", angles)
     sleep(0.010)
 end
-
-# Run the `read_and_print_angles` function for 10 seconds
-run_for_duration(10, read_and_print_angles)
 
 # Power off the robot (WARNING: All motors will be turned off)
 MyCobot.power_off(sp)
