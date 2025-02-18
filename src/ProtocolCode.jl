@@ -9,9 +9,9 @@ using Base: @enum
     FOOTER = 0xFA
 
     # System status
-    ROBOT_VERSION = 0x01  # should print 101
-    SOFTWARE_VERSION = 0x02  # should print 6.5
-    GET_ROBOT_ID = 0x03  # should print 0
+    ROBOT_VERSION = 0x01
+    SOFTWARE_VERSION = 0x02
+    GET_ROBOT_ID = 0x03
 
     # Overall status
     POWER_ON = 0x10
