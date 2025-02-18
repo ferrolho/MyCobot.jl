@@ -48,3 +48,37 @@ end
     frame = MyCobot.prepare_frame(ProtocolCode.SET_GRIPPER_CALIBRATION)
     @test frame == [0xFE, 0xFE, 0x02, 0x68, 0xFA]
 end
+
+@testset "Servo Control" begin
+    # Test is_servo_powered frame construction
+    frame = MyCobot.prepare_frame(ProtocolCode.IS_SERVO_POWERED, [0x01])  # Check servo 1
+    @test frame == [0xFE, 0xFE, 0x03, 0x50, 0x01, 0xFA]
+
+    # Test are_all_servos_powered frame construction
+    frame = MyCobot.prepare_frame(ProtocolCode.ARE_ALL_SERVOS_POWERED)
+    @test frame == [0xFE, 0xFE, 0x02, 0x51, 0xFA]
+
+    # Test set_servo_parameter frame construction
+    frame = MyCobot.prepare_frame(ProtocolCode.SET_SERVO_PARAMETER, [0x01, 0x15, 0x0F])  # Set position P for servo 1 to 15
+    @test frame == [0xFE, 0xFE, 0x05, 0x52, 0x01, 0x15, 0x0F, 0xFA]
+
+    # Test read_servo_parameter frame construction
+    frame = MyCobot.prepare_frame(ProtocolCode.READ_SERVO_PARAMETER, [0x01, 0x15])  # Read position P for servo 1
+    @test frame == [0xFE, 0xFE, 0x04, 0x53, 0x01, 0x15, 0xFA]
+
+    # Test set_servo_zero frame construction
+    frame = MyCobot.prepare_frame(ProtocolCode.SET_SERVO_ZERO, [0x01])  # Set zero for servo 1
+    @test frame == [0xFE, 0xFE, 0x03, 0x54, 0x01, 0xFA]
+
+    # Test brake_servo frame construction
+    frame = MyCobot.prepare_frame(ProtocolCode.BRAKE_SERVO, [0x01])  # Brake servo 1
+    @test frame == [0xFE, 0xFE, 0x03, 0x55, 0x01, 0xFA]
+
+    # Test power_off_servo frame construction
+    frame = MyCobot.prepare_frame(ProtocolCode.POWER_OFF_SERVO, [0x01])  # Power off servo 1
+    @test frame == [0xFE, 0xFE, 0x03, 0x56, 0x01, 0xFA]
+
+    # Test power_on_servo frame construction
+    frame = MyCobot.prepare_frame(ProtocolCode.POWER_ON_SERVO, [0x01])  # Power on servo 1
+    @test frame == [0xFE, 0xFE, 0x03, 0x57, 0x01, 0xFA]
+end

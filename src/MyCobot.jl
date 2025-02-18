@@ -5,6 +5,7 @@ import LibSerialPort
 greet() = print("Hello World!")
 
 include("ProtocolCode.jl")
+include("servo_control.jl")
 include("utils.jl")
 
 """
