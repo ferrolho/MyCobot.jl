@@ -243,4 +243,24 @@ function send_angles(sp::LibSerialPort.SerialPort, angles::Vector{Float32}, spee
     LibSerialPort.write(sp, request_frame)
 end
 
+"""
+    set_color(sp::LibSerialPort.SerialPort, r::Int, g::Int, b::Int; verbose::Bool=false)
+
+Set the color of the Atom's RGB LED. Each RGB value is in the range [0, 255].
+"""
+function set_color(sp::LibSerialPort.SerialPort, r::Int, g::Int, b::Int; verbose::Bool=false)
+    # Validate the input values
+    if !(0 <= r <= 255 && 0 <= g <= 255 && 0 <= b <= 255)
+        error("RGB values must be between 0 and 255.")
+    end
+
+    # Prepare the data bytes
+    data = UInt8[r, g, b]
+
+    # Prepare and send the request frame
+    request_frame = prepare_frame(ProtocolCode.SET_COLOR, data)
+    verbose && println("Request frame: ", request_frame)
+    LibSerialPort.write(sp, request_frame)
+end
+
 end # module MyCobot

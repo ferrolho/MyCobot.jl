@@ -23,6 +23,7 @@ using Base: @enum
 
     # ATOM IO
     GET_DIGITAL_INPUT = 0x62
+    SET_COLOR = 0x6A
 
     # Basic
     GET_BASIC_INPUT = 0xA1

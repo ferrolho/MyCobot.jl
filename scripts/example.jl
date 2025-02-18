@@ -19,6 +19,15 @@ MyCobot.power_on(sp)
 controller_connected = MyCobot.is_controller_connected(sp, verbose=true)
 println("Connected to Atom: ", controller_connected)
 
+# Set the Atom's RGB LED to blue
+MyCobot.set_color(sp, 0, 0, 255, verbose=true)
+
+# Set the Atom's RGB LED to red
+MyCobot.set_color(sp, 255, 0, 0, verbose=true)
+
+# Set the Atom's RGB LED to green
+MyCobot.set_color(sp, 0, 255, 0, verbose=true)
+
 # Set the motion mode to refresh mode
 MyCobot.set_fresh_mode(sp, true)
 
