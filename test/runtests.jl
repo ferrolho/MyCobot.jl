@@ -34,3 +34,17 @@ end
     frame = MyCobot.prepare_frame(ProtocolCode.SET_COLOR, [0x00, 0xFF, 0x00])  # Green
     @test frame == [0xFE, 0xFE, 0x05, 0x6A, 0x00, 0xFF, 0x00, 0xFA]
 end
+
+@testset "Gripper Control" begin
+    # Test set_gripper_state frame construction
+    frame = MyCobot.prepare_frame(ProtocolCode.SET_GRIPPER_STATE, [0x00, 0x32])  # Open at speed 50
+    @test frame == [0xFE, 0xFE, 0x04, 0x66, 0x00, 0x32, 0xFA]
+
+    # Test set_gripper_value frame construction
+    frame = MyCobot.prepare_frame(ProtocolCode.SET_GRIPPER_VALUE, [0x32, 0x14])  # 50% open at speed 20
+    @test frame == [0xFE, 0xFE, 0x04, 0x67, 0x32, 0x14, 0xFA]
+
+    # Test set_gripper_calibration frame construction
+    frame = MyCobot.prepare_frame(ProtocolCode.SET_GRIPPER_CALIBRATION)
+    @test frame == [0xFE, 0xFE, 0x02, 0x68, 0xFA]
+end

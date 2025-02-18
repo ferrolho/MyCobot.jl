@@ -1,5 +1,3 @@
-using Revise
-
 import LibSerialPort
 import MyCobot
 
@@ -8,16 +6,16 @@ baudrate = 1000000
 
 sp = LibSerialPort.open(portname, baudrate)
 
-# Query the Atom power state
+# Query the ATOM power state
 atom_state = MyCobot.is_power_on(sp)
-println("Atom is powered on: ", atom_state)
+println("ATOM is powered on: ", atom_state)
 
 # Power on the robot arm
 MyCobot.power_on(sp)
 
 # Check the robot system status
 controller_connected = MyCobot.is_controller_connected(sp)
-println("Connected to Atom: ", controller_connected)
+println("Connected to ATOM: ", controller_connected)
 
 # Set gripper state to open at speed 50
 MyCobot.set_gripper_state(sp, 0, 50)

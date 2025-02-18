@@ -8,16 +8,16 @@ baudrate = 1000000
 
 sp = LibSerialPort.open(portname, baudrate)
 
-# Query the Atom power state
+# Query the ATOM power state
 atom_state = MyCobot.is_power_on(sp)
-println("Atom is powered on: ", atom_state)
+println("ATOM is powered on: ", atom_state)
 
 # Power on the robot arm
 MyCobot.power_on(sp)
 
 # Check the robot system status
 controller_connected = MyCobot.is_controller_connected(sp, verbose=true)
-println("Connected to Atom: ", controller_connected)
+println("Connected to ATOM: ", controller_connected)
 
 # Get the robot's hardware version
 robot_version = MyCobot.get_robot_version(sp, verbose=true)
@@ -31,13 +31,13 @@ println("Software version: ", software_version)
 robot_id = MyCobot.get_robot_id(sp, verbose=true)
 println("Robot ID: ", robot_id)
 
-# Set the Atom's RGB LED to blue
+# Set the ATOM's RGB LED to blue
 MyCobot.set_color(sp, 0, 0, 255, verbose=true)
 
-# Set the Atom's RGB LED to red
+# Set the ATOM's RGB LED to red
 MyCobot.set_color(sp, 255, 0, 0, verbose=true)
 
-# Set the Atom's RGB LED to green
+# Set the ATOM's RGB LED to green
 MyCobot.set_color(sp, 0, 255, 0, verbose=true)
 
 # Set pin 39 mode to 'input'
@@ -64,7 +64,7 @@ MyCobot.send_angles(sp, angles, speed)
 angles_sleep = Float32[0, -135, 140, 65, 90, 25]
 MyCobot.send_angles(sp, angles_sleep, UInt8(50))
 
-run_for_duration(5) do
+MyCobot.run_for_duration(5) do
     # Get ATOM button state
     pin_value = MyCobot.get_digital_input(sp, 39)
     print("\rPin 39 value: ", pin_value)
@@ -74,7 +74,7 @@ end
 # Release all servos
 MyCobot.release_all_servos(sp)
 
-run_for_duration(10) do
+MyCobot.run_for_duration(10) do
     # Get the current joint angles
     angles = MyCobot.get_angles(sp)
     print("\rCurrent joint angles: ", angles)
