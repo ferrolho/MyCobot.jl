@@ -40,6 +40,12 @@ MyCobot.set_color(sp, 255, 0, 0, verbose=true)
 # Set the Atom's RGB LED to green
 MyCobot.set_color(sp, 0, 255, 0, verbose=true)
 
+# Set pin 39 mode to 'input'
+MyCobot.set_pin_mode(sp, 39, 0, verbose=true)
+
+# Get the value of pin 39
+pin_value = MyCobot.get_digital_input(sp, 39, verbose=true)
+
 # Set the motion mode to refresh mode
 MyCobot.set_fresh_mode(sp, true)
 
@@ -58,21 +64,38 @@ MyCobot.send_angles(sp, angles, speed)
 angles_sleep = Float32[0, -135, 140, 65, 90, 25]
 MyCobot.send_angles(sp, angles_sleep, UInt8(50))
 
-# For 5 seconds, move the first joint according to a sine wave
-start_time = time()
-while time() - start_time < 5
-    amplitude = 90  # in degrees
-    frequency = 0.25  # in Hz
-    t = time() - start_time
-    angle = amplitude * sin(2 * π * frequency * t)
-    angles = Float32[angle, -45, 0, 0, 0, 0]  # in degrees
-    speed = UInt8(100)  # in percentage
-    MyCobot.send_angles(sp, angles, speed)
+# Utility function to run a function for a specified duration
+function run_for_duration(duration::Real, fn::Function)
+    start_time = time()
+    while time() - start_time < duration
+        fn()
+    end
+end
+
+# Utility function to read the value of pin 39 (ATOM button)
+function read_atom_button()
+    # Get ATOM button state
+    pin_value = MyCobot.get_digital_input(sp, 39)
+    print("\rPin 39 value: ", pin_value)
     sleep(0.010)
 end
 
+# Run the `read_atom_button` function for 5 seconds
+run_for_duration(5, read_atom_button)
+
 # Release all servos
 MyCobot.release_all_servos(sp)
+
+# Utility function to read and print the current joint angles
+function read_and_print_angles()
+    # Get the current joint angles
+    angles = MyCobot.get_angles(sp)
+    print("\rCurrent joint angles: ", angles)
+    sleep(0.010)
+end
+
+# Run the `read_and_print_angles` function for 10 seconds
+run_for_duration(10, read_and_print_angles)
 
 # Power off the robot (WARNING: All motors will be turned off)
 MyCobot.power_off(sp)

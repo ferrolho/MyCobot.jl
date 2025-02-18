@@ -27,6 +27,8 @@ using Base: @enum
     SEND_ANGLES = 0x22
 
     # ATOM IO
+    SET_PIN_MODE = 0x60
+    SET_DIGITAL_OUTPUT = 0x61
     GET_DIGITAL_INPUT = 0x62
     SET_COLOR = 0x6A
 
