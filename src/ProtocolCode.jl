@@ -13,7 +13,7 @@ using Base: @enum
     SOFTWARE_VERSION = 0x02
     GET_ROBOT_ID = 0x03
 
-    # Overall status
+    # Robot status
     POWER_ON = 0x10
     POWER_OFF = 0x11
     IS_POWER_ON = 0x12
