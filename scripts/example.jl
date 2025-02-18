@@ -34,6 +34,13 @@ MyCobot.set_pin_mode(sp, 39, 0, verbose=true)
 # Get the value of pin 39
 pin_value = MyCobot.get_digital_input(sp, 39, verbose=true)
 
+MyCobot.run_for_duration(5) do
+    # Get ATOM button state
+    pin_value = MyCobot.get_digital_input(sp, 39)
+    print("\rPin 39 value: ", pin_value)
+    sleep(0.010)
+end
+
 # Set the motion mode to refresh mode
 MyCobot.set_fresh_mode(sp, true)
 
@@ -51,13 +58,6 @@ MyCobot.send_angles(sp, angles, speed)
 
 angles_sleep = Float32[0, -135, 140, 65, 90, 25]
 MyCobot.send_angles(sp, angles_sleep, UInt8(50))
-
-MyCobot.run_for_duration(5) do
-    # Get ATOM button state
-    pin_value = MyCobot.get_digital_input(sp, 39)
-    print("\rPin 39 value: ", pin_value)
-    sleep(0.010)
-end
 
 # Release all servos
 MyCobot.release_all_servos(sp)

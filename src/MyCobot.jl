@@ -1,18 +1,17 @@
 module MyCobot
 
-import LibSerialPort
+include("serial/ProtocolCode.jl")
 
-greet() = print("Hello World!")
+"""
+    run_for_duration(fn::Function, duration::Real)
 
-include("ProtocolCode.jl")
-
-include("atom_io_control.jl")
-include("gripper_control.jl")
-include("mdi_mode.jl")
-include("robot_status.jl")
-include("servo_control.jl")
-include("system_status.jl")
-
-include("utils.jl")
+Run the given function for the specified duration.
+"""
+function run_for_duration(fn::Function, duration::Real)
+    start_time = time()
+    while time() - start_time < duration
+        fn()
+    end
+end
 
 end # module MyCobot
