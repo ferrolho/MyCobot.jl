@@ -161,6 +161,53 @@ function get_fresh_mode(sp::LibSerialPort.SerialPort; verbose::Bool=false)
     end
 end
 
+"""
+    set_free_mode(sp::LibSerialPort.SerialPort, enable::Bool; verbose::Bool=false)
+
+Enable or disable free movement mode.
+
+The LED matrix of the ATOM will turn yellow when free movement mode is enabled. While
+in free mode, pressing the ATOM button (which is the LED display itself) will disengage
+the servos, therefore allowing the configuration of the robot to be changed by hand.
+
+# Arguments
+- `sp::LibSerialPort.SerialPort`: The serial port connection to the robot.
+- `enable::Bool`: `true` to enable free movement mode, `false` to disable.
+- `verbose::Bool`: If `true`, print debugging information.
+"""
+function set_free_mode(sp::LibSerialPort.SerialPort, enable::Bool; verbose::Bool=false)
+    # Prepare the data byte (0x01 for enable, 0x00 for disable)
+    enable_byte = enable ? 0x01 : 0x00
+
+    # Prepare and send the request frame
+    request_frame = prepare_frame(ProtocolCode.SET_FREE_MODE, [enable_byte])
+    verbose && println("Request frame: ", request_frame)
+    LibSerialPort.write(sp, request_frame)
+end
+
+"""
+    is_free_mode(sp::LibSerialPort.SerialPort; verbose::Bool=false)
+
+Check whether the robot is in free movement mode.
+
+# Arguments
+- `sp::LibSerialPort.SerialPort`: The serial port connection to the robot.
+- `verbose::Bool`: If `true`, print debugging information.
+"""
+function is_free_mode(sp::LibSerialPort.SerialPort; verbose::Bool=false)
+    # Prepare and send the request frame
+    request_frame = prepare_frame(ProtocolCode.IS_FREE_MODE)
+    verbose && println("Request frame: ", request_frame)
+    LibSerialPort.write(sp, request_frame)
+
+    # Wait for a response frame with the expected command ID
+    response_frame = wait_for_command_response(sp, ProtocolCode.IS_FREE_MODE; verbose)
+
+    # Parse the free mode status
+    status_byte = response_frame[5]
+    return status_byte == 0x01
+end
+
 function get_angles(sp::LibSerialPort.SerialPort; verbose::Bool=false)
     # Prepare and send the request frame
     request_frame = MyCobot.prepare_frame(MyCobot.ProtocolCode.GET_ANGLES)
