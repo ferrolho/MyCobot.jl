@@ -19,6 +19,18 @@ MyCobot.power_on(sp)
 controller_connected = MyCobot.is_controller_connected(sp, verbose=true)
 println("Connected to Atom: ", controller_connected)
 
+# Get the robot's hardware version
+robot_version = MyCobot.get_robot_version(sp, verbose=true)
+println("Robot version: ", robot_version)
+
+# Get the robot's software version (ATOM's firmware version)
+software_version = MyCobot.get_software_version(sp, verbose=true)
+println("Software version: ", software_version)
+
+# Get the robot's ID
+robot_id = MyCobot.get_robot_id(sp, verbose=true)
+println("Robot ID: ", robot_id)
+
 # Set the Atom's RGB LED to blue
 MyCobot.set_color(sp, 0, 0, 255, verbose=true)
 

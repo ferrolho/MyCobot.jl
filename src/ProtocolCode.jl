@@ -8,6 +8,11 @@ using Base: @enum
     HEADER = 0xFE
     FOOTER = 0xFA
 
+    # System status
+    ROBOT_VERSION = 0x01  # should print 101
+    SOFTWARE_VERSION = 0x02  # should print 6.5
+    GET_ROBOT_ID = 0x03  # should print 0
+
     # Overall status
     POWER_ON = 0x10
     POWER_OFF = 0x11
