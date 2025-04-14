@@ -200,6 +200,104 @@ function wait_for_command_response(sp::LibSerialPort.SerialPort, expected_comman
     return response_frame
 end
 
+
+"""
+    read_mycobot_frame(sp; read_timeout_ms, timeout, verbose)
+
+Read bytes from the serial connection until a valid data frame is found.
+"""
+function read_mycobot_frame(sp::LibSerialPort.SerialPort; read_timeout_ms::Integer=50, timeout::Real=0.1, verbose=false)
+    buffer = UInt8[]
+    data_length = 0
+    state = :header1
+
+    start_time = time()
+
+    while time() - start_time < timeout
+
+        # Determine how many bytes to read based on state
+
+        nbytes_to_read = 1
+
+        if state == :length_ff
+            nbytes_to_read = 2
+        elseif state == :payload
+            nbytes_to_read = data_length
+        elseif state == :discard_ff
+            nbytes_to_read = data_length
+        end
+
+        nbytes_read, bytes_read = LibSerialPort.sp_blocking_read(sp.ref, nbytes_to_read, read_timeout_ms)
+        @assert nbytes_read == nbytes_to_read
+
+        verbose && println("State: $state | Bytes read: ", bytes_read)
+
+        # Process bytes according to current state
+
+        if state == :header1
+            if bytes_read[1] == 0xFE
+                empty!(buffer)  # reset the buffer
+                push!(buffer, 0xFE)
+                state = :header2
+                verbose && println("  Header 1 OK")
+            elseif bytes_read[1] == 0xFF
+                state = :header2_ff
+                verbose && println("  Header 1 OK (0xFF)")
+            end
+
+        elseif state == :header2
+            if bytes_read[1] == 0xFE
+                push!(buffer, 0xFE)
+                state = :length
+                verbose && println("  Header 2 OK")
+            else
+                state = :header1
+                verbose && println("  Header mismatch, resetting")
+            end
+
+        elseif state == :header2_ff
+            if bytes_read[1] == 0xFF
+                state = :length_ff
+                verbose && println("  Header 2 OK (0xFF)")
+            else
+                state = :header1
+                verbose && println("  Header mismatch, resetting")
+            end
+
+        elseif state == :length
+            data_length = bytes_read[1]
+            @assert data_length > 0
+            push!(buffer, data_length)
+            state = :payload
+            verbose && println("  Length of data in frame: $data_length")
+
+        elseif state == :length_ff
+            data_length = bytes_read[2]
+            @assert data_length > 0
+            state = :discard_ff
+            verbose && println("  Length of data in frame (0xFF): $data_length")
+
+        elseif state == :payload
+            if !isempty(bytes_read) && bytes_read[end] == 0xFA
+                append!(buffer, bytes_read)
+                verbose && println("  Valid footer, completed frame")
+                return buffer
+            else
+                state = :header1
+                verbose && println("  Invalid footer, resetting")
+            end
+
+        elseif state == :discard_ff
+            state = :header1
+            verbose && println("  0xFF frame discarded, resetting")
+
+        end
+    end
+
+    verbose && println("Timeout reached")
+    return UInt8[]
+end
+
 include("atom_io_control.jl")
 include("gripper_control.jl")
 include("mdi_mode.jl")
