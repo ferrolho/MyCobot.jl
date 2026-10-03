@@ -5,7 +5,8 @@ The six joint servos use the standard **Feetech STS** register map. This dump wa
 ## Encoding
 
 - Multi-byte values are **little-endian**: low byte at the lower address. For example, present position = `reg[56] | reg[57] << 8`.
-- Position is 12-bit, 0–4095, with 4096 steps per turn (0.088° per step). 2048 is roughly the middle.
+- Position is 12-bit, 0–4095, with 4096 steps per turn (0.088° per step).
+- **Joint angle ↔ position:** `angle = sign × (position − 2048) × 360 / 4096`, with sign = `[−1, −1, +1, −1, −1, −1]` for J1–J6. 0° is position 2048 on every joint (the ATOM writes 2048 for `send_angles` to zero). The signs come from comparing direct positions with the ATOM's `get_angles` at a non-zero pose. They agree within 0.1°.
 - **Speed** (58–59, 46–47): bit 15 is the direction (sign-magnitude), in steps/s.
 - **Load** (60–61): bit 10 is the direction, the magnitude is in 0.1 % units. For example, J4 `0x0421` = 3.3 % in the negative direction.
 - **Offset** (31–32): bit 11 is the sign (sign-magnitude), so J3 `0x0F7C`, J4 `0x0D1D` and J6 `0x0D4C` are negative. In position mode, present position has the offset applied, and **goal position uses those same units**: to hold a joint, write `goal = present`. In velocity mode, present position is reported raw, without the offset (see `fast-communication.md`, gotchas 1–5).

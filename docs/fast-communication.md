@@ -120,7 +120,17 @@ It's the convenience layer that makes the arm usable from myStudio, myBlockly, p
 
 - **Protocol and units:** turns `FE FE` commands into Feetech traffic and converts raw steps to degrees.
 - **Kinematics:** `get_coords` (0x23) does the same sync read, then returns a Cartesian pose. So forward kinematics (and presumably IK for `send_coords`) runs on the ATOM.
-- **Motion commands:** `send_angles` / `send_angle` made the ATOM read the state twice and then write nothing. This happened both when targeting the current pose and for a +3° move of J6, which never moved. So after our experiments the ATOM was refusing to move, for reasons not yet known. How it shapes a real move **hasn't been captured yet**.
+- **Motion commands:** for `send_angles`, the ATOM reads the state, then sends **one SYNC WRITE** and lets each servo run the trajectory itself. It does not interpolate. Captured for `send_angles([0,0,0,0,0,0], 30)`:
+  ```
+  ff ff fe 34 83 29 07 | 01 32 00 08 00 00 2c 01 | 02 32 00 08 00 00 d3 01 | ... | b9
+                   ^ start at register 41, 7 bytes per servo:
+                     acceleration (41) = 50, goal position (42–43) = 2048,
+                     goal time (44–45) = 0, goal speed (46–47)
+  ```
+  - Each joint's goal speed is proportional to its distance (≈3.34 steps/s per degree at speed 30, minimum 300), so all joints arrive together. J1–J6 got 300, 467, 510, 345, 360 and 300 steps/s for distances of 18°, 140°, 152°, 103°, 108° and 3°.
+  - **0° is position 2048 on every joint.** The calibration offsets are applied inside the servos.
+  - The move to zero took ~2 s and ended within ~1° (the servos' dead zone).
+  - Before the reboot, the ATOM had acknowledged `send_angle` on J6 (+3°) but read the state and wrote nothing. The reason is unknown; after the reboot it moved normally.
 - **It can freeze:** after a series of status queries, starting at `GET_ROBOT_STATUS` (0x19), which this firmware doesn't seem to support, the ATOM stopped answering every command. The servos were unaffected.
   - The ATOM's reset button can't be reached while it's mounted in the arm. Power-cycling the robot fixes it, but the servos lose power, so **support the arm first**.
   - After the reboot the ATOM was blue. Pressing it turned it green, the normal state: per the FAQ in `assets/`, "the robotic arm will self-lock and the Atom will light up in green after powering on". It then answered normally.
@@ -171,7 +181,8 @@ See [servo-registers.md](servo-registers.md) for the full register dump. The mod
 ## Open questions and next steps
 
 - [x] Direct **SYNC WRITE** of goal positions from the laptop, and a full read + write loop rate: **300 Hz**.
-- [ ] Find out why the ATOM refused to move before it froze (it answers again after a reboot). Then capture what it sends on the bus for a **real** `send_angles` move (one goal write, or interpolation?).
+- [x] Capture what the ATOM sends for a real `send_angles` move: one SYNC WRITE of acceleration, goal, time and speed.
+- [ ] Find out why the ATOM refused to move before it froze (it moves normally after a reboot).
 - [ ] Measure the ~130 ms position-mode lag against PID gains and goal speed/acceleration settings.
 - [ ] Characterise each mode: delay, bandwidth, the ~0.25 s velocity-mode start-up lag, and position-mode tracking at different PID gains.
 - [ ] Try PWM mode (mode 2) carefully on J1 (no gravity load), with a watchdog.
