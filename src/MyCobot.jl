@@ -1,6 +1,7 @@
 module MyCobot
 
 include("serial/ProtocolCode.jl")
+include("kinematics.jl")
 
 """
     run_for_duration(fn::Function, duration::Real)
