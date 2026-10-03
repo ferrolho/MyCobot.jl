@@ -85,6 +85,7 @@ BROADCAST_ID = 0xFE
 REG_OFFSET = 31          # 2 bytes, calibration offset
 REG_MODE = 33            # 0 position, 1 velocity, 2 PWM, 3 step
 REG_TORQUE_ENABLE = 40
+REG_ACCELERATION = 41    # 1 byte; the ATOM uses 50, 0 = no ramp
 REG_GOAL_POSITION = 42   # 2 bytes, same units as present position (position mode)
 REG_GOAL_SPEED = 46      # 2 bytes, steps/s, bit 15 = direction; 0 = no motion in position mode
 REG_LOCK = 55
