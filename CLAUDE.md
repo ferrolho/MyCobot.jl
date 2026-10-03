@@ -21,7 +21,6 @@ julia --project=. scripts/example.jl
 
 Key examples:
 - `example.jl` - Comprehensive demo of robot control features
-- `example_sinewave.jl` - Smooth motion control demonstration
 - `viewer.jl` - Real-time 3D visualization using MeshCat
 - `example_gripper.jl` - Gripper control
 - `read_all_servo_data.jl` - Read PID parameters from all servos
@@ -97,8 +96,9 @@ The package supports real-time robot visualization:
 
 ### Fast communication (read docs/fast-communication.md first)
 - The FT232R USB latency timer defaults to 16 ms and resets on every unplug. Set it to 1 ms (`tools/python/ftdi_latency.py 1`), otherwise every reply takes ≥16 ms.
-- The Feetech STS servo bus (IDs 1–6, 1 Mbaud, `FF FF` packets) is reachable directly on the same serial port. A sync read of all servos takes ~3 ms. Never mix ATOM commands with a direct-bus loop.
-- Before switching a servo's mode or enabling torque, set goal position = present + offset. Writing a goal position switches torque on.
+- The Feetech STS servo bus (IDs 1–6, 1 Mbaud, `FF FF` packets) is reachable directly on the same serial port. A sync read of all servos takes ~3 ms, and a SYNC WRITE + SYNC READ loop runs at ~300 Hz. Never mix ATOM commands with a direct-bus loop.
+- Goal position uses the same units as present position (no offset). Goal speed 0 means no motion in position mode, so set a nonzero speed cap to move. Writing a goal switches torque on; writing the mode switches it off.
+- Before setting a nonzero goal speed, set every goal to the joint's present position.
 - ATOM reply parsers must skip interleaved Feetech bytes (a checksum byte can be 0xFE).
 
 ### Motion Modes

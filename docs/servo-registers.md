@@ -8,7 +8,7 @@ The six joint servos use the standard **Feetech STS** register map. This dump wa
 - Position is 12-bit, 0–4095, with 4096 steps per turn (0.088° per step). 2048 is roughly the middle.
 - **Speed** (58–59, 46–47): bit 15 is the direction (sign-magnitude), in steps/s.
 - **Load** (60–61): bit 10 is the direction, the magnitude is in 0.1 % units. For example, J4 `0x0421` = 3.3 % in the negative direction.
-- **Offset** (31–32): bit 11 is the sign (sign-magnitude), so J3 `0x0F7C`, J4 `0x0D1D` and J6 `0x0D4C` are negative. Present position in position mode has the offset subtracted. The goal position is in raw units (see `fast-communication.md`, gotcha 3).
+- **Offset** (31–32): bit 11 is the sign (sign-magnitude), so J3 `0x0F7C`, J4 `0x0D1D` and J6 `0x0D4C` are negative. In position mode, present position has the offset applied, and **goal position uses those same units**: to hold a joint, write `goal = present`. In velocity mode, present position is reported raw, without the offset (see `fast-communication.md`, gotchas 1–5).
 - Voltage (62) is in 0.1 V. Temperature (63) is in °C.
 
 ## Confirmed by observation
@@ -18,9 +18,9 @@ The six joint servos use the standard **Feetech STS** register map. This dump wa
 | 5 ID | Reads 1–6 on J1–J6. |
 | 6 baud rate | 0 means 1 Mbaud; direct packets at 1 Mbaud work. |
 | 33 mode | Writing 1 put J1 into velocity mode. |
-| 40 torque enable | Read 0 after J1 was released by hand; writing a goal position set it back to 1. |
-| 46–47 goal speed | Drove J1 in velocity mode. |
-| 42–43 goal position | Written before going back to mode 0. |
+| 40 torque enable | Turned off by writing the mode (33). Writing a goal position (42–43) sets it back to 1. |
+| 46–47 goal speed | Drives J1 in velocity mode. In position mode, 0 means no motion and nonzero is the speed cap. |
+| 42–43 goal position | Same units as present position. Used in the 300 Hz SYNC WRITE loop. |
 | 56–57 present position | Matches the ATOM's `get_angles`. |
 | 58–59 present speed | Tracked the commanded speed. |
 | 62 voltage | J1–J3 ≈ 7.6 V, J4–J6 ≈ 6.4–6.8 V. |
@@ -38,7 +38,7 @@ For comparison, the common STS3215 reports `0x0309` (777).
 
 ## Full dump (2026-10-03)
 
-J1's goal position (2159) was written during the tests. On the other joints it reads 0, meaning never written since power-up. Present position, load, voltage and temperature are live values.
+J1's goal position (2159) was written during the tests, at a time when the goal units were misunderstood (see gotcha 1). On the other joints it reads 0, meaning never written since power-up. Present position, load, voltage and temperature are live values.
 
 | Addr | Name | J1 | J2 | J3 | J4 | J5 | J6 |
 | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: |
