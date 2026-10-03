@@ -27,6 +27,13 @@ https://github.com/user-attachments/assets/d0974d83-21ab-439b-a25e-b0ce1fc81bdb
 
 **Video 1.** Demo showing the real robot on the left and the robot model visualisation on the right. The visualisation is in real time and so when the robot joints are backdriven, the model moves accordingly.
 
+## Documentation
+
+- [Fast communication](docs/fast-communication.md): the FT232R latency fix (`get_angles` 20 ms → 8.5 ms) and direct Feetech servo-bus access from the laptop (all six servos read in ~3 ms, ~350 Hz).
+- [Servo registers](docs/servo-registers.md): full Feetech STS register dump for J1–J6.
+- [PID tuning](docs/pid-tuning.md): default servo PID parameters.
+- [Python tools](tools/python/README.md): scripts used for the investigation (latency timer, benchmarks, bus sniffing, register dump).
+
 ## Resources
 
 - Product page
