@@ -114,6 +114,21 @@ Direct **writes** work too:
 
 The ~130 ms lag and the flat spots at each reversal come from the servo itself (its position loop, the 3-step dead zone, friction), not from communication. For MPC/RL, model this delay or tune the servo's PID gains (registers 21–23).
 
+### Circle in mid-air (2026-10-03)
+
+A vertical 100 mm circle 170 mm in front of the base (centre 310 mm high), traced twice with the flange orientation fixed:
+- planned in Julia with RigidBodyDynamics.jl (`scripts/plan_circle.jl`),
+- played at ~240–250 Hz by `tools/python/play_trajectory.py`,
+- path traced with forward kinematics of the measured joint angles (`scripts/trace_recording.jl`).
+
+| Run | Error on the circle (RMS) | Max |
+| --- | --- | --- |
+| No lag compensation | 12.5 mm | 21.0 mm |
+| Lag compensation (Python-planned) | 5.2 mm | 12.3 mm |
+| Lag compensation (Julia/RBD-planned) | 5.1 mm | 12.6 mm |
+
+The two compensated runs have almost identical error curves, so the remaining error is systematic and repeatable. "Traced" means forward kinematics of the measured joint angles, so it doesn't include gear backlash or link flex.
+
 ## What is the ATOM for, then?
 
 It's the convenience layer that makes the arm usable from myStudio, myBlockly, pymycobot and ROS without knowing anything about servos:
@@ -178,20 +193,9 @@ Register 33 sets the mode. STS servos support:
 
 See [servo-registers.md](servo-registers.md) for the full register dump. The model numbers are `0x0809` (J1–J3), `0x0709` (J4) and `0x0209` (J5–J6), all on firmware 3.9. The common STS3215 reports `0x0309` (777). These three numbers aren't in any public table found so far, so they may be custom versions made for Elephant Robotics. To identify them: check the label on the back of a servo, use Feetech's FD software (Windows, needs direct bus access), or ask Feetech.
 
-## Open questions and next steps
+## Next steps
 
-- [x] Direct **SYNC WRITE** of goal positions from the laptop, and a full read + write loop rate: **300 Hz**.
-- [x] Capture what the ATOM sends for a real `send_angles` move: one SYNC WRITE of acceleration, goal, time and speed.
-- [ ] Find out why the ATOM refused to move before it froze (it moves normally after a reboot).
-- [ ] Measure the ~130 ms position-mode lag against PID gains and goal speed/acceleration settings.
-- [ ] Characterise each mode: delay, bandwidth, the ~0.25 s velocity-mode start-up lag, and position-mode tracking at different PID gains.
-- [ ] Try PWM mode (mode 2) carefully on J1 (no gravity load), with a watchdog.
-- [ ] Add a direct-bus layer to MyCobot.jl:
-  - set the latency timer on connect,
-  - `read_state` (sync read),
-  - `write_goals` (sync write),
-  - joint limits and a watchdog.
-- [ ] Post these findings on [issue #53][issue-53], which still has no replies.
+See [next-steps.md](next-steps.md).
 
 ## History
 

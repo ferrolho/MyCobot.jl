@@ -30,6 +30,7 @@ https://github.com/user-attachments/assets/d0974d83-21ab-439b-a25e-b0ce1fc81bdb
 ## Documentation
 
 - [Fast communication](docs/fast-communication.md): the FT232R latency fix (`get_angles` 20 ms → 8.5 ms) and direct Feetech servo-bus access from the laptop (all six servos read in ~3 ms; a 300 Hz closed loop with goal writes).
+- [Next steps](docs/next-steps.md): roadmap toward trajectory optimisation, MPC and RL on the real robot.
 - [Servo registers](docs/servo-registers.md): full Feetech STS register dump for J1–J6.
 - [PID tuning](docs/pid-tuning.md): default servo PID parameters.
 - [Python tools](tools/python/README.md): scripts used for the investigation (latency timer, benchmarks, bus sniffing, register dump).

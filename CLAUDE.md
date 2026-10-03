@@ -100,6 +100,7 @@ The package supports real-time robot visualization:
 - Goal position uses the same units as present position (no offset). Goal speed 0 means no motion in position mode, so set a nonzero speed cap to move. Writing a goal switches torque on; writing the mode switches it off.
 - Before setting a nonzero goal speed, set every goal to the joint's present position.
 - ATOM reply parsers must skip interleaved Feetech bytes (a checksum byte can be 0xFE).
+- Kinematics lives in `src/kinematics.jl` (RigidBodyDynamics.jl, URDF in `mycobot_description/`): `load_mechanism`, `flange_transform`, `flange_goal`, `inverse_kinematics`, `joint_limits_deg`. Don't hand-write FK/IK elsewhere. Planning is in Julia (`scripts/plan_circle.jl`); `tools/python/play_trajectory.py` only streams and records.
 
 ### Motion Modes
 The robot has two motion command queuing modes:
