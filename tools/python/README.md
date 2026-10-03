@@ -21,7 +21,8 @@ The serial port is set in `mycobot_bus.py` (`/dev/tty.usbserial-B00033ZX`, 1 Mba
 | `benchmark.py` | no | Times ATOM commands against direct Feetech reads |
 | `sniff_atom_command.py <cmd> [args]` | depends on the command | Sends one ATOM command and prints the Feetech traffic it causes |
 | `dump_servo_registers.py` | no | Prints registers 0–70 of J1–J6 as a markdown table |
-| `j1_velocity_mode_test.py` | **yes (J1)** | Velocity-mode test with a safe return to position mode |
+| `j1_velocity_mode_test.py` | **yes (J1)** | Velocity-mode test with a safe return to position mode (direct writes) |
+| `sync_write_sine_test.py` | **yes (J1)** | 300 Hz closed loop: SYNC WRITE goals + SYNC READ state, J1 follows a ±5° sine |
 | `mycobot_bus.py` | – | Shared helpers: ATOM frames, Feetech packets, sync read |
 
-`j1_velocity_mode_test.py` was tidied after its successful run on 2026-10-03, and that tidied version hasn't been run on the robot yet. Read it before running it, and keep a hand near the power switch.
+Both scripts that move the robot were last run successfully on 2026-10-03. Read them before running, and keep a hand near the power switch.

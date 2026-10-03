@@ -85,8 +85,8 @@ BROADCAST_ID = 0xFE
 REG_OFFSET = 31          # 2 bytes, calibration offset
 REG_MODE = 33            # 0 position, 1 velocity, 2 PWM, 3 step
 REG_TORQUE_ENABLE = 40
-REG_GOAL_POSITION = 42   # 2 bytes, raw units = reported position + offset
-REG_GOAL_SPEED = 46      # 2 bytes, steps/s, bit 15 = direction
+REG_GOAL_POSITION = 42   # 2 bytes, same units as present position (position mode)
+REG_GOAL_SPEED = 46      # 2 bytes, steps/s, bit 15 = direction; 0 = no motion in position mode
 REG_LOCK = 55
 REG_PRESENT_POSITION = 56
 
@@ -134,6 +134,25 @@ def ft_read(sp, servo_id, address, length):
     if not pkts:
         raise IOError(f"no reply from servo {servo_id}: {buf.hex(' ')}")
     return pkts[0][2]
+
+
+def ft_write(sp, servo_id, address, data):
+    """WRITE bytes starting at `address`; returns the servo's error byte (0 = ok)."""
+    buf = ft_txrx(sp, ft_packet(servo_id, FT_WRITE, [address, *data]), 6)
+    pkts = parse_status_packets(buf)
+    if not pkts:
+        raise IOError(f"no ack from servo {servo_id}: {buf.hex(' ')}")
+    return pkts[0][1]
+
+
+def ft_sync_write(sp, address, data_by_id):
+    """SYNC WRITE the same register range on several servos. No replies are sent."""
+    length = len(next(iter(data_by_id.values())))
+    params = [address, length]
+    for sid, data in data_by_id.items():
+        params += [sid, *data]
+    sp.write(ft_packet(BROADCAST_ID, FT_SYNC_WRITE, params))
+    sp.flush()
 
 
 def ft_sync_read(sp, address, length, ids=SERVO_IDS):
