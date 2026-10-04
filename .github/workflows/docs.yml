@@ -29,7 +29,10 @@ jobs:
       group: docs-build-${{ github.ref }}
       cancel-in-progress: true
     steps:
+      # The plots are in Git LFS: without `lfs: true` the build gets pointer files, not images.
       - uses: actions/checkout@v7
+        with:
+          lfs: true
 
       - uses: actions/setup-node@v7
         with:
