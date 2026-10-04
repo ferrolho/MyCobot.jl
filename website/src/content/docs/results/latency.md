@@ -48,6 +48,9 @@ Python player (7–8 mm against 5 mm RMS). A sweep of capped rates was not monot
 | 240 Hz | 5.2 mm |
 | 308–318 Hz | 7.3–8.0 mm |
 
+Recordings (2026-10-04): `tools/python/recordings/20261004-0914*`, `-0916*`
+and `-0917*` (`circle_lagcomp_*_jl.csv`).
+
 The joints froze for 100–500 ms at random moments, while all reads succeeded. A
 test with goal speed 0 (no motion) found the cause: on the laptop path, a
 SYNC WRITE followed by another request within ~0.3 ms is lost.

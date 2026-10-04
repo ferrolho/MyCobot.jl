@@ -72,6 +72,9 @@ On the circle (2026-10-04, Raspberry Pi):
 | Lag compensation (time shift) | 5.1 mm | 12.2 mm |
 | Model feedforward | 5.1 mm | 11.8 mm |
 
+Recordings: `tools/python/recordings/20261004-144010_circle_lagcomp_jl.csv` and
+`20261004-144047_circle_modelff_jl.csv`.
+
 The model feedforward removes the modelled part of the error completely (the
 model's prediction equals the plan to 0.01°). The remaining error is not in the
 model: 0.3–0.4° on J1, J4, J5 and **0.9–1.1° on J2 and J3**, the joints that carry
@@ -139,6 +142,7 @@ excitation trajectory, reduced the error on a second excitation run (J2 1.01° �
 0.56°) but made the circle worse on J2 and J6. The circle uses poses outside the
 excitation data (J3 ≈ −103°, J4 up to 120°). A gravity model must be calibrated over
 the whole workspace before it can be used.
+Recordings: `tools/python/recordings/20261004-1444*_excitation_*_modelff_jl.csv`.
 
 ## Next
 
