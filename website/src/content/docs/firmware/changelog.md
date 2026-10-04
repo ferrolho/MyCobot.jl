@@ -16,8 +16,8 @@ UDP port 5005 shows it with the git commit of the build, for example
 
 ## 4.2.0 — 2026-10-04
 
-A browser can now see and control the arm directly (the API is in
-`comms/websocket-api.md`).
+A browser can now see and control the arm directly; see the
+[WebSocket API](/mycobot-280-lab/comms/websocket-api/).
 
 - **WebSocket** `ws://<ATOM>/ws` on port 80: the same binary messages as UDP, and the
   status log as text frames. **mDNS** name `mycobot.local`.

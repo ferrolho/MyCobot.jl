@@ -3,6 +3,15 @@ title: Roadmap
 description: Open work, grouped by topic. Done items move to the results and history pages.
 ---
 
+## Control page and website (handed over 2026-10-04)
+
+- [ ] Confirm moving the real arm from the Control page (JOG, MOVE_TO). Only read-only use is tested so far.
+- [ ] Away from home: a TCP forward on the Pi (Tailscale :8282 → ATOM :80), so the page reaches the ATOM over Tailscale.
+- [ ] Browser flasher (ESP Web Tools: full image with bootloader and partitions) with Improv WiFi setup (returns the IP), and a Search button (mDNS or address sweep).
+- [ ] End-effector jog (the page has joint jog only).
+- [ ] Test Chrome's local-network prompt for real users on GitHub Pages (the Pi tests grant it).
+- [ ] The page assumes the real robot until the first status-log line arrives (the simulator's starts with "atom-sim").
+
 ## Tracking accuracy
 
 - [ ] More ILC iterations: does the error continue to go down, or does it stop near 1 mm? Try ILC on a faster circle.

@@ -14,7 +14,7 @@ WiFi with UDP. All values are little-endian.
 
 ## Messages
 
-From 4.2 the same messages also go over a WebSocket (`ws://<ATOM>/ws`), and commands that move the robot need control; see the WebSocket API page (`comms/websocket-api.md`, on branch `control-ui` until it is merged) and the [changelog](/mycobot-280-lab/firmware/changelog/).
+From 4.2 the same messages also go over a WebSocket (`ws://<ATOM>/ws`), and commands that move the robot need control; see the [WebSocket API](/mycobot-280-lab/comms/websocket-api/) and the [changelog](/mycobot-280-lab/firmware/changelog/).
 
 | Code | Message | Content | Reply |
 | --- | --- | --- | --- |

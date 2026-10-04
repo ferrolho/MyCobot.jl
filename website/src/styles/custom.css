@@ -24,3 +24,8 @@
 .diagram .small { font-size: 13.5px; fill: var(--sl-color-gray-2); }
 .diagram { max-width: 680px; display: block; margin: 1rem auto; }
 .diagram .title { font-weight: 600; }
+
+/* Header: keep the logo close to the site title. */
+.site-title {
+  gap: 0.6rem;
+}

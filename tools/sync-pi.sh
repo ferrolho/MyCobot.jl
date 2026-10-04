@@ -13,18 +13,19 @@ set -euo pipefail
 HOST=raspberrypi5
 HUB=git/MyCobot.jl.git
 cd "$(git rev-parse --show-toplevel)"
+LFS="$(git rev-parse --git-common-dir)/lfs/objects"   # also right in a git worktree
 
 case "${1:-}" in
   push)
     branch="${2:-$(git branch --show-current)}"
     ssh "$HOST" "mkdir -p ~/$HUB/lfs/objects"
-    rsync -a .git/lfs/objects/ "$HOST:$HUB/lfs/objects/"
+    rsync -a "$LFS/" "$HOST:$HUB/lfs/objects/"
     git push --no-verify pi "$branch"
     ;;
   pull)
     git fetch pi
-    mkdir -p .git/lfs/objects
-    rsync -a "$HOST:$HUB/lfs/objects/" .git/lfs/objects/
+    mkdir -p "$LFS"
+    rsync -a "$HOST:$HUB/lfs/objects/" "$LFS/"
     echo "Fetched. Merge with: git merge pi/<branch>"
     ;;
   *)

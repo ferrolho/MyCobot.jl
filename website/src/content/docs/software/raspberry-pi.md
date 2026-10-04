@@ -71,11 +71,18 @@ gives the correct port on macOS and Linux. The scripts use both.
 of view of the sensor; 1280×720 crops the top and bottom. It sets the mains
 frequency to 50 Hz against flicker.
 
-Watch it from the laptop (over SSH, no open port; needs `ffplay` from
-`brew install ffmpeg`):
+Watch it in a browser: the [lab service](/mycobot-280-lab/software/control-page/#the-lab-service-raspberry-pi)
+streams it at `http://raspberrypi5:8280/camera.mjpg` (Tailscale only), and the Control
+page shows it. While the service streams, it owns the camera: other programs get
+"device busy".
+
+Or watch it from the laptop over SSH (no open port; needs `ffplay` from
+`brew install ffmpeg`, and the lab service must not be streaming):
 
 ```bash
 ssh raspberrypi5 '~/myCobot/MyCobot.jl/tools/pi/camera.sh stdout' | ffplay -loglevel error -fflags nobuffer -f mjpeg -i -
 ```
 
-Take one picture on the Pi: `tools/pi/camera.sh snapshot /tmp/arm.jpg`.
+Take one picture on the Pi: `tools/pi/camera.sh snapshot /tmp/arm.jpg`. It asks the lab
+service first (`/snapshot.jpg`) and opens the camera itself only if the service does
+not answer.

@@ -15,13 +15,17 @@ export default defineConfig({
   integrations: [
     starlight({
       title: 'myCobot 280 Lab',
+      logo: { light: './src/assets/logo-light.svg', dark: './src/assets/logo-dark.svg', alt: '' },
       description:
         'High-rate control of the myCobot 280 (for Arduino): the servo bus, the ATOM firmware, the Julia and Python tools, and the measured results.',
       social: [{ icon: 'github', label: 'GitHub', href: `https://github.com/ferrolho/${REPO}` }],
       editLink: { baseUrl: `https://github.com/ferrolho/${REPO}/edit/main/website/` },
       customCss: ['./src/styles/custom.css'],
+      // Header: Docs | Control links before the social icons.
+      components: { SocialIcons: './src/components/HeaderLinks.astro' },
       // The build fails on broken internal links and anchors: the site is the source of truth.
-      plugins: [starlightLinksValidator()],
+      // The Control page is a custom page (src/pages/control.astro), which the validator cannot see.
+      plugins: [starlightLinksValidator({ exclude: [`/${REPO}/control/`, `/${REPO}/control/**`] })],
       lastUpdated: true,
       sidebar: [
         {
@@ -30,6 +34,7 @@ export default defineConfig({
             { label: 'Overview', slug: 'start/overview' },
             { label: 'Quick start', slug: 'start/quick-start' },
             { label: 'Safety', slug: 'start/safety' },
+            { label: 'Control the robot', link: '/control/' },
           ],
         },
         {
@@ -48,6 +53,7 @@ export default defineConfig({
             { label: 'Servo bus protocol', slug: 'comms/servo-bus' },
             { label: 'Laptop link (FT232)', slug: 'comms/laptop-link' },
             { label: 'ATOM link (WiFi)', slug: 'comms/atom-link' },
+            { label: 'WebSocket API (browser)', slug: 'comms/websocket-api' },
             { label: 'Stock ATOM protocol', slug: 'comms/stock-atom' },
           ],
         },
@@ -69,6 +75,7 @@ export default defineConfig({
             { label: 'Scripts', slug: 'software/scripts' },
             { label: 'Python tools', slug: 'software/python' },
             { label: 'Raspberry Pi 5', slug: 'software/raspberry-pi' },
+            { label: 'Control page', slug: 'software/control-page' },
             { label: 'Trajectory optimisation (TORA)', slug: 'software/tora' },
             { label: 'Tests', slug: 'software/tests' },
           ],

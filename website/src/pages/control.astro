@@ -1,0 +1,316 @@
+---
+// The Control page: the browser talks straight to the ATOM over a WebSocket (docs: comms/websocket-api).
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+---
+
+<StarlightPage
+  frontmatter={{
+    title: 'Control',
+    description: 'Watch and move your myCobot 280 from the browser. The page connects straight to the ATOM over WiFi.',
+    template: 'splash',
+    tableOfContents: false,
+    pagefind: false,
+    editUrl: false,
+    lastUpdated: false,
+    prev: false,
+    next: false,
+  }}
+>
+  <div class="ctl not-content" id="ctl" data-control="none">
+    <section class="card connect" aria-labelledby="connect-title">
+      <h2 id="connect-title" class="sr-only">Connection</h2>
+      <form id="connect-form" class="connect-form">
+        <label for="addr">Robot address</label>
+        <input id="addr" list="addr-history" placeholder="192.168.1.107 or mycobot.local" autocomplete="off" spellcheck="false" />
+        <datalist id="addr-history"></datalist>
+        <button id="connect" type="submit" class="btn primary">Connect</button>
+      </form>
+      <div class="status-row">
+        <span id="link-status" class="pill" data-status="disconnected"><span class="dot" aria-hidden="true"></span><span class="label">Disconnected</span></span>
+        <span id="target" class="target" data-target="" role="status"></span>
+        <span id="robot-state" class="pill quiet"></span>
+        <span id="fw" class="muted"></span>
+      </div>
+      <p id="hint" class="hint" hidden></p>
+      <p id="log" class="log muted" aria-live="off"></p>
+      <p class="muted small">
+        The robot needs our controller firmware 4.2 or later. See the <a href={`${base}/comms/websocket-api/`}>WebSocket API</a> and <a href={`${base}/start/safety/`}>Safety</a>.
+      </p>
+    </section>
+
+    <div class="layout">
+      <section class="card joints" aria-labelledby="joints-title">
+        <header class="card-head">
+          <h2 id="joints-title">Joints</h2>
+          <div class="segmented" role="group" aria-label="Quantity to plot">
+            <button type="button" data-quantity="q" aria-pressed="true">Angle</button>
+            <button type="button" data-quantity="dq" aria-pressed="false">Speed</button>
+            <button type="button" data-quantity="load" aria-pressed="false">Load</button>
+            <button type="button" data-quantity="temp" aria-pressed="false">Temperature</button>
+          </div>
+        </header>
+        <p id="plot-title" class="muted small">Angle (°), last 20 s</p>
+        <div id="joint-rows" class="joint-rows"></div>
+        <template id="joint-row">
+          <div class="joint">
+            <div class="j-head">
+              <span class="j-name"></span>
+              <span class="j-angle num"></span>
+            </div>
+            <div class="j-range" aria-hidden="true">
+              <div class="j-track"><span class="j-zero"></span><span class="j-marker"></span></div>
+              <span class="j-limits muted small"></span>
+            </div>
+            <div class="j-plot"></div>
+            <div class="j-meta muted small num">
+              <span class="j-value"></span>
+              <span class="j-temp"></span>
+              <span class="j-volt"></span>
+            </div>
+            <div class="j-jog">
+              <button type="button" class="btn jog needs-control" data-dir="-1" aria-label="Jog negative">−</button>
+              <button type="button" class="btn jog needs-control" data-dir="1" aria-label="Jog positive">+</button>
+            </div>
+          </div>
+        </template>
+      </section>
+
+      <div class="side">
+        <section id="camera-card" class="card camera" aria-labelledby="camera-title" hidden data-running="false">
+          <header class="card-head">
+            <h2 id="camera-title">Camera</h2>
+            <div class="btn-row">
+              <label class="sr-only" for="camera-source">Camera source</label>
+              <select id="camera-source"></select>
+              <button id="camera-start" type="button" class="btn">Start</button>
+            </div>
+          </header>
+          <div class="camera-view">
+            <img id="camera-img" alt="Camera image of the robot" hidden />
+            <video id="camera-video" autoplay muted playsinline hidden></video>
+          </div>
+          <p id="camera-note" class="muted small"></p>
+        </section>
+        <section class="card arm" aria-labelledby="arm-title">
+          <header class="card-head"><h2 id="arm-title">3D view</h2><span class="muted small">Drag to turn, scroll to zoom</span></header>
+          <div id="arm-view" class="arm-view" data-urdf={`${base}/robot/mycobot_280_arduino.urdf`} role="img" aria-label="3D model of the arm in the measured pose. A see-through arm shows the goal pose."></div>
+          <p class="muted small">Solid: the measured pose. See-through blue: the goal pose of <em>Move to a pose</em>.</p>
+        </section>
+        <section class="card controls" aria-labelledby="controls-title">
+          <header class="card-head"><h2 id="controls-title">Control</h2></header>
+          <p id="control-text" class="control-text"></p>
+          <div class="btn-row">
+            <button id="control-btn" type="button" class="btn">Take control</button>
+            <button id="takeover-btn" type="button" class="btn" hidden>Take over</button>
+          </div>
+          <div class="btn-row">
+            <button id="stop-btn" type="button" class="btn danger" title="Esc">Stop</button>
+            <button id="hold-btn" type="button" class="btn">Hold the pose</button>
+            <button id="zero-btn" type="button" class="btn needs-control">Go to zero</button>
+          </div>
+          <div class="field">
+            <label for="jog-speed">Jog speed</label>
+            <input id="jog-speed" type="range" min="2" max="30" step="1" value="10" />
+            <output id="jog-speed-value" for="jog-speed" class="num">10 °/s</output>
+          </div>
+          <p class="muted small">Press and hold − or + beside a joint to jog it. The robot stops 0.2 s after you release the button or lose the connection.</p>
+        </section>
+
+        <section class="card goal-card" aria-labelledby="goal-title">
+          <header class="card-head"><h2 id="goal-title">Move to a pose</h2></header>
+          <div id="goals" class="goals"></div>
+          <template id="goal-row">
+            <label class="goal"><span class="g-name"></span><input type="range" step="1" /><output class="num">0°</output></label>
+          </template>
+          <div class="btn-row">
+            <button id="goal-current" type="button" class="btn">Use the current pose</button>
+            <button id="goal-move" type="button" class="btn primary needs-control">Move</button>
+          </div>
+        </section>
+
+        <section class="card imu" aria-labelledby="imu-title">
+          <header class="card-head"><h2 id="imu-title">IMU (in the ATOM)</h2></header>
+          <p class="muted small">Acceleration (g), last 20 s</p>
+          <div class="legend small" aria-hidden="true">
+            <span><i style="background: var(--series-1)"></i>x</span>
+            <span><i style="background: var(--series-2)"></i>y</span>
+            <span><i style="background: var(--series-3)"></i>z</span>
+          </div>
+          <div id="imu-plot" class="imu-plot"></div>
+          <p class="small num">Acceleration (g): <span id="acc-values">–</span></p>
+          <p class="small num">Angular rate (°/s): <span id="gyro-values">–</span></p>
+        </section>
+      </div>
+    </div>
+    <div id="toasts" class="toasts" aria-live="polite"></div>
+  </div>
+</StarlightPage>
+
+<script>
+  import { start } from '../control/app';
+  import { setupCamera } from '../control/camera';
+  start();
+  setupCamera();
+</script>
+
+<style is:global>
+  /* Chart colours (validated categorical palette, slots 1-3) and chrome, per theme. Starlight's
+     default theme is dark; data-theme="light" switches. */
+  .ctl {
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --grid: #2c2c2a;
+    --muted: #898781;
+    --good: #0ca30c;
+    --warning: #fab219;
+    --critical: #d03b3b;
+    --card: var(--sl-color-gray-6);
+    --line: var(--sl-color-gray-5);
+  }
+  :root[data-theme='light'] .ctl {
+    --series-1: #2a78d6;
+    --series-2: #eb6834;
+    --series-3: #1baf7a;
+    --grid: #e1e0d9;
+    --card: var(--sl-color-gray-7, #f6f6f6);
+  }
+
+  /* The site keeps a narrow text column; this page uses a wider one. */
+  :root:has(#ctl) { --sl-content-width: 90rem; }
+  .ctl {
+    max-width: 84rem;
+    margin-inline: auto;
+    display: grid;
+    gap: 1rem;
+  }
+  .ctl [hidden] { display: none !important; }
+  .ctl h2 { font-size: 1.05rem; margin: 0; }
+  .ctl p { margin: 0; }
+  .ctl .muted { color: var(--sl-color-gray-3); }
+  .ctl .small { font-size: 0.85rem; }
+  .ctl .num { font-variant-numeric: tabular-nums; }
+  .ctl .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 0.75rem;
+    padding: 1rem;
+    display: grid;
+    gap: 0.75rem;
+    align-content: start;
+    min-width: 0;
+  }
+  .ctl .card-head { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; align-items: center; justify-content: space-between; }
+
+  .ctl .connect-form { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+  .ctl .connect-form label { font-weight: 600; }
+  .ctl input:not([type]),
+  .ctl input[type='text'] {
+    flex: 1 1 16rem;
+    min-width: 0;
+    font: inherit;
+    padding: 0.45rem 0.6rem;
+    border-radius: 0.5rem;
+    border: 1px solid var(--sl-color-gray-4);
+    background: var(--sl-color-black);
+    color: var(--sl-color-white);
+  }
+  .ctl .status-row { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; align-items: center; }
+  .ctl .pill { display: inline-flex; align-items: center; gap: 0.4rem; font-weight: 600; }
+  .ctl .pill.quiet { font-weight: 400; }
+  .ctl .target:empty { display: none; }
+  .ctl .target { font-weight: 700; padding: 0.15rem 0.6rem; border-radius: 999px; border: 2px solid; }
+  .ctl .target[data-target='real'] { color: var(--critical); border-color: var(--critical); }
+  .ctl .target[data-target='sim'] { color: var(--sl-color-gray-2); border-color: var(--sl-color-gray-4); border-style: dashed; }
+  .ctl[data-target='real'] .connect { border-color: var(--critical); }
+  .ctl .pill.quiet:empty { display: none; }
+  .ctl .dot { width: 0.65rem; height: 0.65rem; border-radius: 50%; background: var(--muted); }
+  .ctl [data-status='connected'] .dot { background: var(--good); }
+  .ctl [data-status='connecting'] .dot { background: var(--warning); }
+  .ctl #robot-state[data-state='4'] { color: var(--critical); font-weight: 600; }
+  .ctl .hint { padding: 0.5rem 0.75rem; border-radius: 0.5rem; border-inline-start: 4px solid var(--sl-color-accent); background: var(--sl-color-gray-5); }
+  .ctl .hint[data-kind='warning'] { border-color: var(--warning); }
+  .ctl .log { font-family: var(--sl-font-mono); font-size: 0.8rem; overflow-wrap: anywhere; min-height: 1.2em; }
+
+  .ctl .layout { display: grid; gap: 1rem; grid-template-columns: minmax(0, 3fr) minmax(18rem, 2fr); align-items: start; }
+  .ctl .side { display: grid; gap: 1rem; min-width: 0; }
+  @media (max-width: 60rem) {
+    .ctl .layout { grid-template-columns: minmax(0, 1fr); }
+  }
+
+  .ctl .btn {
+    font: inherit;
+    font-weight: 600;
+    padding: 0.45rem 0.9rem;
+    border-radius: 0.5rem;
+    border: 1px solid var(--sl-color-gray-4);
+    background: var(--sl-color-gray-5);
+    color: var(--sl-color-white);
+    cursor: pointer;
+    touch-action: none;
+    user-select: none;
+  }
+  .ctl .btn:hover:not(:disabled) { border-color: var(--sl-color-accent); }
+  .ctl .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  .ctl .btn.primary { background: var(--sl-color-accent); border-color: var(--sl-color-accent); color: var(--sl-color-black); }
+  .ctl .btn.danger { background: var(--critical); border-color: var(--critical); color: #fff; min-width: 6rem; }
+  .ctl .btn-row { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+
+  .ctl .segmented { display: inline-flex; border: 1px solid var(--sl-color-gray-4); border-radius: 0.5rem; overflow: hidden; }
+  .ctl .segmented button { font: inherit; font-size: 0.85rem; padding: 0.3rem 0.65rem; border: 0; background: transparent; color: var(--sl-color-gray-2); cursor: pointer; }
+  .ctl .segmented button[aria-pressed='true'] { background: var(--sl-color-accent-low); color: var(--sl-color-white); font-weight: 600; }
+
+  .ctl .joint-rows { display: grid; gap: 0.25rem; }
+  .ctl .joint {
+    display: grid;
+    grid-template-columns: 4.5rem 6.5rem minmax(6rem, 1fr) 4.5rem auto;
+    gap: 0.75rem;
+    align-items: center;
+    padding: 0.35rem 0;
+    border-top: 1px solid var(--line);
+  }
+  .ctl .joint:first-child { border-top: 0; }
+  .ctl .j-head { display: grid; }
+  .ctl .j-name { font-weight: 700; }
+  .ctl .j-angle { font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+  .ctl .j-range { display: grid; gap: 0.15rem; }
+  .ctl .j-track { position: relative; height: 0.5rem; border-radius: 0.25rem; background: var(--sl-color-gray-5); }
+  .ctl .j-zero { position: absolute; left: 50%; top: -0.15rem; bottom: -0.15rem; width: 1px; background: var(--muted); }
+  .ctl .j-marker { position: absolute; left: 50%; top: -0.2rem; width: 0.9rem; height: 0.9rem; margin-left: -0.45rem; border-radius: 50%; background: var(--series-1); border: 2px solid var(--card); }
+  .ctl .j-plot { min-width: 0; }
+  .ctl .j-meta { display: grid; }
+  .ctl .j-jog { display: flex; gap: 0.35rem; }
+  .ctl .jog { width: 2.6rem; height: 2.6rem; padding: 0; font-size: 1.3rem; }
+  .ctl .joint.servo-fault .j-name::after { content: ' ⚠ fault'; color: var(--critical); font-size: 0.8rem; }
+  @media (max-width: 40rem) {
+    .ctl .joint { grid-template-columns: 5.5rem minmax(0, 1fr) auto; }
+    .ctl .j-plot { grid-column: 1 / -1; grid-row: 2; }
+    .ctl .j-meta { display: none; }
+  }
+
+  .ctl .field { display: grid; grid-template-columns: auto 1fr 4.5rem; gap: 0.75rem; align-items: center; }
+  .ctl .goals { display: grid; gap: 0.35rem; }
+  .ctl .goal { display: grid; grid-template-columns: 2rem 1fr 3.5rem; gap: 0.75rem; align-items: center; font-weight: 600; }
+  .ctl .goal output { text-align: end; font-weight: 400; }
+  .ctl input[type='range'] { width: 100%; accent-color: var(--sl-color-accent); }
+  .ctl .control-text { font-weight: 600; }
+  .ctl[data-control='mine'] .controls { border-color: var(--good); }
+
+  .ctl .legend { display: flex; gap: 1rem; }
+  .ctl .legend i { display: inline-block; width: 0.8rem; height: 0.25rem; border-radius: 2px; margin-inline-end: 0.35rem; vertical-align: middle; }
+  .ctl .imu-plot { min-width: 0; }
+  .ctl .camera-view { aspect-ratio: 4 / 3; border-radius: 0.5rem; background: var(--sl-color-black); overflow: hidden; display: grid; place-items: center; }
+  .ctl .camera[data-running='false'] .camera-view::after { content: 'Camera off'; color: var(--sl-color-gray-3); }
+  .ctl .camera-view img, .ctl .camera-view video { width: 100%; height: 100%; object-fit: contain; }
+  .ctl select { font: inherit; font-size: 0.9rem; padding: 0.35rem 0.5rem; border-radius: 0.5rem; border: 1px solid var(--sl-color-gray-4); background: var(--sl-color-black); color: var(--sl-color-white); max-width: 14rem; }
+  .ctl .arm-view { height: 18rem; border-radius: 0.5rem; background: var(--sl-color-black); overflow: hidden; position: relative; touch-action: none; }
+  .ctl .arm-view:not([data-loaded])::after { content: 'Loading the 3D model…'; position: absolute; inset: 0; display: grid; place-items: center; color: var(--sl-color-gray-3); }
+  .ctl .arm-view[data-loaded='error']::after { content: 'The 3D model did not load.'; position: absolute; inset: 0; display: grid; place-items: center; color: var(--sl-color-gray-3); }
+
+  .ctl .toasts { position: fixed; inset-inline-end: 1rem; bottom: 1rem; display: grid; gap: 0.5rem; z-index: 10; }
+  .ctl .toast { padding: 0.6rem 0.9rem; border-radius: 0.5rem; background: var(--sl-color-gray-6); border: 1px solid var(--sl-color-gray-4); border-inline-start: 4px solid var(--sl-color-accent); box-shadow: var(--sl-shadow-md); max-width: 22rem; }
+  .ctl .toast[data-kind='warning'] { border-inline-start-color: var(--warning); }
+
+  .ctl .u-cursor-pt { border-color: var(--series-1) !important; }
+</style>
