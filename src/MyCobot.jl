@@ -6,6 +6,7 @@ include("feetech.jl")
 include("ftdi.jl")
 include("player.jl")
 include("ilc.jl")
+include("atom.jl")
 
 """
     run_for_duration(fn::Function, duration::Real)
