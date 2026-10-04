@@ -10,7 +10,7 @@ const norm = MyCobot.LinearAlgebra.norm
     state = RBD.MechanismState(mechanism)
 
     lo, hi = MyCobot.joint_limits_deg(mechanism)
-    @test hi ≈ [168.0, 135.0, 150.0, 145.0, 165.0, 180.0] atol = 0.1
+    @test hi ≈ [165.0, 140.0, 150.0, 150.0, 160.0, 180.0] atol = 0.1
     @test lo ≈ -hi atol = 0.1
 
     # Flange position vs the ATOM's get_coords at the same joint angles (mm). The URDF and

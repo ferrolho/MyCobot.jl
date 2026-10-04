@@ -9,6 +9,32 @@ through the stock ATOM (`GET_SERVO_DATA`, one byte at a time) with
 temperature are live values. J1's goal position was written during the tests; on
 the other joints it reads 0 (not written since power-up).
 
+## Names
+
+The names follow Feetech's STS register table (as in
+[LeRobot's table](https://github.com/huggingface/lerobot/blob/main/src/lerobot/motors/feetech/tables.py)).
+Elephant's documentation names registers 22 and 23 the other way round
+("position loop I" and "position loop D"). Its own descriptions, Feetech's table
+and the values on this arm show that **22 is D and 23 is I**. See
+[Stock protocol commands](/mycobot-280-lab/reference/stock-protocol/#problems-in-elephants-documentation).
+
+Feetech's table also has factory registers 80–86 (for example the acceleration
+multiplier that applies when the acceleration is 0). They are not read yet.
+
+### What is not known
+
+| Register | Status |
+| --- | --- |
+| 2 | Not in Feetech's table (reserved). Reads 0. |
+| 19, 20 | Unloading condition and LED alarm condition. These are bit masks of the protections; the meaning of each bit is not checked. 19 reads 44/38 with the stock firmware and 0 with the custom firmware. |
+| 50–54 | Not in Feetech's table (reserved). Read 0. |
+| 64 | Named "async write flag" from older Feetech documentation. Not checked. |
+| 67–68 | Not in Feetech's table. They follow the present position within a few steps. |
+| 80–86 | Factory registers in Feetech's table. Not read yet. |
+
+All the other registers in the dump have a name in Feetech's table, and the ones
+that the players use are confirmed below.
+
 ## Encodings
 
 - Little-endian: low byte at the lower address. Present position = `reg[56] | reg[57] << 8`.

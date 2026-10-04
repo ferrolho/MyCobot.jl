@@ -72,15 +72,69 @@ pin and pin 13 to GND before you connect a 3.3 V device such as an ESP32.
 
 ## Joint limits
 
-From the URDF (`mycobot_description/urdf/mycobot_280_arduino/`):
+The model (`mycobot_description/urdf/mycobot_280_arduino/mycobot_280_arduino.urdf`)
+uses these limits. The planners and players read them from the URDF:
 
 | Joint | J1 | J2 | J3 | J4 | J5 | J6 |
 | --- | --- | --- | --- | --- | --- | --- |
-| Limit (±°) | 168 | 135 | 150 | 145 | 165 | 180 |
+| Model limit (±°) | 165 | 140 | 150 | 150 | 160 | 180 |
+
+They are round numbers inside the end stops that were measured by hand (below):
+the largest multiple of 5° that is at least 2° inside both end stops of the joint.
+J6 has no end stop; it stays at ±180° because its servo counts one turn only, and a
+tool cable limits it. Until 2026-10-04 the URDF had Elephant's protocol-page limits
+(±168, ±135, ±150, ±145, ±165, ±180).
+
+Elephant gives two sets of limits. The
+[protocol page](/mycobot-280-lab/reference/stock-protocol/) and the
+[product parameters](https://docs.elephantrobotics.com/docs/mycobot_280_ar_en/1-ProductInformation/2.ProductParameter/2-ProductParameters.html)
+(for AtomMain ≥ 7.3) do not agree:
+
+| Joint | J1 | J2 | J3 | J4 | J5 | J6 |
+| --- | --- | --- | --- | --- | --- | --- |
+| Protocol page (°) | ±168 | ±135 | ±150 | ±145 | ±165 | ±180 |
+| Product page, AtomMain ≥ 7.3 (°) | ±168 | ±140 | ±150 | ±150 | −155 to +160 | ±180 |
+
+Elephant says the structure cannot reach ±165° on J5. The measurements agree.
+
+### Measured by hand (2026-10-04)
+
+`scripts/measure_joint_range.jl` releases the joints and records their angles while
+you move them by hand to the end stops. With `all`, every joint is limp, so a joint
+is not blocked by the pose of the others. Results are in
+`tools/python/recordings/joint_ranges.csv`.
+
+| Joint | End stops, all joints limp (°) | Protocol page and URDF (°) | Product page, AtomMain ≥ 7.3 (°) |
+| --- | --- | --- | --- |
+| J1 | −170.9 to +170.9 | ±168 | ±168 |
+| J2 | −143.2 to +142.5 | ±135 | ±140 |
+| J3 | −155.7 to +154.8 | ±150 | ±150 |
+| J4 | −156.4 to +157.1 | ±145 | ±150 |
+| J5 | −162.8 to +164.7 | ±165 | −155 to +160 |
+| J6 | no end stop (about 9 turns) | ±180 | ±180 |
+
+- The **product page** limits are all inside the end stops, with 3–8° of margin.
+  They match the hardware better than the protocol page and the URDF.
+- The protocol page is conservative on J2, J3 and J4, but its J5 limit (−165°) is
+  **past the end stop** (−162.8°). The model now uses ±160°.
+- With only J4 limp and the other joints holding, J4 stopped at −135.5°: the pose of
+  the other joints blocked it. Measure end stops with all joints limp.
+- A joint is stopped by a hard stop or by contact with another link. The values are
+  the largest angles reached with a gentle push.
+
+J6 is therefore **continuous without a tool** and limited with one. Its servo
+reports one position per turn (0–4095), so a planner must track turns itself if it
+uses more than ±180°.
+
+:::caution[After you turn J6 by hand]
+After J6 was turned about 9 turns by hand, it turned away from its goal when motion
+was enabled again. A power cycle cleared it. Power-cycle the arm after you turn J6
+more than half a turn by hand. See [Known problems](/mycobot-280-lab/reference/gotchas/#servos).
+:::
 
 The servos do not enforce these limits (their angle limit registers allow 0–4095).
 The arm can rest outside them, for example when it is folded by hand while limp.
-The players use a margin of 10°.
+`check_plan` also keeps every plan 10° inside the model limits.
 
 ## Zero pose
 

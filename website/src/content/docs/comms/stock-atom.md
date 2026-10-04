@@ -5,7 +5,9 @@ description: The FE FE protocol of Elephant's stock ATOM firmware, and what it d
 
 This page describes Elephant's stock ATOM firmware (v7.2). It is not installed
 now, but the [backup](/mycobot-280-lab/firmware/stock-backup/) can restore it. pymycobot,
-myStudio and ROS use this protocol.
+myStudio and ROS use this protocol. The full command list, cross-checked between
+Elephant's English and Chinese documentation and pymycobot, is in
+[Stock protocol commands](/mycobot-280-lab/reference/stock-protocol/).
 
 ## Frame format
 

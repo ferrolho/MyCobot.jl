@@ -86,6 +86,7 @@ export default defineConfig({
           items: [
             { label: 'Known problems and rules', slug: 'reference/gotchas' },
             { label: 'Servo register map', slug: 'reference/registers' },
+            { label: 'Stock protocol commands', slug: 'reference/stock-protocol' },
             { label: 'Roadmap', slug: 'reference/roadmap' },
             { label: 'History', slug: 'reference/history' },
             { label: 'Writing style', slug: 'reference/writing-style' },
