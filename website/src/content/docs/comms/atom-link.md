@@ -27,6 +27,7 @@ WiFi with UDP. All values are little-endian.
 | `0x09` | REG_READ (v3+) | u8 servo id (1–7), u8 address, u8 length (1–32) | `0x86`: u8 id, u8 address, u8 length, i8 status, data |
 | `0x0A` | REG_WRITE (v3+) | u8 servo id, u8 address, u8 length, data | `0x87`: u8 id, u8 address, i8 status, u8 servo error |
 | `0x0B` | PLAY_SIGNAL (3.1+) | the PLAY parameters, then `sig::Params` (38 bytes: u8 joint, u8 kind, f32 amp, f0, f1, duration, vmax, amax, i16 base[6] in 0.01°) | ACK (−11…−18 invalid parameters, −29/−30 bad start pose), then TELEM and DONE |
+| `0x0C` | SUBSCRIBE (4.1+) | u16 rate (Hz, 1–100; 0 = stop), renew at least once a second | `0x88` STREAM packets to the sender; see [Clients](/mycobot-280-lab/comms/clients/#firmware-41) |
 
 REG_READ and REG_WRITE are refused while a plan plays. The ATOM reads every write
 back. It refuses writes to registers 0–8 (ID, baud rate and other comms settings),

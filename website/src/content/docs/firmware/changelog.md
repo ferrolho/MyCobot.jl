@@ -14,6 +14,21 @@ UDP port 5005 shows it with the git commit of the build, for example
 `atom_controller v4.0.0 (bff4529)`. Each version has a git tag
 `atom-controller-vX.Y.Z` (local until the repository is pushed).
 
+## 4.1.0 — 2026-10-04
+
+Several clients can now use the ATOM at the same time.
+
+- **Replies go to the sender** of each request (its IP address and UDP port).
+  Before, all replies went to the last sender's IP, port 5007, so a second client
+  took the telemetry away from a running test. `MyCobot.AtomLink` (sends from port
+  5007) sees no change.
+- **PLAY and PLAY_SIGNAL telemetry and DONE go to the client that started the run.**
+- **SUBSCRIBE** (`0x0C`): a state stream at 1–100 Hz to up to 4 clients, also while
+  a plan plays (`0x88` STREAM, 73 bytes). Idle: the ATOM reads the state at the
+  stream rate, and temperatures, voltages and status once a second.
+- Tested with two clients: one played a chirp (7250 of 7250 samples received, 0 late
+  cycles), the other received the stream at 20 Hz and pings during the run.
+
 ## 4.0.0 — 2026-10-04
 
 **Breaking:** the telemetry sample is now 77 bytes (was 53).

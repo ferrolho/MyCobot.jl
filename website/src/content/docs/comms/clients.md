@@ -20,11 +20,11 @@ centre, browser tabs that only watch. This page is the contract between them.
 ## The ATOM (UDP, firmware 4.x)
 
 The full protocol is in [ATOM link](/mycobot-280-lab/comms/atom-link/). Firmware
-4.0 sends every reply and all telemetry to the address of the **last packet it
-received**, so a second client takes the telemetry away from a running test.
+4.0 and older sent every reply and all telemetry to the address of the **last
+packet received**, so a second client took the telemetry away from a running test.
 Firmware 4.1 fixes this.
 
-### Firmware 4.1 (planned)
+### Firmware 4.1
 
 - **Replies go to the sender** of each request (its IP address and UDP port).
   Clients that bind port 5007 and send from it (as `MyCobot.AtomLink` does) see no

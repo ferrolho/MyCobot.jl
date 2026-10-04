@@ -8,7 +8,9 @@
 // On the bus the ATOM is silent except at power-up and when commanded, so the laptop can
 // still drive the servos through the FT232 while the ATOM is idle (never at the same time).
 //
-// UDP protocol (little-endian). Laptop -> ATOM port 5006; replies go to the sender's IP, port 5007.
+// UDP protocol (little-endian). Clients -> ATOM port 5006. Replies go to the sender of each request
+// (its IP and UDP port; 4.0 and older replied to the last sender's IP, port 5007). PLAY telemetry and
+// DONE go to the client that started the run.
 //   0x01 PING                                   -> 0x81 PONG  u16 version, u8 state, u32 plan_samples, u16 plan_rate, u8 imu_ok,
 //                                                             u8 gains_ok, u8 minor, u8 patch
 //   0x02 STATE                                  -> 0x82 STATE u8 ok, u16 pos[6], u16 spd[6], u16 load[6], i16 acc[3], i16 gyro[3]
@@ -33,6 +35,10 @@
 //        signal on one joint, move back. No plan needed.
 //                                               -> 0x83 ACK u8 0x0B, i8 status (0 started, -1 busy, -10-n invalid
 //                                                  parameters, -20-n bad start pose), then TELEM and DONE as PLAY
+//   0x0C SUBSCRIBE u16 rate_hz (1-100, 0 = stop; 4.1+). Renew at least once a second; a subscription
+//        ends 2 s after the last one. Up to 4 subscribers. Also while playing.
+//                                               -> 0x88 STREAM u32 t_ms, u8 state, u8 ok, u16 pos[6], u16 spd[6],
+//                                                  u16 load[6], u8 temp[6], u8 volt[6], u8 status[6], i16 acc[3], i16 gyro[3]
 //        id 1-7, len 1-32, not while playing. Status: 0 ok, -1 busy or bad request, -4 no reply,
 //        -5 write not allowed (registers 0-8, 55 and 80+: ID, baud rate, EEPROM lock, factory),
 //        -6 the read-back differs. Writes in the EEPROM area last until the next power cycle.
@@ -60,7 +66,7 @@
 // PATCH for fixes. PING reports MAJOR as its u16 version, then MINOR and PATCH (3.1+).
 // History: docs (firmware/changelog). FW_GIT is set by the build (git describe).
 #define FW_MAJOR 4
-#define FW_MINOR 0
+#define FW_MINOR 1
 #define FW_PATCH 0
 #define FW_VERSION FW_MAJOR
 #ifndef FW_GIT
@@ -77,8 +83,12 @@ volatile State state = BOOTING;
 
 Adafruit_NeoPixel matrix(25, LED_PIN, NEO_GRB + NEO_KHZ800);
 WiFiUDP cmd_udp, out_udp;
-IPAddress host_ip;
-volatile bool have_host = false;
+// Reply addresses (4.1+): every reply goes to the sender of its request, and PLAY telemetry to the
+// client that started the run. port 0 = nobody (e.g. a HOLD from the button).
+struct Addr { uint32_t ip = 0; uint16_t port = 0; };   // plain data: it goes through a FreeRTOS queue
+Addr cmd_from;   // sender of the packet that the network task is handling
+Addr req_from;   // sender of the request handed to the control loop
+Addr play_to;    // client of the running PLAY / PLAY_SIGNAL
 
 // ---- Plan storage ------------------------------------------------------------------------------
 struct PlanSample { uint16_t cmd[N_SERVOS]; uint16_t ref[N_SERVOS]; };
@@ -156,21 +166,23 @@ uint32_t play_progress_permille = 0;
 
 // ---- Network helpers -----------------------------------------------------------------------------
 // Only the network task uses the UDP sockets. The control loop posts its replies here.
-struct OutMsg { uint8_t len; uint8_t data[63]; };
+struct OutMsg { Addr to; uint8_t len; uint8_t data[63]; };
 QueueHandle_t outbox;
 
-void post(const void* data, size_t n) {
-    OutMsg m; m.len = min<size_t>(n, sizeof(m.data));
+void post(const void* data, size_t n, const Addr& to) {
+    OutMsg m; m.to = to; m.len = min<size_t>(n, sizeof(m.data));
     memcpy(m.data, data, m.len);
     xQueueSend(outbox, &m, 0);
 }
 
-void send_to_host(const void* data, size_t n) {
-    if (!have_host) return;
-    out_udp.beginPacket(host_ip, REPLY_PORT);
+void send_to(const Addr& to, const void* data, size_t n) {           // network task only
+    if (to.port == 0) return;
+    out_udp.beginPacket(IPAddress(to.ip), to.port);
     out_udp.write(reinterpret_cast<const uint8_t*>(data), n);
     out_udp.endPacket();
 }
+
+void send_to_host(const void* data, size_t n) { send_to(cmd_from, data, n); }   // reply to the sender
 
 void ack(uint8_t type, int8_t status, uint32_t value = 0) {        // network task
     uint8_t m[7] = {0x83, type, (uint8_t)status};
@@ -180,7 +192,69 @@ void ack(uint8_t type, int8_t status, uint32_t value = 0) {        // network ta
 
 void ack_from_control(uint8_t type, int8_t status) {               // control loop
     uint8_t m[7] = {0x83, type, (uint8_t)status, 0, 0, 0, 0};
-    post(m, sizeof(m));
+    post(m, sizeof(m), req_from);
+}
+
+// ---- State stream (SUBSCRIBE 0x0C, 4.1+) ----------------------------------------------------------
+const int MAX_SUBS = 4;
+struct Sub { Addr a; uint16_t rate = 0; uint32_t last_ms = 0, next_ms = 0; };
+Sub subs[MAX_SUBS];                                // network task only
+volatile uint16_t stream_rate = 0;                 // highest subscribed rate (0 = none)
+
+struct Latest {                                    // written by the control loop, read by the network task
+    uint32_t t_ms; uint8_t ok;
+    uint16_t pos[N_SERVOS], spd[N_SERVOS], load[N_SERVOS];
+    uint8_t temp[N_SERVOS], volt[N_SERVOS], status[N_SERVOS];
+} latest;
+portMUX_TYPE latest_mux = portMUX_INITIALIZER_UNLOCKED;
+
+void publish_state(bool ok, const uint16_t pos[], const uint16_t spd[], const uint16_t load[]) {
+    portENTER_CRITICAL(&latest_mux);
+    latest.t_ms = millis(); latest.ok = ok;
+    memcpy(latest.pos, pos, sizeof(latest.pos)); memcpy(latest.spd, spd, sizeof(latest.spd));
+    memcpy(latest.load, load, sizeof(latest.load));
+    portEXIT_CRITICAL(&latest_mux);
+}
+
+void subscribe(const Addr& a, uint16_t rate) {
+    int free_slot = -1;
+    for (int i = 0; i < MAX_SUBS; i++) {
+        if (subs[i].rate && subs[i].a.ip == a.ip && subs[i].a.port == a.port) {
+            subs[i].rate = min<uint16_t>(rate, 100); subs[i].last_ms = millis();
+            return;
+        }
+        if (!subs[i].rate && free_slot < 0) free_slot = i;
+    }
+    if (rate && free_slot >= 0) { subs[free_slot].a = a; subs[free_slot].rate = min<uint16_t>(rate, 100);
+                                  subs[free_slot].last_ms = subs[free_slot].next_ms = millis(); }
+}
+
+void serve_stream() {                              // network task
+    uint32_t now = millis();
+    uint16_t top = 0;
+    uint8_t pkt[73]; bool built = false;
+    for (int i = 0; i < MAX_SUBS; i++) {
+        Sub& s = subs[i];
+        if (!s.rate) continue;
+        if (now - s.last_ms > 2000) { s.rate = 0; continue; }   // no SUBSCRIBE for 2 s
+        top = max(top, s.rate);
+        if ((int32_t)(now - s.next_ms) < 0) continue;
+        s.next_ms += 1000 / s.rate;
+        if ((int32_t)(now - s.next_ms) > 0) s.next_ms = now + 1000 / s.rate;   // late: skip ahead
+        if (!built) {
+            Latest l;
+            portENTER_CRITICAL(&latest_mux); l = latest; portEXIT_CRITICAL(&latest_mux);
+            ImuSample im = imu_get();
+            pkt[0] = 0x88;
+            memcpy(pkt + 1, &now, 4); pkt[5] = state; pkt[6] = l.ok;
+            memcpy(pkt + 7, l.pos, 12); memcpy(pkt + 19, l.spd, 12); memcpy(pkt + 31, l.load, 12);
+            memcpy(pkt + 43, l.temp, 6); memcpy(pkt + 49, l.volt, 6); memcpy(pkt + 55, l.status, 6);
+            memcpy(pkt + 61, im.acc, 6); memcpy(pkt + 67, im.gyro, 6);
+            built = true;
+        }
+        send_to(s.a, pkt, sizeof(pkt));
+    }
+    stream_rate = top;
 }
 
 void handle_command(const uint8_t* b, int n) {
@@ -197,8 +271,8 @@ void handle_command(const uint8_t* b, int n) {
         send_to_host(m, sizeof(m));
         break;
     }
-    case 0x02: if (state != PLAYING) request = REQ_STATE; break;
-    case 0x03: if (state != PLAYING) request = REQ_HOLD; else ack(0x03, -1); break;
+    case 0x02: if (state != PLAYING && request == REQ_NONE) { req_from = cmd_from; request = REQ_STATE; } break;
+    case 0x03: if (state != PLAYING) { req_from = cmd_from; request = REQ_HOLD; } else ack(0x03, -1); break;
     case 0x04: {   // PLAN_BEGIN
         if (state == PLAYING || request == REQ_PLAY || n < 7) { ack(0x04, -1); break; }
         uint32_t cnt; uint16_t rate; memcpy(&cnt, b + 1, 4); memcpy(&rate, b + 5, 2);
@@ -233,6 +307,7 @@ void handle_command(const uint8_t* b, int n) {
         if (!plan_valid || state == PLAYING || n < 9) { ack(0x07, -1); break; }
         memcpy(&play_params, b + 1, 8);
         stop_requested = false;
+        req_from = play_to = cmd_from;
         request = REQ_PLAY;
         break;
     }
@@ -245,9 +320,13 @@ void handle_command(const uint8_t* b, int n) {
         memcpy(&play_params, b + 1, 8);
         signal_params = p;
         stop_requested = false;
+        req_from = play_to = cmd_from;
         request = REQ_SIGNAL;
         break;
     }
+    case 0x0C:     // SUBSCRIBE u16 rate_hz (0 = stop); renew at least once a second
+        if (n >= 3) { uint16_t rate; memcpy(&rate, b + 1, 2); subscribe(cmd_from, rate); }
+        break;
     case 0x09:     // REG_READ
     case 0x0A: {   // REG_WRITE
         bool rd = b[0] == 0x09;
@@ -261,6 +340,7 @@ void handle_command(const uint8_t* b, int n) {
             break;
         }
         memcpy(reg_req, b, rd ? 4 : n);
+        req_from = cmd_from;
         request = REQ_REG;
         break;
     }
@@ -297,13 +377,14 @@ void net_task(void*) {
 
         int n = cmd_udp.parsePacket();
         if (n > 0) {
-            host_ip = cmd_udp.remoteIP(); have_host = true;
+            cmd_from.ip = (uint32_t)cmd_udp.remoteIP(); cmd_from.port = cmd_udp.remotePort();
             n = cmd_udp.read(buf, sizeof(buf));
             if (n > 0) handle_command(buf, n);
         }
 
         OutMsg om;
-        while (xQueueReceive(outbox, &om, 0) == pdTRUE) send_to_host(om.data, om.len);
+        while (xQueueReceive(outbox, &om, 0) == pdTRUE) send_to(om.to, om.data, om.len);
+        serve_stream();
 
         static uint32_t last_led = 0;
         if (millis() - last_led >= 100) { last_led = millis(); update_led(); }
@@ -319,10 +400,10 @@ void net_task(void*) {
             for (int i = 0; i < cnt; i++) memcpy(pkt + 6 + i * sizeof(Sample), &ring[(ring_tail + i) % RING], sizeof(Sample));
             __sync_synchronize();
             ring_tail += cnt;
-            send_to_host(pkt, 6 + cnt * sizeof(Sample));
+            send_to(play_to, pkt, 6 + cnt * sizeof(Sample));
         }
         if (done_pending && ring_tail == ring_head) {
-            send_to_host(&done_msg, sizeof(done_msg));
+            send_to(play_to, &done_msg, sizeof(done_msg));
             done_pending = false;
         }
 
@@ -426,6 +507,7 @@ void play(bool use_signal = false) {
         }
         sync_write_u16(REG_GOAL_POSITION, cmd);
         bool ok = read_state(pos, spd, load);
+        if (stream_rate) publish_state(ok, pos, spd, load);
 
         Sample& s = ring[ring_head % RING];
         if (ring_head - ring_tail >= RING) { telem_dropped++; }
@@ -499,10 +581,36 @@ void setup() {
     state = read_state(p, s, l) ? HOLDING : ERROR_STATE;
 }
 
+// While idle and someone subscribes: read the state at the stream rate (≤ 100 Hz), and the
+// temperatures, voltages and status once a second. During PLAY the control loop publishes instead.
+void idle_stream_reads() {
+    static uint32_t next_state = 0, next_slow = 0;
+    uint16_t rate = stream_rate;
+    if (!rate || state == PLAYING || state == OTA) return;
+    uint32_t now = millis();
+    if ((int32_t)(now - next_state) >= 0) {
+        next_state = now + 1000 / rate;
+        uint16_t pos[N_SERVOS] = {0}, spd[N_SERVOS] = {0}, load[N_SERVOS] = {0};
+        bool ok = read_state(pos, spd, load);
+        publish_state(ok, pos, spd, load);
+    }
+    if ((int32_t)(now - next_slow) >= 0) {
+        next_slow = now + 1000;
+        uint8_t d[N_SERVOS][16], st[N_SERVOS][16];
+        uint8_t m1 = sync_read(62, 2, d), m2 = sync_read(65, 1, st);
+        portENTER_CRITICAL(&latest_mux);
+        for (int j = 0; j < N_SERVOS; j++) {
+            if (m1 & (1 << j)) { latest.volt[j] = d[j][0]; latest.temp[j] = d[j][1]; }
+            if (m2 & (1 << j)) latest.status[j] = st[j][0];
+        }
+        portEXIT_CRITICAL(&latest_mux);
+    }
+}
+
 void loop() {
     static bool btn_prev = false;
     bool btn = digitalRead(BTN_PIN) == LOW;
-    if (btn && !btn_prev && state != PLAYING) request = REQ_HOLD;   // acknowledge / clear error
+    if (btn && !btn_prev && state != PLAYING) { req_from = Addr(); request = REQ_HOLD; }   // acknowledge / clear error
     btn_prev = btn;
 
     Request r = request;
@@ -515,7 +623,7 @@ void loop() {
             memcpy(m + 2, pos, 12); memcpy(m + 14, spd, 12); memcpy(m + 26, load, 12);
             ImuSample im = imu_get();
             memcpy(m + 38, im.acc, 6); memcpy(m + 44, im.gyro, 6);
-            post(m, sizeof(m));
+            post(m, sizeof(m), req_from);
         } else if (r == REQ_HOLD) {
             bool ok = hold_pose();
             state = ok ? (plan_valid ? READY : HOLDING) : ERROR_STATE;
@@ -529,14 +637,15 @@ void loop() {
             if (reg_req[0] == 0x09) {
                 uint8_t m[5 + 32] = {0x86, id, addr, len, 0};
                 if (!reg_read(id, addr, len, m + 5)) m[4] = (uint8_t)-4;
-                post(m, m[4] == 0 ? 5 + len : 5);
+                post(m, m[4] == 0 ? 5 + len : 5, req_from);
             } else {
                 int err = reg_write(id, addr, reg_req + 4, len);
                 uint8_t back[32];
                 int8_t status = err < 0 ? -4 : (!reg_read(id, addr, len, back) || memcmp(back, reg_req + 4, len)) ? -6 : 0;
                 uint8_t m[5] = {0x87, id, addr, (uint8_t)status, (uint8_t)(err < 0 ? 0 : err)};
-                post(m, sizeof(m));
+                post(m, sizeof(m), req_from);
             }
         }
     }
+    idle_stream_reads();
 }
