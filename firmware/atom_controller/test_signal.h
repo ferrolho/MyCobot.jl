@@ -5,8 +5,9 @@
 // Timeline (seconds):  move start→base (MOVE_S, minimum jerk) | hold (HOLD_S) | signal on one
 // joint (duration) | hold (HOLD_S) | move base→start (MOVE_S). Angles in degrees.
 //
-// chirp: logarithmic sweep f0→f1 over duration−2 s (1 s rest at each end, 0.5 s fade in/out),
-//        amplitude min(amp, vmax/(2πf), amax/(2πf)²).
+// chirp: logarithmic sweep f0→f1 over duration−2 s (1 s rest at each end), amplitude
+//        ≈ min(amp, vmax/(2πf), amax/(2πf)²) (smooth minimum), with a smooth fade in/out of
+//        max(0.5 s, 3.75·amp/vmax).
 // steps: levels 0, +amp, 0, −amp, 0, +amp, −amp, 0, each duration/8, ramps at vmax.
 #pragma once
 #include <math.h>
@@ -78,10 +79,14 @@ inline float signal(const Params& p, float t) {
         const float f = p.f0_hz * e;
         const float phase = 2 * (float)M_PI * p.f0_hz * (e - 1) / k;
         const float w2 = 2 * (float)M_PI * f;
-        float a = p.amp_deg;
-        a = fminf(a, p.vmax_dps / w2);
-        a = fminf(a, p.amax_dps2 / (w2 * w2));
-        float fade = fminf(1.0f, fminf(tau / 0.5f, (Tc - tau) / 0.5f));
+        // Smooth minimum of the three amplitude limits ((Σ x⁻⁸)^(−1/8) ≤ min, at most 8 % lower
+        // where two limits cross). A hard min() has corners that step the speed (~1.6°/s on J1).
+        const float r1 = p.amp_deg, r2 = p.vmax_dps / w2, r3 = p.amax_dps2 / (w2 * w2);
+        float a = powf(powf(r1, -8.0f) + powf(r2, -8.0f) + powf(r3, -8.0f), -0.125f);
+        // Smooth fade in/out (minimum jerk), long enough that the fade alone uses at most half
+        // of vmax: amp · 1.875 / tf ≤ vmax / 2. (A linear fade made speed steps of ~2·a·sin φ.)
+        const float tf = fmaxf(0.5f, 3.75f * p.amp_deg / p.vmax_dps);
+        float fade = fminf(minjerk(tau / tf), minjerk((Tc - tau) / tf));
         return fade * a * sinf(phase);
     }
     // steps

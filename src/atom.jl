@@ -214,6 +214,7 @@ Returns `(samples, done)`: raw telemetry samples and the result summary.
 function atom_play(link::AtomLink; rate::Integer=500, speed_cap::Integer=2000,
                    max_tracking_error::Real=20.0, start_tolerance::Real=3.0, timeout::Real=120.0,
                    signal::Union{Nothing,SignalParams}=nothing)
+    sz = atom_ping(link).version >= v"4.0.0" ? 77 : 53   # telemetry sample size
     drain!(link)
     kind = signal === nothing ? 0x07 : 0x0B
     msg = vcat(kind, le(UInt16(rate)), le(UInt16(speed_cap)),
@@ -234,7 +235,7 @@ function atom_play(link::AtomLink; rate::Integer=500, speed_cap::Integer=2000,
         elseif m[1] == 0x84
             seq, cnt = rd(UInt32, m, 2), m[6]
             for k in 0:cnt-1
-                samples[seq+k] = m[7+53k:7+53k+52]
+                samples[seq+k] = m[7+sz*k:6+sz*(k+1)]
             end
         elseif m[1] == 0x85
             done = (result=PLAY_RESULTS[m[2]+1], cycles=Int(rd(UInt32, m, 3)), max_period_ms=rd(UInt32, m, 7) / 1000,
@@ -264,64 +265,52 @@ function atom_play_trajectory(link::AtomLink, t_plan::AbstractVector, q_plan::Ab
     check_plan(t_plan, q_cmd, mechanism; max_joint_speed=max_joint_speed)
     atom_upload_plan(link, t_plan, q_plan, q_cmd; rate=plan_rate, cubic=cubic)
     samples, done = atom_play(link; rate=rate, kwargs...)
-    return decode_telemetry(samples, t -> sample_trajectory(t_plan, q_plan, t), t -> sample_trajectory(t_plan, q_cmd, t)), done
+    return decode_telemetry(samples; ref=t -> sample_trajectory(t_plan, q_plan, t), cmd=t -> sample_trajectory(t_plan, q_cmd, t)), done
 end
 
-"Telemetry samples to recording rows (`RECORDING_HEADER` + `IMU_HEADER`), with the reference and command from `ref(t)` and `cmd(t)`."
-function decode_telemetry(samples, ref, cmd)
+"""
+    decode_telemetry(samples; ref=nothing, cmd=nothing)
+
+Telemetry samples to recording rows (`RECORDING_HEADER` + `IMU_HEADER`). Firmware 4.0+ sends
+the command and reference it used (77-byte samples); for older firmware (53 bytes) they come
+from the functions `ref(t)` and `cmd(t)`.
+"""
+function decode_telemetry(samples; ref=nothing, cmd=nothing)
     rows = Vector{Vector{Float64}}()
     for b in samples
+        v4 = length(b) == 77
+        o = v4 ? 24 : 0                                   # cmd and ref come first in 4.0+
         t = rd(UInt32, b, 1) / 1e6
-        raw(k, j) = rd(UInt16, b, 5 + 12k + 2(j - 1))
-        ok = b[53] == 1
+        raw(k, j) = rd(UInt16, b, 5 + o + 12k + 2(j - 1))
+        ok = b[end] == 1
         q = ok ? [position_to_angle(j, raw(0, j)) for j in 1:6] : fill(NaN, 6)
         dq = ok ? [JOINT_SIGN[j] * decode_signed15(raw(1, j)) / STEPS_PER_DEG for j in 1:6] : fill(NaN, 6)
         load = ok ? [JOINT_SIGN[j] * decode_load(raw(2, j)) for j in 1:6] : fill(NaN, 6)
-        imu = decode_imu([rd(Int16, b, 41 + 2k) for k in 0:2], [rd(Int16, b, 47 + 2k) for k in 0:2])
-        push!(rows, vcat(t, ref(t), cmd(t), q, dq, load, imu))
+        imu = decode_imu([rd(Int16, b, 41 + o + 2k) for k in 0:2], [rd(Int16, b, 47 + o + 2k) for k in 0:2])
+        if v4
+            c = [position_to_angle(j, rd(UInt16, b, 5 + 2(j - 1))) for j in 1:6]
+            r = [position_to_angle(j, rd(UInt16, b, 17 + 2(j - 1))) for j in 1:6]
+        else
+            c, r = cmd(t), ref(t)
+        end
+        push!(rows, vcat(t, r, c, q, dq, load, imu))
     end
     return isempty(rows) ? zeros(0, length(RECORDING_HEADER) + 6) : reduce(vcat, permutedims.(rows))
-end
-
-"The firmware's acceleration limits for test signals (°/s², `AMAX_DPS2` in test_signal.h)."
-const SIGNAL_AMAX = [400.0, 400, 400, 2000, 2000, 2000]
-
-"`p` with the acceleration limit the firmware uses (`amax` capped at `SIGNAL_AMAX`)."
-firmware_signal(p::SignalParams) = SignalParams(p.joint, p.kind; amp=p.amp, f0=p.f0, f1=p.f1, duration=p.duration,
-                                                vmax=p.vmax, amax=min(p.amax, SIGNAL_AMAX[p.joint]), base=p.base)
-
-function pack_signal(p::SignalParams)
-    buf = IOBuffer()
-    write(buf, UInt8(p.joint), UInt8(SIGNAL_KINDS[p.kind]))
-    for x in (p.amp, p.f0, p.f1, p.duration, p.vmax, min(p.amax, SIGNAL_AMAX[p.joint]))
-        write(buf, htol(Float32(x)))
-    end
-    for b in p.base
-        write(buf, htol(Int16(round(Int, 100b))))
-    end
-    return take!(buf)
 end
 
 """
     atom_play_signal(link, p::SignalParams; rate=500, max_tracking_error=20, kwargs...) -> (recording, done)
 
-MOVES THE ROBOT. The ATOM computes the test signal `p` onboard (firmware 3.1+): it moves from
-the current pose to `p.base`, runs the signal on `p.joint`, and moves back. Nothing is uploaded,
-so there is no limit on the duration from the ATOM's memory. The recording has the same columns
-as `atom_play_trajectory`; the reference and command columns are computed here from `p` and
-the start pose.
+MOVES THE ROBOT. The ATOM computes the test signal `p` onboard (firmware 4.0+): it checks it,
+moves from the current pose to `p.base`, runs the signal on `p.joint`, and moves back. Nothing is
+uploaded, so the ATOM's memory does not limit the duration. The recording has the same columns
+as `atom_play_trajectory`, with the reference and command reported by the ATOM.
 """
-function atom_play_signal(link::AtomLink, p::SignalParams; mechanism=load_mechanism(), kwargs...)
+function atom_play_signal(link::AtomLink, p::SignalParams; timeout::Real=signal_total(p) + 30, kwargs...)
     v = atom_ping(link).version
-    v >= v"3.1.0" || error("PLAY_SIGNAL needs controller firmware 3.1 or later (the ATOM has $v)")
-    p = firmware_signal(p)
-    start = atom_state(link).q
-    t, q = signal_plan(p, start)
-    lo, hi = joint_limits_deg(mechanism)
-    all(lo' .+ 10 .< q .< hi' .- 10) || throw(ArgumentError("the test comes within 10° of a joint limit"))
-    samples, done = atom_play(link; signal=p, kwargs...)
-    ref(ti) = signal_pose(p, start, ti)
-    return decode_telemetry(samples, ref, ref), done
+    v >= v"4.0.0" || error("PLAY_SIGNAL with reference telemetry needs controller firmware 4.0 or later (the ATOM has $v)")
+    samples, done = atom_play(link; signal=p, timeout=timeout, kwargs...)
+    return decode_telemetry(samples), done
 end
 
 "Write an ATOM recording (`RECORDING_HEADER` + `IMU_HEADER` columns)."

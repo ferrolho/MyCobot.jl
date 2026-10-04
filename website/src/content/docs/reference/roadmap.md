@@ -30,6 +30,10 @@ description: Open work, grouped by topic. Done items move to the results and his
 - [ ] Live MeshCat view from the telemetry.
 - [ ] Connect [TORA.jl](/mycobot-280-lab/software/tora/) to the players.
 
+## State estimation
+
+- [ ] **Better joint velocity estimates.** The servo speed register moves in steps of 50 steps/s (≈ 4.4°/s), and differentiating the position at 500 Hz turns one count (0.088°) into ~44°/s of noise. Estimate the velocity with a filter (e.g. a Kalman filter) that combines position, servo speed, the command and the servo model (`src/servo_model.jl`), and the IMU gyro for the wrist joints. Needed for MPC and learning.
+
 ## Beyond position control
 
 - [ ] PWM mode (mode 2) on J1 (no gravity load), with a watchdog. It is the closest mode to torque control.

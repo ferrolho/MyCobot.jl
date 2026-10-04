@@ -85,4 +85,4 @@ end
 
 include("test_kinematics.jl")
 include("test_feetech.jl")
-include("test_signals.jl")
+include("test_firmware.jl")

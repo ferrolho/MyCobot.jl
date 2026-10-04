@@ -16,16 +16,17 @@ WiFi with UDP. All values are little-endian.
 
 | Code | Message | Content | Reply |
 | --- | --- | --- | --- |
-| `0x01` | PING | — | `0x81` PONG: u16 version, u8 state, u32 plan samples, u16 plan rate, u8 IMU ok, u8 gains ok (v3+) |
+| `0x01` | PING | — | `0x81` PONG: u16 version, u8 state, u32 plan samples, u16 plan rate, u8 IMU ok, u8 gains ok (3.0+), u8 minor, u8 patch (3.1+) |
 | `0x02` | STATE | — | `0x82` STATE: u8 ok, u16 position[6], u16 speed[6], u16 load[6], i16 acc[3], i16 gyro[3] |
 | `0x03` | HOLD | — | `0x83` ACK |
-| `0x04` | PLAN_BEGIN | u32 samples, u16 rate (Hz) | ACK (`-3` = not enough memory) |
+| `0x04` | PLAN_BEGIN | u32 samples, u16 rate (Hz), optional u8 interpolation (0 linear, 1 cubic; 3.1+) | ACK (`-3` = not enough memory) |
 | `0x05` | PLAN_DATA | u32 offset, u16 count, count × {u16 cmd[6], u16 ref[6]} | ACK with the offset |
 | `0x06` | PLAN_END | u32 CRC-32C of all samples | ACK (`-1` = CRC mismatch) |
 | `0x07` | PLAY | u16 rate (Hz), u16 speed cap, u16 max error (steps), u16 start tolerance (steps) | ACK, then TELEM packets, then DONE |
 | `0x08` | STOP | — | ACK |
 | `0x09` | REG_READ (v3+) | u8 servo id (1–7), u8 address, u8 length (1–32) | `0x86`: u8 id, u8 address, u8 length, i8 status, data |
 | `0x0A` | REG_WRITE (v3+) | u8 servo id, u8 address, u8 length, data | `0x87`: u8 id, u8 address, i8 status, u8 servo error |
+| `0x0B` | PLAY_SIGNAL (3.1+) | the PLAY parameters, then `sig::Params` (38 bytes: u8 joint, u8 kind, f32 amp, f0, f1, duration, vmax, amax, i16 base[6] in 0.01°) | ACK (−11…−18 invalid parameters, −29/−30 bad start pose), then TELEM and DONE |
 
 REG_READ and REG_WRITE are refused while a plan plays. The ATOM reads every write
 back. It refuses writes to registers 0–8 (ID, baud rate and other comms settings),
@@ -65,6 +66,12 @@ The values are raw register values. `src/atom.jl` converts them to degrees, °/s
 | 3 | not at the start pose |
 | 4 | bus error |
 
+## Telemetry sample (4.0+)
+
+77 bytes: `u32 t_us, u16 cmd[6], u16 ref[6], u16 pos[6], u16 speed[6], u16 load[6], i16 acc[3], i16 gyro[3], u8 ok`.
+Up to 18 samples per TELEM packet. Firmware before 4.0 sent 53-byte samples without `cmd` and `ref`;
+`decode_telemetry` reads both.
+
 ## Julia API
 
 ```julia
@@ -79,6 +86,7 @@ MyCobot.atom_read_reg(link, 1, 62, 2)       # servo 1: voltage (0.1 V), temperat
 MyCobot.atom_write_reg(link, 1, 21, [32, 4, 16])   # servo 1: P, D, I
 MyCobot.atom_gains(link)                    # (P, D, I) of the six servos
 MyCobot.atom_set_gains!(link, MyCobot.GAINS)
+rec, done = MyCobot.atom_play_signal(link, MyCobot.SignalParams(1, "chirp"; amp=10.0))   # MOVES THE ROBOT
 close(link)
 ```
 

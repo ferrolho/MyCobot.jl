@@ -20,7 +20,9 @@
 //   0x06 PLAN_END   u32 crc32c(all samples)     -> 0x83 ACK   u8 0x06, i8 status
 //   0x07 PLAY u16 rate_hz, u16 speed_cap, u16 max_err_steps, u16 start_tol_steps
 //                                               -> 0x83 ACK   u8 0x07, i8 status (0 = started)
-//        during play                            -> 0x84 TELEM u32 first_seq, u8 n, n × Sample
+//        during play                            -> 0x84 TELEM u32 first_seq, u8 n (≤ 18), n × Sample (77 bytes, 4.0+):
+//                                                  u32 t_us, u16 cmd[6], u16 ref[6], u16 pos[6], u16 spd[6],
+//                                                  u16 load[6], i16 acc[3], i16 gyro[3], u8 ok
 //        at the end                             -> 0x85 DONE  u8 result, u32 cycles, u32 max_period_us,
 //                                                             u32 late_cycles, u32 telem_dropped, u8 joint, i16 error_steps
 //   0x08 STOP                                   -> 0x83 ACK   u8 0x08, i8 status
@@ -57,8 +59,8 @@
 // Semantic version: MAJOR for protocol changes that break old clients, MINOR for added commands,
 // PATCH for fixes. PING reports MAJOR as its u16 version, then MINOR and PATCH (3.1+).
 // History: docs (firmware/changelog). FW_GIT is set by the build (git describe).
-#define FW_MAJOR 3
-#define FW_MINOR 1
+#define FW_MAJOR 4
+#define FW_MINOR 0
 #define FW_PATCH 0
 #define FW_VERSION FW_MAJOR
 #ifndef FW_GIT
@@ -98,11 +100,13 @@ uint32_t crc32c(uint32_t crc, const uint8_t* p, size_t n) {
 // ---- Telemetry ring (control loop -> network task) --------------------------------------------
 struct __attribute__((packed)) Sample {
     uint32_t t_us;
+    uint16_t cmd[N_SERVOS], ref[N_SERVOS];   // goal written and reference, as computed onboard (4.0+)
     uint16_t pos[N_SERVOS], spd[N_SERVOS], load[N_SERVOS];
     int16_t acc[3], gyro[3];
     uint8_t ok;
 };
 const int RING = 512;
+const int TELEM_BATCH = 18;   // samples per UDP packet (18 × 77 bytes + 6 ≤ 1472)
 Sample ring[RING];
 volatile uint32_t ring_head = 0, ring_tail = 0, telem_dropped = 0;
 
@@ -308,8 +312,8 @@ void net_task(void*) {
         while (ring_tail != ring_head) {
             __sync_synchronize();
             uint32_t avail = ring_head - ring_tail;
-            uint8_t cnt = min<uint32_t>(avail, 20);
-            uint8_t pkt[6 + 20 * sizeof(Sample)];
+            uint8_t cnt = min<uint32_t>(avail, TELEM_BATCH);
+            uint8_t pkt[6 + TELEM_BATCH * sizeof(Sample)];
             pkt[0] = 0x84;
             uint32_t seq = ring_tail; memcpy(pkt + 1, &seq, 4); pkt[5] = cnt;
             for (int i = 0; i < cnt; i++) memcpy(pkt + 6 + i * sizeof(Sample), &ring[(ring_tail + i) % RING], sizeof(Sample));
@@ -427,6 +431,7 @@ void play(bool use_signal = false) {
         if (ring_head - ring_tail >= RING) { telem_dropped++; }
         else {
             s.t_us = now - t0;
+            memcpy(s.cmd, cmd, sizeof(cmd)); memcpy(s.ref, ref, sizeof(ref));
             memcpy(s.pos, pos, sizeof(pos)); memcpy(s.spd, spd, sizeof(spd)); memcpy(s.load, load, sizeof(load));
             ImuSample im = imu_get();
             memcpy(s.acc, im.acc, sizeof(s.acc)); memcpy(s.gyro, im.gyro, sizeof(s.gyro));

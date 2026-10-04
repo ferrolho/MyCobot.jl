@@ -25,8 +25,9 @@ The credentials are **not** in the repository. Make the file
 
 ```bash
 FQBN="esp32:esp32:m5stack_atom:PartitionScheme=min_spiffs,UploadSpeed=115200"
+GIT=$(git describe --always --dirty)     # shown in the status log
 arduino-cli compile --fqbn "$FQBN" \
-    --build-property "compiler.cpp.extra_flags=-I$HOME/.config/mycobot" \
+    --build-property "compiler.cpp.extra_flags=-I$HOME/.config/mycobot -DFW_GIT=\"$GIT\"" \
     --output-dir build/atom_controller firmware/atom_controller
 ```
 
@@ -59,6 +60,10 @@ python3 ~/Library/Arduino15/packages/esp32/hardware/esp32/*/tools/espota.py \
 
 An update takes about 15 s. The LED matrix shows magenta. The ATOM restarts and
 holds the pose. Check the version in the status log on UDP port 5005.
+
+For a new version: update `FW_MAJOR`/`FW_MINOR`/`FW_PATCH` and the
+[changelog](/mycobot-280-lab/firmware/changelog/), commit, build, flash, and tag the
+commit `atom-controller-vX.Y.Z`.
 
 ## Read the status log
 

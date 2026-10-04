@@ -55,6 +55,7 @@ export default defineConfig({
           label: 'Firmware',
           items: [
             { label: 'Controller firmware', slug: 'firmware/controller' },
+            { label: 'Firmware changelog', slug: 'firmware/changelog' },
             { label: 'LED matrix signals', slug: 'firmware/led-signals' },
             { label: 'Bus probe firmware', slug: 'firmware/probe' },
             { label: 'Build, flash and update', slug: 'firmware/build-flash' },

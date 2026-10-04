@@ -92,6 +92,12 @@ The package supports real-time robot visualization:
 - URDF files in `mycobot_description/urdf/mycobot_280_arduino/`
 - `scripts/viewer.jl` demonstrates live visualization by polling `get_angles()` and updating the model
 
+## Where things run
+
+- The laptop is only the user's interface. **Run scripts, analysis, builds and firmware flashing on the Raspberry Pi 5** next to the robot: `ssh raspberrypi5`, repository `~/myCobot/MyCobot.jl`, Julia `~/.juliaup/bin/julia` (not on `PATH` for non-interactive SSH), Python `~/venvs/mycobot/bin/python`, `~/bin/arduino-cli`.
+- Edit in the laptop repository, `tools/sync-pi.sh push`, then `ssh raspberrypi5 'cd ~/myCobot/MyCobot.jl && git pull -q && ...'`. Recordings stay on the Pi.
+- The ATOM (controller firmware, UDP protocol: website/src/content/docs/comms/atom-link.md) is the bus master. The FT232R on the Pi is for occasional register access and debugging only.
+
 ## Documentation site (source of truth)
 
 - All prose documentation lives in `website/src/content/docs/` (Astro + Starlight). There is no `docs/` directory any more.

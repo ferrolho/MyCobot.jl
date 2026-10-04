@@ -1,7 +1,7 @@
 # One iterative-learning-control step: from a plan and the recording of playing it, write
 # the next plan with corrected commands (cmd_1..cmd_6 columns), ready for play_plan.jl.
 #
-#   julia --project=. scripts/ilc_step.jl tools/python/plans/circle.csv tools/python/recordings/<rec>.csv
+#   julia --project=. scripts/ilc_step.jl tools/python/plans/circle.csv tools/python/recordings/<rec>.csv [--gain=0.5] [--smooth=0.08]
 #
 # If the plan has no explicit commands yet, the commands of the last run are taken to be
 # the lag-shifted reference (what play_trajectory does with DEFAULT_LAG).
@@ -9,7 +9,9 @@
 import DelimitedFiles
 import MyCobot
 
-plan_path, rec_path = ARGS
+opt(name, default) = (a = findfirst(startswith("--$name="), ARGS); a === nothing ? default : parse(Float64, split(ARGS[a], "=")[2]))
+plan_path, rec_path = filter(a -> !startswith(a, "--"), ARGS)
+gain, smooth = opt("gain", 0.5), opt("smooth", 0.08)
 t, q_ref, q_cmd = MyCobot.read_plan_csv(plan_path)
 if q_cmd === nothing
     q_cmd = reduce(vcat, permutedims([MyCobot.sample_trajectory(t, q_ref, ti + MyCobot.DEFAULT_LAG[j])[j] for j in 1:6]) for ti in t)
@@ -21,7 +23,7 @@ rows = filter(i -> !isnan(data[i, col("q_1")]), 1:size(data, 1))
 t_meas = data[rows, col("t")]
 q_meas = data[rows, [col("q_$j") for j in 1:6]]
 
-q_new = MyCobot.ilc_update(t, q_ref, q_cmd, t_meas, q_meas)
+q_new = MyCobot.ilc_update(t, q_ref, q_cmd, t_meas, q_meas; gain=gain, smooth=smooth)
 MyCobot.check_plan(t, q_new, MyCobot.load_mechanism())
 
 e = [MyCobot.sample_trajectory(t_meas, q_meas, ti) for ti in t]
