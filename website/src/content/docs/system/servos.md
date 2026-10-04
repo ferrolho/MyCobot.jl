@@ -99,10 +99,31 @@ Elephant's documentation calls register 22 "I" and register 23 "D". This is wron
 [Stock protocol commands](/mycobot-280-lab/reference/stock-protocol/#problems-in-elephants-documentation).
 :::
 
-:::note[PID values depend on the firmware]
-The PID column was read on 2026-10-03 with the **stock** ATOM firmware, which writes
-10/0/1 to J3–J6 at power-up. The servos themselves store **32/8/0** on all joints, and
-with the custom firmware all six run 32/8/0 (read on 2026-10-04). An older note in the
-repository listed J4–J6 with P = 25, D = 25, I = 1. For tuned gains, see
-[Servo dynamics](/mycobot-280-lab/results/servo-dynamics/#servo-gains-pid-and-the-imu).
-:::
+The PID column was read on 2026-10-03 with the stock ATOM firmware. See the next
+section for the gains in use now.
+
+## Position-loop gains
+
+Registers 21, 22, 23 are P, D, I of the servo's position loop (Elephant's
+documentation names 22 and 23 the other way round; see
+[Stock protocol commands](/mycobot-280-lab/reference/stock-protocol/#problems-in-elephants-documentation)).
+
+| Joint | **Ours** (`MyCobot.GAINS`, written at power-up by the controller firmware v3+) | Stored in the servos | Stock ATOM firmware writes |
+| --- | --- | --- | --- |
+| J1 | **32 / 4 / 16** | 32 / 8 / 0 | 32 / 8 / 0 |
+| J2 | **32 / 4 / 16** | 32 / 8 / 0 | 32 / 8 / 0 |
+| J3 | **32 / 4 / 16** | 32 / 8 / 0 | 10 / 0 / 1 |
+| J4 | **32 / 8 / 0** | 32 / 8 / 0 | 10 / 0 / 1 |
+| J5 | **32 / 8 / 0** | 32 / 8 / 0 | 10 / 0 / 1 |
+| J6 | **32 / 8 / 0** | 32 / 8 / 0 | 10 / 0 / 1 |
+
+- **Ours** adds integral action on J1–J3. On the circle it halves the flange error
+  (5.3 → 2.6 mm) with almost the same end-effector vibration. See
+  [Servo dynamics](/mycobot-280-lab/results/servo-dynamics/#servo-gains-pid-and-the-imu).
+- **Stored**: what the servos use if nothing writes the gains (read on 2026-10-04
+  with the controller firmware v2, which did not write them).
+- **Stock**: read on 2026-10-03 with Elephant's ATOM firmware, which writes these at
+  power-up.
+- With the EEPROM lock (register 55) at 1, written gains last until the next power
+  cycle. The controller firmware writes ours again at each power-up (`gains_ok` in PING).
+- Change them for a test with `scripts/set_gains.jl ours|stored|stock --atom=IP`.

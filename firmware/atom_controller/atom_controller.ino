@@ -9,7 +9,8 @@
 // still drive the servos through the FT232 while the ATOM is idle (never at the same time).
 //
 // UDP protocol (little-endian). Laptop -> ATOM port 5006; replies go to the sender's IP, port 5007.
-//   0x01 PING                                   -> 0x81 PONG  u16 version, u8 state, u32 plan_samples, u16 plan_rate, u8 imu_ok
+//   0x01 PING                                   -> 0x81 PONG  u16 version, u8 state, u32 plan_samples, u16 plan_rate, u8 imu_ok,
+//                                                             u8 gains_ok
 //   0x02 STATE                                  -> 0x82 STATE u8 ok, u16 pos[6], u16 spd[6], u16 load[6], i16 acc[3], i16 gyro[3]
 //   0x03 HOLD                                   -> 0x83 ACK   u8 0x03, i8 status
 //   0x04 PLAN_BEGIN u32 n, u16 rate_hz          -> 0x83 ACK   u8 0x04, i8 status
@@ -22,7 +23,14 @@
 //        at the end                             -> 0x85 DONE  u8 result, u32 cycles, u32 max_period_us,
 //                                                             u32 late_cycles, u32 telem_dropped, u8 joint, i16 error_steps
 //   0x08 STOP                                   -> 0x83 ACK   u8 0x08, i8 status
+//   0x09 REG_READ  u8 id, u8 addr, u8 len       -> 0x86 REG   u8 id, u8 addr, u8 len, i8 status, data[len]
+//   0x0A REG_WRITE u8 id, u8 addr, u8 len, data -> 0x87 REGACK u8 id, u8 addr, i8 status, u8 servo_error
+//        id 1-7, len 1-32, not while playing. Status: 0 ok, -1 busy or bad request, -4 no reply,
+//        -5 write not allowed (registers 0-8, 55 and 80+: ID, baud rate, EEPROM lock, factory),
+//        -6 the read-back differs. Writes in the EEPROM area last until the next power cycle.
 // Status log (text) once a second: UDP broadcast, port 5005.
+//
+// Power-up: hold the pose, then write the position-loop gains GAINS (verified).
 //
 // LED matrix: blue = starting, green = holding, yellow = plan ready, cyan + progress = playing,
 //   red = error (press the button to clear and hold again), magenta = OTA update.
@@ -39,7 +47,7 @@
 #include "imu.h"
 #include "wifi_secrets.h"
 
-#define FW_VERSION 2
+#define FW_VERSION 3
 #define LED_PIN    27
 #define BTN_PIN    39
 #define CMD_PORT   5006
@@ -82,10 +90,29 @@ Sample ring[RING];
 volatile uint32_t ring_head = 0, ring_tail = 0, telem_dropped = 0;
 
 // ---- Requests from the network task to the control loop ---------------------------------------
-enum Request : uint8_t { REQ_NONE, REQ_STATE, REQ_HOLD, REQ_PLAY };
+enum Request : uint8_t { REQ_NONE, REQ_STATE, REQ_HOLD, REQ_PLAY, REQ_REG };
 volatile Request request = REQ_NONE;
 volatile bool stop_requested = false;
 struct PlayParams { uint16_t rate, speed_cap, max_err, start_tol; } play_params;
+uint8_t reg_req[4 + 32];   // REG_READ / REG_WRITE request, copied by the network task
+
+// ---- Servo position-loop gains (P, D, I = registers 21, 22, 23), written at power-up ----------
+// The servos store 32/8/0 (no integral action). Integral action on J1-J3 halves the tracking
+// error on the circle without more end-effector vibration; a higher P raises the vibration
+// (2026-10-04, docs: results/servo-dynamics). Keep in sync with MyCobot.GAINS.
+const uint8_t GAINS[N_SERVOS][3] = {{32, 4, 16}, {32, 4, 16}, {32, 4, 16}, {32, 8, 0}, {32, 8, 0}, {32, 8, 0}};
+volatile bool gains_ok = false;
+
+bool write_gains() {
+    bool ok = true;
+    for (int j = 0; j < N_SERVOS; j++) ok &= reg_write_verified(j + 1, 21, GAINS[j], 3);
+    return ok;
+}
+
+bool write_allowed(uint8_t addr, uint8_t len) {
+    int end = addr + len;   // exclusive
+    return addr >= 9 && end <= 80 && !(addr <= 55 && 55 < end);
+}
 
 struct __attribute__((packed)) DoneMsg {
     uint8_t type = 0x85, result;
@@ -129,11 +156,12 @@ void ack_from_control(uint8_t type, int8_t status) {               // control lo
 void handle_command(const uint8_t* b, int n) {
     switch (b[0]) {
     case 0x01: {   // PING
-        uint8_t m[11] = {0x81};
+        uint8_t m[12] = {0x81};
         uint16_t v = FW_VERSION; memcpy(m + 1, &v, 2);
         m[3] = state;
         memcpy(m + 4, &plan_n, 4); memcpy(m + 8, &plan_rate, 2);
         m[10] = imu_ok;
+        m[11] = gains_ok;
         send_to_host(m, sizeof(m));
         break;
     }
@@ -176,6 +204,22 @@ void handle_command(const uint8_t* b, int n) {
         break;
     }
     case 0x08: stop_requested = true; ack(0x08, 0); break;
+    case 0x09:     // REG_READ
+    case 0x0A: {   // REG_WRITE
+        bool rd = b[0] == 0x09;
+        bool bad = state == PLAYING || request != REQ_NONE || n < 4 || b[1] < 1 || b[1] > 7 || b[3] < 1 || b[3] > 32 ||
+                   (!rd && n != 4 + b[3]);
+        int8_t status = bad ? -1 : (!rd && !write_allowed(b[2], b[3])) ? -5 : 0;
+        if (status) {
+            uint8_t m[5] = {(uint8_t)(rd ? 0x86 : 0x87), n > 1 ? b[1] : (uint8_t)0, n > 2 ? b[2] : (uint8_t)0, 0, 0};
+            if (rd) m[4] = (uint8_t)status; else m[3] = (uint8_t)status;
+            send_to_host(m, sizeof(m));
+            break;
+        }
+        memcpy(reg_req, b, rd ? 4 : n);
+        request = REQ_REG;
+        break;
+    }
     }
 }
 
@@ -375,6 +419,7 @@ void setup() {
     // Power-up: hold the pose (torque on, goal speed 0). Retry until all servos answer.
     delay(300);
     for (int k = 0; k < 20 && !hold_pose(); k++) delay(100);
+    for (int k = 0; k < 5 && !gains_ok; k++) { gains_ok = write_gains(); if (!gains_ok) delay(100); }
     uint16_t p[N_SERVOS], s[N_SERVOS], l[N_SERVOS];
     state = read_state(p, s, l) ? HOLDING : ERROR_STATE;
 }
@@ -402,6 +447,19 @@ void loop() {
             ack_from_control(0x03, ok ? 0 : -4);
         } else if (r == REQ_PLAY) {
             play();
+        } else if (r == REQ_REG) {
+            uint8_t id = reg_req[1], addr = reg_req[2], len = reg_req[3];
+            if (reg_req[0] == 0x09) {
+                uint8_t m[5 + 32] = {0x86, id, addr, len, 0};
+                if (!reg_read(id, addr, len, m + 5)) m[4] = (uint8_t)-4;
+                post(m, m[4] == 0 ? 5 + len : 5);
+            } else {
+                int err = reg_write(id, addr, reg_req + 4, len);
+                uint8_t back[32];
+                int8_t status = err < 0 ? -4 : (!reg_read(id, addr, len, back) || memcmp(back, reg_req + 4, len)) ? -6 : 0;
+                uint8_t m[5] = {0x87, id, addr, (uint8_t)status, (uint8_t)(err < 0 ? 0 : err)};
+                post(m, sizeof(m));
+            }
         }
     }
 }

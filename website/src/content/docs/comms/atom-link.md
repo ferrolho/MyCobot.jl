@@ -16,7 +16,7 @@ WiFi with UDP. All values are little-endian.
 
 | Code | Message | Content | Reply |
 | --- | --- | --- | --- |
-| `0x01` | PING | — | `0x81` PONG: u16 version, u8 state, u32 plan samples, u16 plan rate, u8 IMU ok |
+| `0x01` | PING | — | `0x81` PONG: u16 version, u8 state, u32 plan samples, u16 plan rate, u8 IMU ok, u8 gains ok (v3+) |
 | `0x02` | STATE | — | `0x82` STATE: u8 ok, u16 position[6], u16 speed[6], u16 load[6], i16 acc[3], i16 gyro[3] |
 | `0x03` | HOLD | — | `0x83` ACK |
 | `0x04` | PLAN_BEGIN | u32 samples, u16 rate (Hz) | ACK (`-3` = not enough memory) |
@@ -24,6 +24,14 @@ WiFi with UDP. All values are little-endian.
 | `0x06` | PLAN_END | u32 CRC-32C of all samples | ACK (`-1` = CRC mismatch) |
 | `0x07` | PLAY | u16 rate (Hz), u16 speed cap, u16 max error (steps), u16 start tolerance (steps) | ACK, then TELEM packets, then DONE |
 | `0x08` | STOP | — | ACK |
+| `0x09` | REG_READ (v3+) | u8 servo id (1–7), u8 address, u8 length (1–32) | `0x86`: u8 id, u8 address, u8 length, i8 status, data |
+| `0x0A` | REG_WRITE (v3+) | u8 servo id, u8 address, u8 length, data | `0x87`: u8 id, u8 address, i8 status, u8 servo error |
+
+REG_READ and REG_WRITE are refused while a plan plays. The ATOM reads every write
+back. It refuses writes to registers 0–8 (ID, baud rate and other comms settings),
+55 (EEPROM lock) and 80+ (factory). Status: 0 ok, −1 busy or bad request, −4 no
+reply, −5 not allowed, −6 the read-back differs. Writes to the EEPROM area last
+until the next power cycle.
 | `0x84` | TELEM | u32 first sequence number, u8 n, n × sample | — |
 | `0x85` | DONE | u8 result, u32 cycles, u32 max period (µs), u32 late cycles, u32 telemetry dropped, u8 joint, i16 error (steps) | — |
 
@@ -67,6 +75,10 @@ s = MyCobot.atom_state(link)                # q (°), dq (°/s), load (%), imu (
 MyCobot.atom_move_to(link, zeros(6))        # MOVES THE ROBOT: minimum-jerk move
 rec, done = MyCobot.atom_play_trajectory(link, t, q_plan)   # MOVES THE ROBOT
 MyCobot.write_atom_recording_csv("rec.csv", rec)
+MyCobot.atom_read_reg(link, 1, 62, 2)       # servo 1: voltage (0.1 V), temperature (°C)
+MyCobot.atom_write_reg(link, 1, 21, [32, 4, 16])   # servo 1: P, D, I
+MyCobot.atom_gains(link)                    # (P, D, I) of the six servos
+MyCobot.atom_set_gains!(link, MyCobot.GAINS)
 close(link)
 ```
 

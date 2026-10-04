@@ -67,23 +67,27 @@ function check_acceleration(t::AbstractVector, q::AbstractMatrix; amax=SERVO_AMA
 end
 
 """
-Servo position-loop gains (registers 21/22/23 = P, D, I) for each joint.
+Servo position-loop gains (registers 21/22/23 = P, D, I) per joint, as `(P, D, I)`.
 
-`DEFAULT_GAINS` is what the servos store and use with the custom ATOM firmware (the stock
-firmware wrote 10/0/1 to J3–J6 at power-up). `TUNED_GAINS` adds integral action on J1–J3:
-on the circle it halves the flange error (5.3 → 2.6 mm) with almost the same end-effector
-vibration (155 → 165 mg RMS). Higher P (≥ 48) raised the vibration up to 4× (2026-10-04).
+- `GAINS`: **our default**. The controller firmware (v3+) writes them at every power-up
+  (`GAINS` in firmware/atom_controller). Integral action on J1–J3 halves the flange error on
+  the circle (5.3 → 2.6 mm) with almost the same end-effector vibration (155 → 165 mg RMS);
+  a higher P (≥ 48) raised the vibration up to 4× (2026-10-04, docs: results/servo-dynamics).
+- `SERVO_STORED_GAINS`: what the servos store and use without a firmware that writes gains.
+- `STOCK_FIRMWARE_GAINS`: what Elephant's stock ATOM firmware writes at power-up.
 """
-const DEFAULT_GAINS = [(32, 8, 0) for _ in 1:6]
-const TUNED_GAINS = [(32, 4, 16), (32, 4, 16), (32, 4, 16), (32, 8, 0), (32, 8, 0), (32, 8, 0)]
+const GAINS = [(32, 4, 16), (32, 4, 16), (32, 4, 16), (32, 8, 0), (32, 8, 0), (32, 8, 0)]
+const SERVO_STORED_GAINS = [(32, 8, 0) for _ in 1:6]
+const STOCK_FIRMWARE_GAINS = [(32, 8, 0), (32, 8, 0), (10, 0, 1), (10, 0, 1), (10, 0, 1), (10, 0, 1)]
 
 """
-    set_servo_gains!(io, gains=TUNED_GAINS) -> gains read back
+    set_servo_gains!(io, gains=GAINS) -> gains read back
 
 Write P, D, I (registers 21–23) to every servo and read them back. With the EEPROM lock
-(register 55) at 1 the change lasts until the next power cycle.
+(register 55) at 1 the change lasts until the next power cycle. Through the FT232R; with
+the ATOM, use `atom_set_gains!`.
 """
-function set_servo_gains!(io, gains=TUNED_GAINS)
+function set_servo_gains!(io, gains=GAINS)
     for (j, (p, d, i)) in enumerate(gains)
         ft_write(io, SERVO_IDS[j], 21, UInt8[p, d, i])
     end

@@ -125,8 +125,8 @@ vibration = IMU signal above ~2.5 Hz (`tools/python/imu_vibration.py`):
   D has little effect.
 - **I gives the precision without the vibration**. I = 16 on J1–J3 halves the
   error (5.3 → 2.6 mm). I = 64 is worse again (overshoot). I on J4–J6 did not help.
-- These are `MyCobot.TUNED_GAINS`. Set them with `scripts/set_gains.jl tuned` (until
-  the next power cycle).
+- These are now **our default gains** (`MyCobot.GAINS`). The controller firmware v3
+  writes them at every power-up; see [Position-loop gains](/mycobot-280-lab/system/servos/#position-loop-gains).
 - ILC on top of the tuned gains: 2.6 → 1.4 mm after one iteration, then 1.5 and
   1.8 mm. It does not converge further with the ILC settings that were tuned for
   the default gains (they reached 1.0 mm). The lead time (`DEFAULT_LAG`) probably
@@ -143,7 +143,5 @@ the whole workspace before it can be used.
 ## Next
 
 - Calibrate the steady-state error against gravity over a grid of poses.
-- Make the controller firmware write `TUNED_GAINS` at power-up (now they are lost
-  at each power cycle).
 - Measure the lag with the tuned gains, then repeat ILC with it.
 - For repeated motions, [ILC](/mycobot-280-lab/results/ilc/) already removes most of the error (0.8 mm).

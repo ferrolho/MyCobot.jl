@@ -1,17 +1,29 @@
 # Set the servo position-loop gains (P, D, I) on all joints, until the next power cycle.
 #
-#   julia --project=. scripts/set_gains.jl tuned|default
+#   julia --project=. scripts/set_gains.jl [ours|stored|stock] [--atom=IP]
 #
-# tuned = MyCobot.TUNED_GAINS (integral action on J1–J3), default = MyCobot.DEFAULT_GAINS.
-# Does not move the robot. Don't run it while the ATOM plays a plan (one bus master at a time).
+# ours = MyCobot.GAINS (also written by the controller firmware at power-up), stored =
+# MyCobot.SERVO_STORED_GAINS, stock = MyCobot.STOCK_FIRMWARE_GAINS. With --atom=IP through the
+# ATOM (firmware ≥ 3), otherwise through the FT232R. Does not move the robot.
 
 import MyCobot
 
-which = isempty(ARGS) ? "tuned" : ARGS[1]
-gains = which == "tuned" ? MyCobot.TUNED_GAINS : which == "default" ? MyCobot.DEFAULT_GAINS : error("tuned or default")
-sp = MyCobot.open_bus()
-try
-    println("gains (P, D, I) now: ", MyCobot.set_servo_gains!(sp, gains))
-finally
-    close(sp)
+pos = filter(a -> !startswith(a, "--"), ARGS)
+which = isempty(pos) ? "ours" : pos[1]
+gains = Dict("ours" => MyCobot.GAINS, "stored" => MyCobot.SERVO_STORED_GAINS, "stock" => MyCobot.STOCK_FIRMWARE_GAINS)[which]
+atom = findfirst(startswith("--atom="), ARGS)
+if atom === nothing
+    sp = MyCobot.open_bus()
+    try
+        println("gains (P, D, I) now: ", MyCobot.set_servo_gains!(sp, gains))
+    finally
+        close(sp)
+    end
+else
+    link = MyCobot.AtomLink(split(ARGS[atom], "=")[2])
+    try
+        println("gains (P, D, I) now: ", MyCobot.atom_set_gains!(link, gains))
+    finally
+        close(link)
+    end
 end

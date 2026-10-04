@@ -79,7 +79,8 @@ end
 """
     atom_ping(link)
 
-Returns `(version, state, plan_samples, plan_rate, imu_ok)`.
+Returns `(version, state, plan_samples, plan_rate, imu_ok, gains_ok)`. `gains_ok` (firmware ≥ 3):
+the servo gains were written at power-up.
 """
 function atom_ping(link::AtomLink; timeout=1.0)
     drain!(link)
@@ -87,7 +88,7 @@ function atom_ping(link::AtomLink; timeout=1.0)
     m = receive(link, 0x81; timeout=timeout)
     m === nothing && error("the ATOM didn't answer at $(link.ip)")
     return (version=Int(rd(UInt16, m, 2)), state=ATOM_STATES[m[4]+1], plan_samples=Int(rd(UInt32, m, 5)),
-            plan_rate=Int(rd(UInt16, m, 9)), imu_ok=m[11] == 1)
+            plan_rate=Int(rd(UInt16, m, 9)), imu_ok=m[11] == 1, gains_ok=length(m) >= 12 && m[12] == 1)
 end
 
 decode_imu(acc, gyro) = vcat(acc ./ 4096, gyro ./ 16.4)
@@ -108,6 +109,58 @@ function atom_state(link::AtomLink)
     load = [JOINT_SIGN[j] * decode_load(raw(2, j)) for j in 1:6]
     imu = decode_imu([rd(Int16, m, 39 + 2k) for k in 0:2], [rd(Int16, m, 45 + 2k) for k in 0:2])
     return (ok=m[2] == 1, q=q, dq=dq, load=load, imu=imu)
+end
+
+const REG_STATUS = Dict(0 => "ok", -1 => "busy or bad request", -4 => "no reply from the servo",
+                       -5 => "write not allowed (registers 0-8, 55, 80+)", -6 => "read-back differs")
+
+"""
+    atom_read_reg(link, id, addr, len) -> Vector{UInt8}
+
+Read `len` (1–32) bytes at `addr` from servo `id` (1–7) through the ATOM (firmware ≥ 3).
+Not while a plan plays.
+"""
+function atom_read_reg(link::AtomLink, id::Integer, addr::Integer, len::Integer; retries=3)
+    for _ in 1:retries
+        drain!(link)
+        send(link, UInt8[0x09, id, addr, len])
+        m = receive(link, 0x86; timeout=0.5)
+        m === nothing && continue
+        status = reinterpret(Int8, m[5])
+        status == 0 && return m[6:5+len]
+        error("REG_READ J$id @$addr: ", get(REG_STATUS, status, string(status)))
+    end
+    error("no REG_READ reply from the ATOM")
+end
+
+"""
+    atom_write_reg(link, id, addr, data)
+
+Write `data` (1–32 bytes) at `addr` on servo `id` through the ATOM, which reads it back
+(firmware ≥ 3). Registers 0–8, 55 and 80+ are refused. Not while a plan plays.
+"""
+function atom_write_reg(link::AtomLink, id::Integer, addr::Integer, data::AbstractVector{<:Integer}; retries=3)
+    for _ in 1:retries
+        drain!(link)
+        send(link, UInt8[0x0A, id, addr, length(data), data...])
+        m = receive(link, 0x87; timeout=0.5)
+        m === nothing && continue
+        status = reinterpret(Int8, m[4])
+        status == 0 && return nothing
+        error("REG_WRITE J$id @$addr: ", get(REG_STATUS, status, string(status)))
+    end
+    error("no REG_WRITE reply from the ATOM")
+end
+
+"Read the position-loop gains (P, D, I) of the six servos through the ATOM."
+atom_gains(link::AtomLink) = [Tuple(Int.(atom_read_reg(link, j, 21, 3))) for j in 1:6]
+
+"Write gains `[(P, D, I) per joint]` through the ATOM (until the next power cycle) and read them back."
+function atom_set_gains!(link::AtomLink, gains=GAINS)
+    for (j, g) in enumerate(gains)
+        atom_write_reg(link, j, 21, collect(g))
+    end
+    return atom_gains(link)
 end
 
 "Hold the current pose (goals = present, goal speed 0)."
@@ -193,12 +246,13 @@ return `(recording, done)`. `recording` has the columns `RECORDING_HEADER` plus 
 """
 function atom_play_trajectory(link::AtomLink, t_plan::AbstractVector, q_plan::AbstractMatrix;
                               lag::AbstractVector=DEFAULT_LAG, q_cmd::Union{Nothing,AbstractMatrix}=nothing,
-                              rate::Integer=500, plan_rate::Integer=250, mechanism=load_mechanism(), kwargs...)
-    check_plan(t_plan, q_plan, mechanism)
+                              rate::Integer=500, plan_rate::Integer=250, mechanism=load_mechanism(),
+                              max_joint_speed::Real=90.0, kwargs...)
+    check_plan(t_plan, q_plan, mechanism; max_joint_speed=max_joint_speed)
     if q_cmd === nothing
         q_cmd = reduce(vcat, permutedims([sample_trajectory(t_plan, q_plan, ti + lag[j])[j] for j in 1:6]) for ti in t_plan)
     end
-    check_plan(t_plan, q_cmd, mechanism)
+    check_plan(t_plan, q_cmd, mechanism; max_joint_speed=max_joint_speed)
     atom_upload_plan(link, t_plan, q_plan, q_cmd; rate=plan_rate)
     samples, done = atom_play(link; rate=rate, kwargs...)
 

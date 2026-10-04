@@ -9,7 +9,7 @@ import CycleTiming from '../../../components/CycleTiming.astro';
 
 import AtomCoresDiagram from '../../../components/AtomCoresDiagram.astro';
 
-`firmware/atom_controller/` is the firmware that runs on the ATOM now (version 2).
+`firmware/atom_controller/` is the firmware that runs on the ATOM now (version 3).
 It plays uploaded plans at a fixed rate, records joint state and IMU data, and
 sends the telemetry to the laptop over WiFi.
 
@@ -53,7 +53,10 @@ See [LED matrix signals](/mycobot-280-lab/firmware/led-signals/).
 3. Wait 300 ms for the servos.
 4. Hold the pose: goal speed 0, then goal position = present position. Each write
    is verified. Retry for up to 2 s.
-5. Go to `HOLDING`, or to `ERROR` if a servo does not reply.
+5. Write [our position-loop gains](/mycobot-280-lab/system/servos/#position-loop-gains)
+   (`GAINS`, registers 21–23) to every servo and read them back (up to 5 tries
+   per servo, 5 rounds). PING reports the result as `gains_ok` (version 3+).
+6. Go to `HOLDING`, or to `ERROR` if a servo does not reply.
 
 The button only acknowledges: in any state except `PLAYING`, a press holds the
 current pose and clears an error. It is not an emergency stop.
@@ -91,8 +94,10 @@ period stays within 1.985–2.016 ms, with 0 late cycles.
 | The 15 s circle at 250 Hz | 3751 samples, ~90 KB |
 | Telemetry ring | 512 × 53 bytes |
 
-A plan of about 20 s at 250 Hz is the practical maximum. Use a lower plan rate
-for longer plans.
+A plan of about 20 s at 250 Hz is the practical maximum: a 25 s plan at 250 Hz
+(~150 KB) did not fit on 2026-10-04. Use a lower plan rate for longer plans.
+`scripts/sysid.jl --atom` uploads at 125 samples/s; the ATOM still interpolates
+at 500 Hz.
 
 ## IMU settings
 

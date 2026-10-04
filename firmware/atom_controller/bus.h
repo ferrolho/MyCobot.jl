@@ -142,3 +142,48 @@ bool hold_pose() {
     if (!read_state(pos, spd, load)) return false;
     return sync_write_u16_verified(REG_GOAL_POSITION, pos);
 }
+
+// READ `len` bytes at `addr` from one servo into `out`. Returns true on a valid reply.
+bool reg_read(uint8_t id, uint8_t addr, uint8_t len, uint8_t* out) {
+    if (len < 1 || len > 32) return false;
+    uint8_t params[2] = {addr, len};
+    bus_send(id, 0x02, params, 2);
+    uint8_t rx[64];
+    int want = 6 + len;
+    int got = bus_recv(rx, want, 3000);
+    for (int i = 0; i + want <= got; i++) {
+        if (rx[i] == 0xFF && rx[i + 1] == 0xFF && rx[i + 2] == id && rx[i + 3] == len + 2 &&
+            ft_checksum(rx + i + 2, 3 + len) == rx[i + 5 + len]) {
+            memcpy(out, rx + i + 5, len);
+            return true;
+        }
+    }
+    return false;
+}
+
+// WRITE `n` bytes at `addr` on one servo. Returns the servo's error byte, or -1 without a reply.
+int reg_write(uint8_t id, uint8_t addr, const uint8_t* data, uint8_t n) {
+    if (n < 1 || n > 32) return -1;
+    uint8_t params[33];
+    params[0] = addr;
+    memcpy(params + 1, data, n);
+    bus_send(id, 0x03, params, n + 1);
+    uint8_t rx[16];
+    int got = bus_recv(rx, 6, 3000);
+    for (int i = 0; i + 6 <= got; i++)
+        if (rx[i] == 0xFF && rx[i + 1] == 0xFF && rx[i + 2] == id && rx[i + 3] == 2 && ft_checksum(rx + i + 2, 3) == rx[i + 5])
+            return rx[i + 4];
+    return -1;
+}
+
+// WRITE and read back until the registers hold `data` (or `attempts` run out).
+bool reg_write_verified(uint8_t id, uint8_t addr, const uint8_t* data, uint8_t n, int attempts = 5) {
+    uint8_t back[32];
+    for (int a = 0; a < attempts; a++) {
+        reg_write(id, addr, data, n);
+        if (reg_read(id, addr, n, back) && memcmp(back, data, n) == 0) return true;
+        write_retries++;
+    }
+    return false;
+}
+
