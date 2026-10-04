@@ -2,6 +2,10 @@ module MyCobot
 
 include("serial/ProtocolCode.jl")
 include("kinematics.jl")
+include("feetech.jl")
+include("ftdi.jl")
+include("player.jl")
+include("ilc.jl")
 
 """
     run_for_duration(fn::Function, duration::Real)

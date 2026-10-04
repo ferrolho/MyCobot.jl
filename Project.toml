@@ -1,20 +1,24 @@
 name = "MyCobot"
 uuid = "d5306646-067b-4694-abf2-bb446ebd4c06"
-authors = ["Henrique Ferrolho <henrique.ferrolho@gmail.com>"]
 version = "0.1.0"
+authors = ["Henrique Ferrolho <henrique.ferrolho@gmail.com>"]
 
 [deps]
+Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 DelimitedFiles = "8bb1440f-4735-579b-a4ab-409b98df4dab"
 LibSerialPort = "a05a14c7-6e3b-5ba9-90a2-45558833e1df"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 MeshCat = "283c5d60-a78f-5afe-a0af-af636b173e11"
 MeshCatMechanisms = "6ad125db-dd91-5488-b820-c1df6aab299d"
 RigidBodyDynamics = "366cf18f-59d5-5db9-a4de-86a9f6786172"
+libusb_jll = "a877fdc9-fe69-5ed6-b93d-11ecd0dc2d49"
 
 [compat]
+Dates = "1"
 DelimitedFiles = "1"
 LibSerialPort = "0.5"
 LinearAlgebra = "1"
 MeshCat = "1"
 MeshCatMechanisms = "0.10"
 RigidBodyDynamics = "2"
+libusb_jll = "1"

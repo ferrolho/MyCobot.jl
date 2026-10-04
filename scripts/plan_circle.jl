@@ -7,7 +7,6 @@
 # Plan: zero pose -> circle start (minimum-jerk in joint space) -> LAPS laps with the
 # speed eased in and out -> back to zero. Checks joint limits, joint speeds and height.
 
-import DelimitedFiles
 import MyCobot
 import RigidBodyDynamics as RBD
 
@@ -80,9 +79,4 @@ function plan()
 end
 
 t_all, q_all = plan()
-mkpath(dirname(OUTPUT))
-open(OUTPUT, "w") do io
-    println(io, "t,q_1,q_2,q_3,q_4,q_5,q_6")
-    DelimitedFiles.writedlm(io, hcat(t_all, q_all), ',')
-end
-println("saved ", normpath(OUTPUT))
+println("saved ", normpath(MyCobot.write_plan_csv(OUTPUT, t_all, q_all)))

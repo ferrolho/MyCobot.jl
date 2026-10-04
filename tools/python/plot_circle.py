@@ -21,8 +21,9 @@ for k, path in enumerate(paths):
     plan = np.column_stack([d["plan_x"], d["plan_y"], d["plan_z"]])
     meas = np.column_stack([d["meas_x"], d["meas_y"], d["meas_z"]])
     err = np.linalg.norm(meas - plan, axis=1)
-    stamp, *_, tag = path.removesuffix("_path.csv").rsplit("/", 1)[-1].split("_")
-    label = f"{tag}, {stamp[-6:-4]}:{stamp[-4:-2]}"
+    stamp, rest = path.removesuffix("_path.csv").rsplit("/", 1)[-1].split("_", 1)
+    rms = np.sqrt(np.mean(err[np.abs(plan[:, 0] - np.median(plan[:, 0])) < 0.5] ** 2))
+    label = f"{rest.removesuffix('_jl')} ({rms:.1f} mm RMS)"
     if k == 0:
         axes[0].plot(plan[:, 1], plan[:, 2], "k--", lw=1.2, label="planned")
     axes[0].plot(meas[:, 1], meas[:, 2], lw=1.2, label=f"traced ({label})")

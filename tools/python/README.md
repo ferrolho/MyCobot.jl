@@ -26,6 +26,7 @@ The serial port is set in `mycobot_bus.py` (`/dev/tty.usbserial-B00033ZX`, 1 Mba
 | `smooth_motion_demo.py` | **yes (all joints)** | Smooth multi-joint sine trajectory from the zero pose at ~300 Hz, recorded to `recordings/*.csv` |
 | `play_trajectory.py <plan.csv> [--no-lag-comp]` | **yes (all joints)** | Streams a joint trajectory planned in Julia (e.g. `scripts/plan_circle.jl` → `plans/circle.csv`) at ~250–300 Hz with per-joint lag compensation, and records it |
 | `plot_circle.py <rec>_path.csv ...` | no | Plots planned vs traced flange paths computed by `scripts/trace_recording.jl` |
+| `analyze_servo_response.py` | no | Offline: per-joint delay + first-order response fit, friction from load, velocity estimators (writes `recordings/servo_analysis.png`) |
 | `plot_recording.py <csv>` | no | Plots a recording and prints tracking error, lag, velocity and load per joint |
 | `mycobot_bus.py` | – | Shared helpers: ATOM frames, Feetech packets, sync read |
 

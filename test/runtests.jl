@@ -82,3 +82,6 @@ end
     frame = MyCobot.prepare_frame(ProtocolCode.POWER_ON_SERVO, [0x01])  # Power on servo 1
     @test frame == [0xFE, 0xFE, 0x03, 0x57, 0x01, 0xFA]
 end
+
+include("test_kinematics.jl")
+include("test_feetech.jl")

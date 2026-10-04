@@ -114,6 +114,44 @@ Direct **writes** work too:
 
 The ~130 ms lag and the flat spots at each reversal come from the servo itself (its position loop, the 3-step dead zone, friction), not from communication. For MPC/RL, model this delay or tune the servo's PID gains (registers 21–23).
 
+### Smooth multi-joint motion (2026-10-03)
+
+All six joints followed smooth sine waves (±20–45°, 4 s period, fade in/out) from the zero pose, streamed by `tools/python/smooth_motion_demo.py` at ~300 Hz. Two runs gave nearly identical results:
+
+| Joint | RMS error | Lag |
+| --- | --- | --- |
+| J1 | 3.9° | ~120 ms |
+| J2 | 2.4° | ~113 ms |
+| J3 | 3.2° | ~120 ms |
+| J4 | 1.1° | ~54 ms |
+| J5 | 1.3° | ~38 ms |
+| J6 | 1.4° | ~28 ms |
+
+### Servo response, friction and velocity (offline analysis, 2026-10-03)
+
+`tools/python/analyze_servo_response.py` and `scripts/attribute_error.jl`, using the recordings above:
+- **Response model:** delay + first-order lag fits better than a pure delay. J1/J3 ≈ 40 ms + 80 ms, J2 ≈ 88 ms + 25 ms, J4–J6 ≈ 0–4 ms + 25–50 ms. A pure time shift (what lag compensation does) is only exact at one frequency.
+- **The circle's error spikes are J2 and J3 sticking after they reverse direction.** J2 stays flat for 0.2–0.5 s and contributes 7–9 mm at each spike, J3 another 2–5 mm. Neither the delay model nor lag compensation captures this.
+- **The load register behaves like PWM duty, not torque:** on J1 (no gravity) it's ~0.53 % per °/s (back-EMF) plus ~3 % static friction.
+- **Velocity:** the speed register (50-step quantisation) has ~3.1°/s RMS error; finite differences of position + a 10 Hz low-pass get ~2.2°/s with ~16 ms lag. The 0.088° position resolution limits every estimator.
+
+### Julia bus layer (2026-10-03)
+
+`src/feetech.jl`, `src/ftdi.jl`, `src/player.jl` port the Python tools: packets, SYNC READ/WRITE, `read_state`, `write_goals`, `enable_motion`/`disable_motion`, the FT232R latency timer (via `libusb_jll`), and `play_trajectory` with the same safety checks and recording format. On the robot, `read_state` takes 2.02 ms on average (500 reads, 0 failures), the same as Python: both are limited by the USB link, not the language. The Julia **loop** is faster: with the SYNC WRITE gap (gotcha 12) it plays the circle at **~285–300 Hz with 5.0 mm RMS**, against Python's ~240 Hz and 5.1 mm. Before that fix, running at full rate dropped goal writes in bursts and the error grew to 7–14 mm (one run aborted). `move_to` brings the arm smoothly to any pose (e.g. zero after an abort).
+
+### Iterative learning control on the circle (2026-10-04)
+
+Each run's joint error, low-pass filtered and shifted by the joint's lag, corrects the next run's commands (`src/ilc.jl`, gain 0.5). Three iterations on the robot, Julia player at ~300 Hz:
+
+| Run | Error on the circle (RMS) | Max |
+| --- | --- | --- |
+| Lag compensation only | 5.0 mm | 12.4 mm |
+| ILC iteration 1 | 2.5 mm | 6.5 mm |
+| ILC iteration 2 | 1.3 mm | 4.0 mm |
+| ILC iteration 3 | **0.8 mm** | 2.2 mm |
+
+The error halves every iteration, including the spikes where J2 and J3 stick after reversals. As before, "traced" is the forward kinematics of the measured joint angles. Unit tests reproduce packets captured from the robot byte for byte, and a simulated servo bus (`test/simulated_bus.jl`) exercises the player, including the abort path.
+
 ### Circle in mid-air (2026-10-03)
 
 A vertical 100 mm circle 170 mm in front of the base (centre 310 mm high), traced twice with the flange orientation fixed:
@@ -187,7 +225,8 @@ Register 33 sets the mode. STS servos support:
 9. **Register 55 (EEPROM lock) = 1.** As far as I know, on STS servos this means writes to the EEPROM area (including the mode, register 33) are not saved and revert at power-off. Not verified with a power cycle.
 10. The latency timer **resets on unplug and on robot power-cycle** (see Finding 1).
 11. **A power cycle resets every servo's goal position and goal speed to 0** (mode back to 0, torque on after the ATOM is pressed to green). The arm can droop while the power is off; on the first reboot, J4–J6 changed by up to 50°.
-12. **Unsupported ATOM status queries can freeze the ATOM** (see "What is the ATOM for"). Stick to the commands you know work.
+12. **A SYNC WRITE followed by another request within ~0.3 ms is lost, by every servo at once.** With no gap, 24 % of writes were dropped (measured with goal speed 0, writing ±1 step and reading the goal back); 0.17 % with a 0.3 ms gap; none at ≥ 0.5 ms. SYNC WRITE gets no reply, so nothing notices: the joints just keep their old goal, sometimes for 100+ ms. Python's `flush()` drains the port (~1 ms), which is why the Python player never hit this. The Julia layer waits 1 ms after every SYNC WRITE (`SYNC_WRITE_GAP` in `src/feetech.jl`).
+13. **Unsupported ATOM status queries can freeze the ATOM** (see "What is the ATOM for"). Stick to the commands you know work.
 
 ## Servo identification
 

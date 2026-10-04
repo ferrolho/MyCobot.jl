@@ -99,8 +99,11 @@ The package supports real-time robot visualization:
 - The Feetech STS servo bus (IDs 1–6, 1 Mbaud, `FF FF` packets) is reachable directly on the same serial port. A sync read of all servos takes ~3 ms, and a SYNC WRITE + SYNC READ loop runs at ~300 Hz. Never mix ATOM commands with a direct-bus loop.
 - Goal position uses the same units as present position (no offset). Goal speed 0 means no motion in position mode, so set a nonzero speed cap to move. Writing a goal switches torque on; writing the mode switches it off.
 - Before setting a nonzero goal speed, set every goal to the joint's present position.
+- A SYNC WRITE followed by another request within ~0.3 ms is silently dropped by all servos; `ft_sync_write` waits `SYNC_WRITE_GAP` (1 ms) afterwards. Keep that gap in any new code.
 - ATOM reply parsers must skip interleaved Feetech bytes (a checksum byte can be 0xFE).
-- Kinematics lives in `src/kinematics.jl` (RigidBodyDynamics.jl, URDF in `mycobot_description/`): `load_mechanism`, `flange_transform`, `flange_goal`, `inverse_kinematics`, `joint_limits_deg`. Don't hand-write FK/IK elsewhere. Planning is in Julia (`scripts/plan_circle.jl`); `tools/python/play_trajectory.py` only streams and records.
+- Kinematics lives in `src/kinematics.jl` (RigidBodyDynamics.jl, URDF in `mycobot_description/`): `load_mechanism`, `flange_transform`, `flange_goal`, `inverse_kinematics`, `joint_limits_deg`. Don't hand-write FK/IK elsewhere. Planning is in Julia (`scripts/plan_circle.jl`).
+- Direct servo bus in Julia: `src/feetech.jl` (packets, `read_state`, `write_goals`, `enable_motion`/`disable_motion`), `src/ftdi.jl` (`set_latency_timer`), `src/player.jl` (`play_trajectory`, plan/recording CSV I/O), `src/ilc.jl` (`ilc_update`). Scripts: `play_plan.jl` (moves the robot), `ilc_step.jl`, `trace_recording.jl`, `attribute_error.jl`. All transport goes through `transport_write`/`transport_read`/`transport_discard_input`; `test/simulated_bus.jl` implements them for tests without the robot.
+- The Python player (`tools/python/play_trajectory.py`) is the version proven on the robot; the Julia player hasn't moved the robot yet.
 
 ### Motion Modes
 The robot has two motion command queuing modes:
