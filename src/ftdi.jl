@@ -11,21 +11,50 @@ const FT232R_PID = 0x6001
 const SIO_SET_LATENCY_TIMER = 0x09
 const SIO_GET_LATENCY_TIMER = 0x0A
 const FTDI_INTERFACE_A = 0x0001
+# The robot's FT232R. The ATOM's USB chip also reports FTDI's 0403:6001, so pick by serial.
+const FT232_SERIAL = "B00033ZX"
 
-function with_ftdi_device(f; vid=FTDI_VID, pid=FT232R_PID)
+# struct libusb_device_descriptor (18 bytes)
+struct DeviceDescriptor
+    bLength::UInt8; bDescriptorType::UInt8; bcdUSB::UInt16; bDeviceClass::UInt8
+    bDeviceSubClass::UInt8; bDeviceProtocol::UInt8; bMaxPacketSize0::UInt8
+    idVendor::UInt16; idProduct::UInt16; bcdDevice::UInt16
+    iManufacturer::UInt8; iProduct::UInt8; iSerialNumber::UInt8; bNumConfigurations::UInt8
+end
+
+function with_ftdi_device(f; vid=FTDI_VID, pid=FT232R_PID, serial::AbstractString=FT232_SERIAL)
     ctx = Ref{Ptr{Cvoid}}(C_NULL)
     rc = ccall((:libusb_init, libusb_jll.libusb), Cint, (Ptr{Ptr{Cvoid}},), ctx)
     rc == 0 || error("libusb_init failed ($rc)")
+    list = Ref{Ptr{Ptr{Cvoid}}}(C_NULL)
     try
-        handle = ccall((:libusb_open_device_with_vid_pid, libusb_jll.libusb), Ptr{Cvoid},
-                       (Ptr{Cvoid}, UInt16, UInt16), ctx[], vid, pid)
-        handle == C_NULL && error("FTDI device $(string(vid, base=16)):$(string(pid, base=16)) not found or not accessible")
-        try
-            return f(handle)
-        finally
-            ccall((:libusb_close, libusb_jll.libusb), Cvoid, (Ptr{Cvoid},), handle)
+        n = ccall((:libusb_get_device_list, libusb_jll.libusb), Cssize_t, (Ptr{Cvoid}, Ptr{Ptr{Ptr{Cvoid}}}), ctx[], list)
+        n < 0 && error("libusb_get_device_list failed ($n)")
+        found = String[]
+        for i in 1:n
+            dev = unsafe_load(list[], i)
+            desc = Ref{DeviceDescriptor}()
+            ccall((:libusb_get_device_descriptor, libusb_jll.libusb), Cint, (Ptr{Cvoid}, Ref{DeviceDescriptor}), dev, desc) == 0 || continue
+            (desc[].idVendor == vid && desc[].idProduct == pid) || continue
+            handle = Ref{Ptr{Cvoid}}(C_NULL)
+            ccall((:libusb_open, libusb_jll.libusb), Cint, (Ptr{Cvoid}, Ref{Ptr{Cvoid}}), dev, handle) == 0 || continue
+            buf = zeros(UInt8, 64)
+            len = ccall((:libusb_get_string_descriptor_ascii, libusb_jll.libusb), Cint, (Ptr{Cvoid}, UInt8, Ptr{UInt8}, Cint),
+                        handle[], desc[].iSerialNumber, buf, length(buf))
+            sn = len > 0 ? String(buf[1:len]) : ""
+            push!(found, sn)
+            if sn == serial
+                try
+                    return f(handle[])
+                finally
+                    ccall((:libusb_close, libusb_jll.libusb), Cvoid, (Ptr{Cvoid},), handle[])
+                end
+            end
+            ccall((:libusb_close, libusb_jll.libusb), Cvoid, (Ptr{Cvoid},), handle[])
         end
+        error("FTDI device with serial $serial not found (found: $(isempty(found) ? "none" : join(found, ", ")))")
     finally
+        list[] == C_NULL || ccall((:libusb_free_device_list, libusb_jll.libusb), Cvoid, (Ptr{Ptr{Cvoid}}, Cint), list[], 1)
         ccall((:libusb_exit, libusb_jll.libusb), Cvoid, (Ptr{Cvoid},), ctx[])
     end
 end
@@ -37,12 +66,12 @@ function control_transfer(handle, request_type, request, value, index, buffer::V
 end
 
 """
-    get_latency_timer()
+    get_latency_timer(; serial=FT232_SERIAL)
 
 Read the FT232R latency timer in milliseconds.
 """
-function get_latency_timer()
-    with_ftdi_device() do handle
+function get_latency_timer(; serial::AbstractString=FT232_SERIAL)
+    with_ftdi_device(; serial=serial) do handle
         buf = zeros(UInt8, 1)
         rc = control_transfer(handle, 0xC0, SIO_GET_LATENCY_TIMER, 0, FTDI_INTERFACE_A, buf)
         rc == 1 || error("reading the latency timer failed ($rc)")
@@ -51,15 +80,15 @@ function get_latency_timer()
 end
 
 """
-    set_latency_timer(ms=1)
+    set_latency_timer(ms=1; serial=FT232_SERIAL)
 
 Set the FT232R latency timer (1–255 ms). Use 1 ms for fast replies.
 """
-function set_latency_timer(ms::Integer=1)
+function set_latency_timer(ms::Integer=1; serial::AbstractString=FT232_SERIAL)
     1 <= ms <= 255 || throw(ArgumentError("latency must be 1–255 ms"))
-    with_ftdi_device() do handle
+    with_ftdi_device(; serial=serial) do handle
         rc = control_transfer(handle, 0x40, SIO_SET_LATENCY_TIMER, ms, FTDI_INTERFACE_A, UInt8[])
         rc == 0 || error("setting the latency timer failed ($rc)")
     end
-    return get_latency_timer()
+    return get_latency_timer(; serial=serial)
 end

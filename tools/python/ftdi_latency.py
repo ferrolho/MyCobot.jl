@@ -21,6 +21,7 @@ import usb.backend.libusb1
 import usb.core
 
 FTDI_VID, FT232R_PID = 0x0403, 0x6001
+FT232_SERIAL = "B00033ZX"   # the ATOM's USB chip also reports 0403:6001, so pick by serial
 SIO_SET_LATENCY_TIMER, SIO_GET_LATENCY_TIMER = 0x09, 0x0A
 INTERFACE_A = 1
 
@@ -28,9 +29,9 @@ INTERFACE_A = 1
 def find_device():
     backend = usb.backend.libusb1.get_backend(
         find_library=lambda _: "/opt/homebrew/lib/libusb-1.0.dylib")
-    dev = usb.core.find(idVendor=FTDI_VID, idProduct=FT232R_PID, backend=backend)
+    dev = usb.core.find(idVendor=FTDI_VID, idProduct=FT232R_PID, serial_number=FT232_SERIAL, backend=backend)
     if dev is None:
-        raise SystemExit("FT232R not found")
+        raise SystemExit(f"FT232R with serial {FT232_SERIAL} not found")
     return dev
 
 

@@ -39,7 +39,11 @@ What was observed:
 - The laptop's own packets are **not echoed back**. So the laptop isn't wired straight onto the half-duplex bus; something (presumably the base board) sits in between and passes bytes through.
 - With no commands being sent, the bus is idle. The ATOM doesn't poll the servos in the background.
 
-Not yet verified: exactly how the base board connects to the bus, and whether it forwards bytes one at a time or whole packets. A multimeter or logic analyzer would settle this, but it isn't needed to use the bus.
+**Confirmed 2026-10-04: the base bridges the bus, not the ATOM.** With the ATOM removed from the arm, all six servos still answer PINGs and SYNC READs through the FT232 on base pins 13/14/GND. Without the ATOM, every servo boots with **torque off** (the ATOM normally enables it at power-up); writing goal = present position turns it on and holds the joint. So a microcontroller wired to the base pins (or the base's 4-pin `TRVG` port, if it carries the same serial line; not yet checked) can drive the servos with no ATOM at all.
+
+Still unknown: what's inside the base (MCU or plain level shifting), and whether it forwards bytes one at a time or whole packets.
+
+**The ATOM's bus pins are G19 (RX) and G22 (TX)**, verified with custom probe firmware (see `firmware/README.md`). The ATOM sees all bus traffic, its replies reach the base, and it doesn't hear its own transmissions. It is an ESP32-PICO-D4 with WiFi and Bluetooth, so it can run the servo loop itself and talk to the laptop over WiFi.
 
 > The Nov 2025 plan in `pymycobot/notebooks/find_servo_bus.md` (probe base pins 0/1 to find the servo bus) is superseded. The bus is already reachable on the existing connection.
 
