@@ -39,15 +39,17 @@
 #define IMU_SDA   25   // MPU6886
 #define IMU_SCL   21
 
-#define PROBE_VERSION 2
+#define PROBE_VERSION 3
 #define BUS_BAUD  1000000
 #define OUR_ID    7
 #define LOG_PORT  5005
+#define CMD_PORT  5006   // UDP commands: "bench"
 #define MPU_ADDR  0x68
 
 HardwareSerial Bus(1);
 Adafruit_NeoPixel matrix(25, LED_PIN, NEO_GRB + NEO_KHZ800);
 WiFiUDP udp;
+WiFiUDP cmd_udp;
 
 // ---- Counters (also readable over the bus as ID 7, READ addr 0) -----------------------
 struct __attribute__((packed)) Counters {
@@ -161,6 +163,116 @@ void show_status() {
     matrix.show();
 }
 
+// ---- Bus benchmark (triggered by UDP "bench") -------------------------------------------
+// Never moves anything: goal speed is set to 0 on all servos first (and checked), so new
+// goals are accepted but not followed. Writing goals turns torque on (the arm stiffens).
+
+void broadcast(const char* line) {
+    Serial.println(line);
+    if (WiFi.status() != WL_CONNECTED) return;
+    udp.beginPacket(IPAddress(255, 255, 255, 255), LOG_PORT);
+    udp.write(reinterpret_cast<const uint8_t*>(line), strlen(line));
+    udp.endPacket();
+}
+
+void bus_send(uint8_t id, uint8_t instr, const uint8_t* params, int n) {
+    uint8_t pkt[64];
+    pkt[0] = 0xFF; pkt[1] = 0xFF; pkt[2] = id; pkt[3] = n + 2; pkt[4] = instr;
+    memcpy(pkt + 5, params, n);
+    pkt[5 + n] = checksum(pkt + 2, 3 + n);
+    while (Bus.available()) Bus.read();     // discard stale bytes
+    Bus.write(pkt, 6 + n);
+    Bus.flush();                            // returns once the last byte is on the wire
+}
+
+// Read exactly n bytes or give up after timeout_us; returns bytes read
+int bus_recv(uint8_t* out, int n, uint32_t timeout_us) {
+    int got = 0;
+    uint32_t t0 = micros();
+    while (got < n && micros() - t0 < timeout_us) {
+        int a = Bus.available();
+        if (a > 0) got += Bus.read(out + got, min(a, n - got));
+    }
+    return got;
+}
+
+// SYNC READ `len` bytes at `addr` from servos 1..6; fills data[id-1][0..len); returns servos that replied
+int sync_read(uint8_t addr, uint8_t len, uint8_t data[6][16]) {
+    uint8_t params[8] = {addr, len, 1, 2, 3, 4, 5, 6};
+    bus_send(0xFE, 0x82, params, 8);
+    uint8_t rx[6 * 22];
+    int want = 6 * (6 + len);
+    int got = bus_recv(rx, want, 3000);
+    int ok = 0;
+    for (int i = 0; i + 6 + len <= got; ) {
+        if (rx[i] == 0xFF && rx[i + 1] == 0xFF && rx[i + 3] == len + 2) {
+            uint8_t id = rx[i + 2];
+            if (id >= 1 && id <= 6 && checksum(rx + i + 2, 3 + len) == rx[i + 5 + len]) {
+                memcpy(data[id - 1], rx + i + 5, len); ok++;
+            }
+            i += 6 + len;
+        } else i++;
+    }
+    return ok;
+}
+
+void sync_write_u16(uint8_t addr, const uint16_t v[6]) {
+    uint8_t params[2 + 6 * 3] = {addr, 2};
+    for (int j = 0; j < 6; j++) { params[2 + 3 * j] = j + 1; params[3 + 3 * j] = v[j] & 0xFF; params[4 + 3 * j] = v[j] >> 8; }
+    bus_send(0xFE, 0x83, params, sizeof(params));
+}
+
+void run_bench() {
+    char line[300];
+    uint8_t d[6][16];
+    broadcast("bench: start");
+
+    // Safety: goal speed 0 everywhere, and verify
+    uint16_t zero[6] = {0, 0, 0, 0, 0, 0};
+    sync_write_u16(46, zero); delay(5);
+    if (sync_read(46, 2, d) != 6) { broadcast("bench: ABORT, not all servos replied"); return; }
+    for (int j = 0; j < 6; j++) if (d[j][0] | d[j][1]) { broadcast("bench: ABORT, goal speed not 0"); return; }
+
+    // 1) state reads (6 bytes: position, speed, load)
+    const int N = 2000;
+    int fails = 0; uint32_t tmin = 1e9, tmax = 0, t_all = micros();
+    for (int k = 0; k < N; k++) {
+        uint32_t t = micros();
+        if (sync_read(56, 6, d) != 6) fails++;
+        t = micros() - t; tmin = min(tmin, t); tmax = max(tmax, t);
+    }
+    t_all = micros() - t_all;
+    snprintf(line, sizeof(line), "bench: state read x%d: mean %.3f ms (min %.3f, max %.3f), failures %d",
+             N, t_all / 1000.0 / N, tmin / 1000.0, tmax / 1000.0, fails);
+    broadcast(line);
+
+    // 2) write + gap + state read cycles; verify every goal write by reading the goals back
+    if (sync_read(56, 2, d) != 6) { broadcast("bench: ABORT, no positions"); return; }
+    uint16_t base[6];
+    for (int j = 0; j < 6; j++) base[j] = d[j][0] | (d[j][1] << 8);
+    const uint32_t gaps[] = {0, 100, 200, 300, 500, 1000};
+    for (uint32_t gap : gaps) {
+        const int M = 1000;
+        int drops = 0, rfail = 0; uint32_t cycle_sum = 0;
+        for (int k = 0; k < M; k++) {
+            uint16_t v[6];
+            for (int j = 0; j < 6; j++) v[j] = base[j] + (k & 1);
+            uint32_t t = micros();
+            sync_write_u16(42, v);
+            uint32_t tg = micros(); while (micros() - tg < gap) {}
+            if (sync_read(56, 6, d) != 6) rfail++;
+            cycle_sum += micros() - t;
+            if (sync_read(42, 2, d) != 6) { drops++; continue; }    // verification (not timed)
+            for (int j = 0; j < 6; j++) if ((d[j][0] | (d[j][1] << 8)) != v[j]) { drops++; break; }
+        }
+        snprintf(line, sizeof(line), "bench: gap %4lu us: write+read cycle %.3f ms (~%d Hz), dropped writes %d/%d, read failures %d",
+                 (unsigned long)gap, cycle_sum / 1000.0 / M, (int)(1e6 * M / cycle_sum), drops, M, rfail);
+        broadcast(line);
+    }
+    sync_write_u16(42, base);   // goals back to where the joints are
+    broadcast("bench: done (goal speed 0, goals = present)");
+}
+
 // ---- Setup / loop ---------------------------------------------------------------------------
 void setup() {
     Serial.begin(115200);
@@ -184,6 +296,7 @@ void setup() {
 #endif
     ArduinoOTA.onStart([]() { Bus.end(); });   // stay off the bus while flashing
     ArduinoOTA.begin();
+    cmd_udp.begin(CMD_PORT);
 
     Serial.printf("atom_probe: bus RX=%d TX=%d @ %d, IMU %s\n", BUS_RX, BUS_TX, BUS_BAUD, imu_ok ? "ok" : "not found");
 }
@@ -191,6 +304,12 @@ void setup() {
 void loop() {
     while (Bus.available()) feed(Bus.read());
     ArduinoOTA.handle();
+
+    if (cmd_udp.parsePacket()) {
+        char cmd[32] = {0};
+        cmd_udp.read(cmd, sizeof(cmd) - 1);
+        if (strncmp(cmd, "bench", 5) == 0) run_bench();
+    }
 
     static uint32_t last_ui = 0, last_log = 0, last_imu = 0;
     uint32_t now = millis();

@@ -90,6 +90,39 @@ void sync_write_u8(uint8_t addr, uint8_t v) {
 
 inline uint16_t u16le(const uint8_t* p) { return p[0] | (p[1] << 8); }
 
+// Setup writes are verified: a SYNC WRITE straight after another SYNC WRITE can be lost by some
+// servos (seen 2026-10-04: the speed cap didn't reach J1-J4/J6, so they ignored their goals).
+// Write, read the register back, retry. Returns false if it never took.
+volatile uint32_t write_retries = 0;
+
+bool sync_write_u16_verified(uint8_t addr, const uint16_t v[N_SERVOS], int attempts = 5) {
+    for (int a = 0; a < attempts; a++) {
+        if (a) write_retries++;
+        sync_write_u16(addr, v);
+        delayMicroseconds(300);
+        uint8_t d[N_SERVOS][16];
+        if (sync_read(addr, 2, d) != (1 << N_SERVOS) - 1) continue;
+        bool ok = true;
+        for (int j = 0; j < N_SERVOS; j++) ok &= u16le(d[j]) == v[j];
+        if (ok) return true;
+    }
+    return false;
+}
+
+bool sync_write_u8_verified(uint8_t addr, uint8_t v, int attempts = 5) {
+    for (int a = 0; a < attempts; a++) {
+        if (a) write_retries++;
+        sync_write_u8(addr, v);
+        delayMicroseconds(300);
+        uint8_t d[N_SERVOS][16];
+        if (sync_read(addr, 1, d) != (1 << N_SERVOS) - 1) continue;
+        bool ok = true;
+        for (int j = 0; j < N_SERVOS; j++) ok &= d[j][0] == v;
+        if (ok) return true;
+    }
+    return false;
+}
+
 // Present position/speed/load (raw registers) of all servos. Returns true if all replied.
 bool read_state(uint16_t pos[N_SERVOS], uint16_t spd[N_SERVOS], uint16_t load[N_SERVOS]) {
     uint8_t d[N_SERVOS][16];
@@ -105,8 +138,7 @@ bool read_state(uint16_t pos[N_SERVOS], uint16_t spd[N_SERVOS], uint16_t load[N_
 // Goals = present positions and goal speed 0: torque on, nothing can move.
 bool hold_pose() {
     uint16_t zero[N_SERVOS] = {0}, pos[N_SERVOS], spd[N_SERVOS], load[N_SERVOS];
-    sync_write_u16(REG_GOAL_SPEED, zero);
+    if (!sync_write_u16_verified(REG_GOAL_SPEED, zero)) return false;
     if (!read_state(pos, spd, load)) return false;
-    sync_write_u16(REG_GOAL_POSITION, pos);
-    return true;
+    return sync_write_u16_verified(REG_GOAL_POSITION, pos);
 }

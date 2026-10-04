@@ -171,6 +171,24 @@ A vertical 100 mm circle 170 mm in front of the base (centre 310 mm high), trace
 
 The two compensated runs have almost identical error curves, so the remaining error is systematic and repeatable. "Traced" means forward kinematics of the measured joint angles, so it doesn't include gear backlash or link flex.
 
+### Onboard ATOM controller (2026-10-04)
+
+`firmware/atom_controller` runs the loop on the ATOM itself (core 1: servo bus; core 0: WiFi, IMU, telemetry). Plans are uploaded over WiFi from Julia (`src/atom.jl`, `scripts/play_plan.jl --atom=<ip>`).
+
+| | Onboard ATOM | Laptop via FT232 |
+| --- | --- | --- |
+| Loop rate | **500.0 Hz**, period 1.989–2.016 ms, 0 late cycles | ~285–300 Hz, occasional 30–80 ms stalls |
+| Bus benchmark (no motion) | state read 1.26 ms; write + read 1.54 ms (~650 Hz), 0 dropped writes with no gap | ~2 ms; writes dropped without a 1 ms gap |
+| Telemetry | 7,750/7,750 samples over WiFi per circle run, including the end-effector IMU | — |
+| Circle, lag compensation | 5.0 mm RMS | 5.0 mm RMS |
+| Circle, ILC iteration 3 | 1.0 mm RMS | 0.8 mm RMS |
+
+Tracking accuracy is the same: in position mode it is limited by the servos (lag, sticking), not the loop rate. What 500 Hz buys is deterministic timing and headroom for feedback control.
+
+**End-effector vibration (IMU, above ~2.5 Hz):** ~240 mg RMS with peaks of 1.5–2 g and ~11°/s RMS rotation, **unchanged by ILC** (which only learns slow position errors). The bursts repeat at the same point of every lap (≈5.7–6.1 s and 9.6–10.1 s on the circle), just after J1/J5 reverse and while J3/J4 reverse: probably backlash or servo jitter when the load direction flips. Plot: `tools/python/recordings/20261004_circle_atom_ilc_imu.png`.
+
+Two firmware lessons: setup writes (goal positions, acceleration, speed cap) sent back-to-back were partly lost on the first try, so J1–J4 and J6 kept goal speed 0 and the move aborted on the tracking check. Setup writes are now verified by reading them back (0 retries needed since). And with custom firmware, nothing enables servo torque at power-up unless the firmware does (it now holds the pose with goal speed 0).
+
 ## What is the ATOM for, then?
 
 It's the convenience layer that makes the arm usable from myStudio, myBlockly, pymycobot and ROS without knowing anything about servos:

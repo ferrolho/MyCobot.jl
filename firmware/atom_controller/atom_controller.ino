@@ -39,7 +39,7 @@
 #include "imu.h"
 #include "wifi_secrets.h"
 
-#define FW_VERSION 1
+#define FW_VERSION 2
 #define LED_PIN    27
 #define BTN_PIN    39
 #define CMD_PORT   5006
@@ -242,9 +242,9 @@ void net_task(void*) {
         if (now - last_log >= 1000) {
             last_log = now;
             char line[200];
-            snprintf(line, sizeof(line), "atom_controller v%d ip=%s rssi=%d state=%d plan=%lu@%uHz valid=%d imu=%d heap=%lu up=%lus",
+            snprintf(line, sizeof(line), "atom_controller v%d ip=%s rssi=%d state=%d plan=%lu@%uHz valid=%d imu=%d write_retries=%lu heap=%lu up=%lus",
                      FW_VERSION, WiFi.localIP().toString().c_str(), WiFi.RSSI(), state, (unsigned long)plan_n, plan_rate,
-                     plan_valid, imu_ok, (unsigned long)ESP.getFreeHeap(), (unsigned long)(now / 1000));
+                     plan_valid, imu_ok, (unsigned long)write_retries, (unsigned long)ESP.getFreeHeap(), (unsigned long)(now / 1000));
             if (WiFi.status() == WL_CONNECTED) {
                 out_udp.beginPacket(IPAddress(255, 255, 255, 255), LOG_PORT);
                 out_udp.write((const uint8_t*)line, strlen(line));
@@ -287,11 +287,13 @@ void play() {
     state = PLAYING;
     telem_dropped = 0;
 
-    // Enable motion: hold, no acceleration ramp, speed cap
-    sync_write_u16(REG_GOAL_POSITION, pos);
-    sync_write_u8(REG_ACCELERATION, 0);
+    // Enable motion: hold, no acceleration ramp, speed cap (each write verified)
     uint16_t caps[N_SERVOS]; for (int j = 0; j < N_SERVOS; j++) caps[j] = pp.speed_cap;
-    sync_write_u16(REG_GOAL_SPEED, caps);
+    if (!sync_write_u16_verified(REG_GOAL_POSITION, pos) || !sync_write_u8_verified(REG_ACCELERATION, 0) ||
+        !sync_write_u16_verified(REG_GOAL_SPEED, caps)) {
+        hold_pose();
+        finish(4, 0, 0, 0, 0, 0); state = ERROR_STATE; return;
+    }
 
     const uint32_t period = 1000000UL / pp.rate;
     const float duration_s = (plan_n - 1) / (float)plan_rate + 0.5f;   // plus 0.5 s settling
@@ -339,7 +341,7 @@ void play() {
     if (result) hold_pose();                         // abort: stay where we are
     else delay(300);
     uint16_t zero[N_SERVOS] = {0};
-    sync_write_u16(REG_GOAL_SPEED, zero);            // back to "don't move"
+    sync_write_u16_verified(REG_GOAL_SPEED, zero);   // back to "don't move"
     finish(result, cycles, max_period, late, bad_joint, bad_err);
     state = result == 0 || result == 2 ? (plan_valid ? READY : HOLDING) : ERROR_STATE;
 }

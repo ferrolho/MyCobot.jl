@@ -52,6 +52,14 @@ Roadmap for high-rate control of the myCobot 280 (for Arduino), as of 2026-10-03
 - [ ] Hook it into the MeshCat viewer for live visualisation at full rate.
 - [ ] Run trajectory optimisation in Julia, and play the result on the robot with the recorder. [TORA.jl](https://github.com/ferrolho/TORA.jl) is the natural tool: see **[tora-integration.md](tora-integration.md)** for what already exists on `hf/mycobot`, the missing inertial data, and the export steps.
 
+## Onboard ATOM controller
+
+- [x] Onboard player at 500 Hz with IMU telemetry over WiFi (`firmware/atom_controller`, `src/atom.jl`): circle 5.0 mm (lag comp) → 1.0 mm (3 ILC iterations), 0 late cycles.
+- [ ] **Vibration:** try the servo acceleration register at 50 (what the stock firmware uses) instead of 0, and see whether the IMU bursts at J1/J3/J4/J5 reversals shrink.
+- [ ] Add the IMU (vibration/jerk) as a cost in planning or learning, not just position error.
+- [ ] Higher loop rates (600+ Hz, positions-only reads) if a controller needs them.
+- [ ] Optional: a stock-compatible subset of the ATOM protocol (FE FE frames) so myStudio/pymycobot basics still work.
+
 ## 4. Beyond position control
 
 - [ ] **Inner loop on a microcontroller at the base** (ESP32 or RPi on the base UART pins instead of the FT232): no USB frames or latency timer, so a write + read cycle is limited by the ~110 bytes on the 1 Mbaud bus (~1.2 ms), roughly 700–800 Hz instead of ~300 Hz, with steady timing. The laptop would stream references at a lower rate. Most useful with PWM mode; in position mode the servos' own 30–120 ms lag dominates.
