@@ -10,10 +10,11 @@
 //
 // UDP protocol (little-endian). Laptop -> ATOM port 5006; replies go to the sender's IP, port 5007.
 //   0x01 PING                                   -> 0x81 PONG  u16 version, u8 state, u32 plan_samples, u16 plan_rate, u8 imu_ok,
-//                                                             u8 gains_ok
+//                                                             u8 gains_ok, u8 minor, u8 patch
 //   0x02 STATE                                  -> 0x82 STATE u8 ok, u16 pos[6], u16 spd[6], u16 load[6], i16 acc[3], i16 gyro[3]
 //   0x03 HOLD                                   -> 0x83 ACK   u8 0x03, i8 status
-//   0x04 PLAN_BEGIN u32 n, u16 rate_hz          -> 0x83 ACK   u8 0x04, i8 status
+//   0x04 PLAN_BEGIN u32 n, u16 rate_hz [, u8 interp: 0 linear, 1 cubic (Catmull-Rom; 3.1+)]
+//                                               -> 0x83 ACK   u8 0x04, i8 status
 //   0x05 PLAN_DATA  u32 offset, u16 count, count × {u16 cmd[6], u16 ref[6]}   (servo steps)
 //                                               -> 0x83 ACK   u8 0x05, i8 status, u32 offset
 //   0x06 PLAN_END   u32 crc32c(all samples)     -> 0x83 ACK   u8 0x06, i8 status
@@ -25,6 +26,11 @@
 //   0x08 STOP                                   -> 0x83 ACK   u8 0x08, i8 status
 //   0x09 REG_READ  u8 id, u8 addr, u8 len       -> 0x86 REG   u8 id, u8 addr, u8 len, i8 status, data[len]
 //   0x0A REG_WRITE u8 id, u8 addr, u8 len, data -> 0x87 REGACK u8 id, u8 addr, i8 status, u8 servo_error
+//   0x0B PLAY_SIGNAL (3.1+) u16 rate_hz, u16 speed_cap, u16 max_err_steps, u16 start_tol_steps, sig::Params
+//        A test signal computed onboard (test_signal.h): move from the current pose to the base pose,
+//        signal on one joint, move back. No plan needed.
+//                                               -> 0x83 ACK u8 0x0B, i8 status (0 started, -1 busy, -10-n invalid
+//                                                  parameters, -20-n bad start pose), then TELEM and DONE as PLAY
 //        id 1-7, len 1-32, not while playing. Status: 0 ok, -1 busy or bad request, -4 no reply,
 //        -5 write not allowed (registers 0-8, 55 and 80+: ID, baud rate, EEPROM lock, factory),
 //        -6 the read-back differs. Writes in the EEPROM area last until the next power cycle.
@@ -45,9 +51,19 @@
 
 #include "bus.h"
 #include "imu.h"
+#include "test_signal.h"
 #include "wifi_secrets.h"
 
-#define FW_VERSION 3
+// Semantic version: MAJOR for protocol changes that break old clients, MINOR for added commands,
+// PATCH for fixes. PING reports MAJOR as its u16 version, then MINOR and PATCH (3.1+).
+// History: docs (firmware/changelog). FW_GIT is set by the build (git describe).
+#define FW_MAJOR 3
+#define FW_MINOR 1
+#define FW_PATCH 0
+#define FW_VERSION FW_MAJOR
+#ifndef FW_GIT
+#define FW_GIT "unknown"
+#endif
 #define LED_PIN    27
 #define BTN_PIN    39
 #define CMD_PORT   5006
@@ -67,6 +83,7 @@ struct PlanSample { uint16_t cmd[N_SERVOS]; uint16_t ref[N_SERVOS]; };
 PlanSample* plan = nullptr;
 uint32_t plan_n = 0, plan_received = 0;
 uint16_t plan_rate = 250;
+bool plan_cubic = false;   // Catmull-Rom between samples (PLAN_BEGIN interp = 1)
 volatile bool plan_valid = false;
 
 uint32_t crc32c(uint32_t crc, const uint8_t* p, size_t n) {
@@ -90,11 +107,20 @@ Sample ring[RING];
 volatile uint32_t ring_head = 0, ring_tail = 0, telem_dropped = 0;
 
 // ---- Requests from the network task to the control loop ---------------------------------------
-enum Request : uint8_t { REQ_NONE, REQ_STATE, REQ_HOLD, REQ_PLAY, REQ_REG };
+enum Request : uint8_t { REQ_NONE, REQ_STATE, REQ_HOLD, REQ_PLAY, REQ_REG, REQ_SIGNAL };
 volatile Request request = REQ_NONE;
 volatile bool stop_requested = false;
 struct PlayParams { uint16_t rate, speed_cap, max_err, start_tol; } play_params;
 uint8_t reg_req[4 + 32];   // REG_READ / REG_WRITE request, copied by the network task
+sig::Params signal_params;  // PLAY_SIGNAL request
+
+// Joint angle (°) <-> servo position, as MyCobot.angle_to_position (0° = 2048).
+const int8_t JOINT_SIGN[N_SERVOS] = {-1, -1, +1, -1, -1, -1};
+inline uint16_t deg_to_pos(int j, float deg) {
+    long p = lroundf(2048 + JOINT_SIGN[j] * deg * (4096.0f / 360.0f));
+    return (uint16_t)(p < 0 ? 0 : (p > 4095 ? 4095 : p));
+}
+inline float pos_to_deg(int j, uint16_t p) { return JOINT_SIGN[j] * ((int)p - 2048) * (360.0f / 4096.0f); }
 
 // ---- Servo position-loop gains (P, D, I = registers 21, 22, 23), written at power-up ----------
 // The servos store 32/8/0 (no integral action). Integral action on J1-J3 halves the tracking
@@ -156,12 +182,14 @@ void ack_from_control(uint8_t type, int8_t status) {               // control lo
 void handle_command(const uint8_t* b, int n) {
     switch (b[0]) {
     case 0x01: {   // PING
-        uint8_t m[12] = {0x81};
+        uint8_t m[14] = {0x81};
         uint16_t v = FW_VERSION; memcpy(m + 1, &v, 2);
         m[3] = state;
         memcpy(m + 4, &plan_n, 4); memcpy(m + 8, &plan_rate, 2);
         m[10] = imu_ok;
         m[11] = gains_ok;
+        m[12] = FW_MINOR;
+        m[13] = FW_PATCH;
         send_to_host(m, sizeof(m));
         break;
     }
@@ -176,6 +204,7 @@ void handle_command(const uint8_t* b, int n) {
         plan = (PlanSample*)malloc(cnt * sizeof(PlanSample));
         if (!plan) { ack(0x04, -3); break; }   // not enough memory
         plan_n = cnt; plan_rate = rate;
+        plan_cubic = n >= 8 && b[7] == 1;
         ack(0x04, 0);
         break;
     }
@@ -204,6 +233,17 @@ void handle_command(const uint8_t* b, int n) {
         break;
     }
     case 0x08: stop_requested = true; ack(0x08, 0); break;
+    case 0x0B: {   // PLAY_SIGNAL
+        if (state == PLAYING || request != REQ_NONE || n != 1 + 8 + (int)sizeof(sig::Params)) { ack(0x0B, -1); break; }
+        sig::Params p; memcpy(&p, b + 9, sizeof(p));
+        int err = sig::validate(p);
+        if (err) { ack(0x0B, -10 - err); break; }
+        memcpy(&play_params, b + 1, 8);
+        signal_params = p;
+        stop_requested = false;
+        request = REQ_SIGNAL;
+        break;
+    }
     case 0x09:     // REG_READ
     case 0x0A: {   // REG_WRITE
         bool rd = b[0] == 0x09;
@@ -285,9 +325,9 @@ void net_task(void*) {
         uint32_t now = millis();
         if (now - last_log >= 1000) {
             last_log = now;
-            char line[200];
-            snprintf(line, sizeof(line), "atom_controller v%d ip=%s rssi=%d state=%d plan=%lu@%uHz valid=%d imu=%d write_retries=%lu heap=%lu up=%lus",
-                     FW_VERSION, WiFi.localIP().toString().c_str(), WiFi.RSSI(), state, (unsigned long)plan_n, plan_rate,
+            char line[256];
+            snprintf(line, sizeof(line), "atom_controller v%d.%d.%d (%s) ip=%s rssi=%d state=%d plan=%lu@%uHz valid=%d imu=%d write_retries=%lu heap=%lu up=%lus",
+                     FW_MAJOR, FW_MINOR, FW_PATCH, FW_GIT, WiFi.localIP().toString().c_str(), WiFi.RSSI(), state, (unsigned long)plan_n, plan_rate,
                      plan_valid, imu_ok, (unsigned long)write_retries, (unsigned long)ESP.getFreeHeap(), (unsigned long)(now / 1000));
             if (WiFi.status() == WL_CONNECTED) {
                 out_udp.beginPacket(IPAddress(255, 255, 255, 255), LOG_PORT);
@@ -305,6 +345,21 @@ void interp(const PlanSample* p, uint32_t n, float s, uint16_t cmd[N_SERVOS], ui
     if (s >= n - 1) { memcpy(cmd, p[n - 1].cmd, sizeof(p[0].cmd)); memcpy(ref, p[n - 1].ref, sizeof(p[0].ref)); return; }
     uint32_t i = (uint32_t)s;
     float f = s - i;
+    if (plan_cubic) {
+        // Catmull-Rom through the samples (C1, passes through every sample).
+        uint32_t i0 = i > 0 ? i - 1 : 0, i3 = i + 2 < n ? i + 2 : n - 1;
+        float f2 = f * f, f3 = f2 * f;
+        auto cr = [&](float p0, float p1, float p2, float p3) {
+            float v = 0.5f * (2 * p1 + (p2 - p0) * f + (2 * p0 - 5 * p1 + 4 * p2 - p3) * f2 + (3 * p1 - p0 - 3 * p2 + p3) * f3);
+            long r = lroundf(v);
+            return (uint16_t)(r < 0 ? 0 : (r > 4095 ? 4095 : r));
+        };
+        for (int j = 0; j < N_SERVOS; j++) {
+            cmd[j] = cr(p[i0].cmd[j], p[i].cmd[j], p[i + 1].cmd[j], p[i3].cmd[j]);
+            ref[j] = cr(p[i0].ref[j], p[i].ref[j], p[i + 1].ref[j], p[i3].ref[j]);
+        }
+        return;
+    }
     for (int j = 0; j < N_SERVOS; j++) {
         cmd[j] = (uint16_t)lroundf(p[i].cmd[j] + f * ((int)p[i + 1].cmd[j] - (int)p[i].cmd[j]));
         ref[j] = (uint16_t)lroundf(p[i].ref[j] + f * ((int)p[i + 1].ref[j] - (int)p[i].ref[j]));
@@ -318,16 +373,26 @@ void finish(uint8_t result, uint32_t cycles, uint32_t max_period, uint32_t late,
 }
 
 // Result codes: 0 done, 1 tracking error, 2 stopped, 3 not at the start pose, 4 bus error
-void play() {
+// Plays the uploaded plan, or with `use_signal` the PLAY_SIGNAL test signal computed onboard.
+void play(bool use_signal = false) {
     const PlayParams pp = play_params;
-    if (pp.rate < 50 || pp.rate > 800) { ack_from_control(0x07, -2); return; }
+    const uint8_t type = use_signal ? 0x0B : 0x07;
+    if (pp.rate < 50 || pp.rate > 800) { ack_from_control(type, -2); return; }
     uint16_t pos[N_SERVOS], spd[N_SERVOS], load[N_SERVOS], cmd[N_SERVOS], ref[N_SERVOS];
-    if (!read_state(pos, spd, load)) { ack_from_control(0x07, -4); finish(4, 0, 0, 0, 0, 0); state = ERROR_STATE; return; }
-    for (int j = 0; j < N_SERVOS; j++) {
-        int e = (int)pos[j] - (int)plan[0].ref[j];
-        if (abs(e) > pp.start_tol) { ack_from_control(0x07, -3); finish(3, 0, 0, 0, j + 1, e); return; }
+    if (!read_state(pos, spd, load)) { ack_from_control(type, -4); finish(4, 0, 0, 0, 0, 0); state = ERROR_STATE; return; }
+    const sig::Params sp = signal_params;
+    float start_deg[N_SERVOS], q_deg[N_SERVOS];
+    for (int j = 0; j < N_SERVOS; j++) start_deg[j] = pos_to_deg(j, pos[j]);
+    if (use_signal) {
+        int err = sig::validate_start(sp, start_deg);
+        if (err) { ack_from_control(type, -20 - err); finish(3, 0, 0, 0, 0, 0); return; }
+    } else {
+        for (int j = 0; j < N_SERVOS; j++) {
+            int e = (int)pos[j] - (int)plan[0].ref[j];
+            if (abs(e) > pp.start_tol) { ack_from_control(type, -3); finish(3, 0, 0, 0, j + 1, e); return; }
+        }
     }
-    ack_from_control(0x07, 0);
+    ack_from_control(type, 0);
     state = PLAYING;
     telem_dropped = 0;
 
@@ -340,7 +405,7 @@ void play() {
     }
 
     const uint32_t period = 1000000UL / pp.rate;
-    const float duration_s = (plan_n - 1) / (float)plan_rate + 0.5f;   // plus 0.5 s settling
+    const float duration_s = (use_signal ? sig::total_s(sp) : (plan_n - 1) / (float)plan_rate) + 0.5f;   // plus 0.5 s settling
     uint32_t t0 = micros(), next = t0, cycles = 0, late = 0, max_period = 0, last = t0;
     uint8_t result = 0, bad_joint = 0; int16_t bad_err = 0;
     for (;;) {
@@ -349,7 +414,12 @@ void play() {
         if (t >= duration_s) break;
         if (stop_requested) { result = 2; break; }
 
-        interp(plan, plan_n, t * plan_rate, cmd, ref);
+        if (use_signal) {
+            sig::eval(sp, start_deg, t, q_deg);
+            for (int j = 0; j < N_SERVOS; j++) cmd[j] = ref[j] = deg_to_pos(j, q_deg[j]);
+        } else {
+            interp(plan, plan_n, t * plan_rate, cmd, ref);
+        }
         sync_write_u16(REG_GOAL_POSITION, cmd);
         bool ok = read_state(pos, spd, load);
 
@@ -447,6 +517,8 @@ void loop() {
             ack_from_control(0x03, ok ? 0 : -4);
         } else if (r == REQ_PLAY) {
             play();
+        } else if (r == REQ_SIGNAL) {
+            play(true);
         } else if (r == REQ_REG) {
             uint8_t id = reg_req[1], addr = reg_req[2], len = reg_req[3];
             if (reg_req[0] == 0x09) {

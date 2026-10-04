@@ -3,7 +3,8 @@
 #   julia --project=. scripts/sysid.jl JOINT KIND [--atom=IP] [--acc=N] [--amp=DEG] [--vmax=DEG/S] [--amax=DEG/S2] [--T=S] [--pid=P,D,I] [--base=q1,..,q6] [--tag=NAME]
 #
 # KIND: chirp  logarithmic sweep 0.2 → 5 Hz, amplitude --amp (default 5°), speed ≤ --vmax (default 60°/s)
-#       steps  ±--amp (default 3°) steps, ramps at --vmax, 1.5 s each
+#       steps  ±--amp (default 3°) steps, ramps at --vmax, --T/8 each
+# The signals are MyCobot.SignalParams (src/signals.jl), the same as the firmware's PLAY_SIGNAL.
 # The other joints hold zero. Starts and ends at the zero pose; aborts at max(15°, 2·amp) tracking error.
 # --acc sets register 41 (acceleration) on every servo for the run (default 0). The servos clamp it
 #   to their factory maximum (register 85): 50 on J1–J3, 250 on J4–J6 (×100 steps/s²).
@@ -32,52 +33,9 @@ base = parse.(Float64, split(opt("base", "0,0,0,0,0,0"), ","))
 length(base) == 6 || error("--base needs 6 angles")
 vmax <= 150 || error("--vmax above 150°/s (Elephant's joint speed limit)")
 
-function plan(kind, j, amp, T; dt=0.002, vmax=60.0, amax=Inf)
-    t = collect(0:dt:T)
-    x = zeros(length(t))
-    if kind == "chirp"
-        f0, f1, Tc = 0.2, 5.0, T - 2.0                 # 1 s of rest at each end
-        for (i, ti) in enumerate(t)
-            τ = ti - 1.0
-            (0 <= τ <= Tc) || continue
-            k = log(f1 / f0) / Tc
-            f = f0 * exp(k * τ)                         # instantaneous frequency
-            phase = 2π * f0 * (exp(k * τ) - 1) / k
-            a = min(amp, vmax / (2π * f), amax / (2π * f)^2)   # keep speed ≤ vmax, acceleration ≤ amax
-            w = min(1.0, τ / 0.5, (Tc - τ) / 0.5)       # 0.5 s fade in/out
-            x[i] = w * a * sin(phase)
-        end
-    elseif kind == "steps"
-        levels = [0, amp, 0, -amp, 0, amp, -amp, 0]
-        hold, ramp = T / length(levels), 2amp / vmax
-        for (i, ti) in enumerate(t)
-            k = clamp(floor(Int, ti / hold) + 1, 1, length(levels))
-            prev = k == 1 ? 0.0 : levels[k-1]
-            s = clamp((ti - (k - 1) * hold) / ramp, 0, 1)
-            x[i] = prev + s * (levels[k] - prev)
-        end
-    else
-        error("KIND must be chirp or steps")
-    end
-    q = zeros(length(t), 6)
-    q[:, j] = x
-    return t, q
-end
+p = MyCobot.SignalParams(j, kind; amp=amp, duration=T, vmax=vmax, amax=amax, base=base)
+t_plan, q_plan = MyCobot.signal_plan(p)   # from the zero pose (the FT232R player starts there)
 
-"Wrap a test plan with a minimum-jerk move from zero to `base` and back (2 s each, 1 s holds)."
-function at_base(t, q, base; dt=0.002, move=2.0, hold=1.0)
-    any(!iszero, base) || return t, q
-    s(x) = (x = clamp(x, 0, 1); x^3 * (10 - 15x + 6x^2))
-    tm = collect(0:dt:move+hold)
-    go = [s(ti / move) * base[j] for ti in tm, j in 1:6]
-    back = [s(1 - (ti - hold) / move) * base[j] for ti in tm, j in 1:6]
-    T1 = tm[end] + dt
-    t2 = vcat(tm, T1 .+ t, T1 + t[end] + dt .+ tm)
-    q2 = vcat(go, q .+ base', back)
-    return t2, q2
-end
-
-t_plan, q_plan = at_base(plan(kind, j, amp, T; vmax=vmax, amax=amax)..., base)
 # Bus access: through the ATOM (--atom=IP, firmware ≥ 3; the plan plays onboard at 500 Hz and the
 # recording has the IMU), or through the FT232R (default).
 atom_ip = opt("atom", "")
@@ -105,8 +63,8 @@ rec, aborted = try
     if isempty(atom_ip)
         MyCobot.play_trajectory(sp, t_plan, q_plan; q_cmd=q_plan, acceleration=acc, max_tracking_error=max(15.0, 2amp), tail=1.0, max_joint_speed=vmax + 1)
     else
-        # 125 samples/s: the ATOM interpolates at 500 Hz, and 250/s does not fit in its memory for 25 s plans.
-        r, done = MyCobot.atom_play_trajectory(link, t_plan, q_plan; q_cmd=q_plan, max_tracking_error=max(15.0, 2amp), max_joint_speed=vmax + 1, plan_rate=125)
+        # Computed onboard (PLAY_SIGNAL, firmware 3.1+): nothing to upload, no plan-memory limit.
+        r, done = MyCobot.atom_play_signal(link, p; max_tracking_error=max(15.0, 2amp))
         r, done.result == "done" ? nothing : string(done)
     end
 finally

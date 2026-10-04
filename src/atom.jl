@@ -79,7 +79,8 @@ end
 """
     atom_ping(link)
 
-Returns `(version, state, plan_samples, plan_rate, imu_ok, gains_ok)`. `gains_ok` (firmware ≥ 3):
+Returns `(version, state, plan_samples, plan_rate, imu_ok, gains_ok)`. `version` is a
+`VersionNumber` (minor and patch are reported from firmware 3.1). `gains_ok` (firmware ≥ 3):
 the servo gains were written at power-up.
 """
 function atom_ping(link::AtomLink; timeout=1.0)
@@ -87,7 +88,9 @@ function atom_ping(link::AtomLink; timeout=1.0)
     send(link, UInt8[0x01])
     m = receive(link, 0x81; timeout=timeout)
     m === nothing && error("the ATOM didn't answer at $(link.ip)")
-    return (version=Int(rd(UInt16, m, 2)), state=ATOM_STATES[m[4]+1], plan_samples=Int(rd(UInt32, m, 5)),
+    major = Int(rd(UInt16, m, 2))
+    minor, patch = length(m) >= 14 ? (Int(m[13]), Int(m[14])) : (0, 0)
+    return (version=VersionNumber(major, minor, patch), state=ATOM_STATES[m[4]+1], plan_samples=Int(rd(UInt32, m, 5)),
             plan_rate=Int(rd(UInt16, m, 9)), imu_ok=m[11] == 1, gains_ok=length(m) >= 12 && m[12] == 1)
 end
 
@@ -170,12 +173,15 @@ atom_hold(link::AtomLink) = request_ack(link, UInt8[0x03]) == 0 || error("HOLD f
 atom_stop(link::AtomLink) = send(link, UInt8[0x08])
 
 """
-    atom_upload_plan(link, t, q_ref, q_cmd; rate=250)
+    atom_upload_plan(link, t, q_ref, q_cmd; rate=50, cubic=true)
 
 Resample the plan (degrees, rows = samples at times `t`) to `rate` Hz, convert to servo steps,
-and upload it with per-chunk ACKs and a CRC-32C check. The ATOM interpolates between samples.
+and upload it with per-chunk ACKs and a CRC-32C check. The ATOM interpolates between samples:
+Catmull-Rom with `cubic` (firmware 3.1+; older firmware interpolates linearly). Cubic at 25–50 Hz
+reproduces our plans to within half a servo step (0.05°), with 5–10× less memory than 250 Hz.
 """
-function atom_upload_plan(link::AtomLink, t::AbstractVector, q_ref::AbstractMatrix, q_cmd::AbstractMatrix; rate::Integer=250)
+function atom_upload_plan(link::AtomLink, t::AbstractVector, q_ref::AbstractMatrix, q_cmd::AbstractMatrix;
+                          rate::Integer=50, cubic::Bool=true)
     ts = collect(t[1]:1/rate:t[end])
     n = length(ts)
     data = Vector{UInt8}(undef, 24n)
@@ -185,7 +191,7 @@ function atom_upload_plan(link::AtomLink, t::AbstractVector, q_ref::AbstractMatr
         steps = vcat([angle_to_position(j, c[j]) for j in 1:6], [angle_to_position(j, r[j]) for j in 1:6])
         data[24(i-1)+1:24i] = reinterpret(UInt8, htol.(UInt16.(steps)))
     end
-    st = request_ack(link, vcat(0x04, le(UInt32(n)), le(UInt16(rate))))
+    st = request_ack(link, vcat(0x04, le(UInt32(n)), le(UInt16(rate)), UInt8(cubic)))
     st == 0 || error("PLAN_BEGIN refused ($st$(st == -3 ? ": not enough memory" : ""))")
     chunk = 50
     for off in 0:chunk:n-1
@@ -206,10 +212,13 @@ the ATOM holds and stops if any joint falls more than `max_tracking_error` degre
 Returns `(samples, done)`: raw telemetry samples and the result summary.
 """
 function atom_play(link::AtomLink; rate::Integer=500, speed_cap::Integer=2000,
-                   max_tracking_error::Real=20.0, start_tolerance::Real=3.0, timeout::Real=120.0)
+                   max_tracking_error::Real=20.0, start_tolerance::Real=3.0, timeout::Real=120.0,
+                   signal::Union{Nothing,SignalParams}=nothing)
     drain!(link)
-    msg = vcat(0x07, le(UInt16(rate)), le(UInt16(speed_cap)),
+    kind = signal === nothing ? 0x07 : 0x0B
+    msg = vcat(kind, le(UInt16(rate)), le(UInt16(speed_cap)),
                le(UInt16(round(Int, max_tracking_error * STEPS_PER_DEG))), le(UInt16(round(Int, start_tolerance * STEPS_PER_DEG))))
+    signal === nothing || append!(msg, pack_signal(signal))
     send(link, msg)
     samples = Dict{UInt32,Vector{UInt8}}()
     acked = false
@@ -218,9 +227,9 @@ function atom_play(link::AtomLink; rate::Integer=500, speed_cap::Integer=2000,
         isready(link.inbox) || (sleep(0.0005); continue)
         m = take!(link.inbox)
         isempty(m) && continue
-        if m[1] == 0x83 && m[2] == 0x07
+        if m[1] == 0x83 && m[2] == kind
             st = reinterpret(Int8, m[3])
-            st == 0 || st == -3 || st == -4 || error("PLAY refused ($st)")
+            st == 0 || st == -3 || st == -4 || error((kind == 0x07 ? "PLAY" : "PLAY_SIGNAL") * " refused ($st)")
             acked = true
         elseif m[1] == 0x84
             seq, cnt = rd(UInt32, m, 2), m[6]
@@ -246,16 +255,20 @@ return `(recording, done)`. `recording` has the columns `RECORDING_HEADER` plus 
 """
 function atom_play_trajectory(link::AtomLink, t_plan::AbstractVector, q_plan::AbstractMatrix;
                               lag::AbstractVector=DEFAULT_LAG, q_cmd::Union{Nothing,AbstractMatrix}=nothing,
-                              rate::Integer=500, plan_rate::Integer=250, mechanism=load_mechanism(),
+                              rate::Integer=500, plan_rate::Integer=50, cubic::Bool=true, mechanism=load_mechanism(),
                               max_joint_speed::Real=90.0, kwargs...)
     check_plan(t_plan, q_plan, mechanism; max_joint_speed=max_joint_speed)
     if q_cmd === nothing
         q_cmd = reduce(vcat, permutedims([sample_trajectory(t_plan, q_plan, ti + lag[j])[j] for j in 1:6]) for ti in t_plan)
     end
     check_plan(t_plan, q_cmd, mechanism; max_joint_speed=max_joint_speed)
-    atom_upload_plan(link, t_plan, q_plan, q_cmd; rate=plan_rate)
+    atom_upload_plan(link, t_plan, q_plan, q_cmd; rate=plan_rate, cubic=cubic)
     samples, done = atom_play(link; rate=rate, kwargs...)
+    return decode_telemetry(samples, t -> sample_trajectory(t_plan, q_plan, t), t -> sample_trajectory(t_plan, q_cmd, t)), done
+end
 
+"Telemetry samples to recording rows (`RECORDING_HEADER` + `IMU_HEADER`), with the reference and command from `ref(t)` and `cmd(t)`."
+function decode_telemetry(samples, ref, cmd)
     rows = Vector{Vector{Float64}}()
     for b in samples
         t = rd(UInt32, b, 1) / 1e6
@@ -265,10 +278,50 @@ function atom_play_trajectory(link::AtomLink, t_plan::AbstractVector, q_plan::Ab
         dq = ok ? [JOINT_SIGN[j] * decode_signed15(raw(1, j)) / STEPS_PER_DEG for j in 1:6] : fill(NaN, 6)
         load = ok ? [JOINT_SIGN[j] * decode_load(raw(2, j)) for j in 1:6] : fill(NaN, 6)
         imu = decode_imu([rd(Int16, b, 41 + 2k) for k in 0:2], [rd(Int16, b, 47 + 2k) for k in 0:2])
-        push!(rows, vcat(t, sample_trajectory(t_plan, q_plan, t), sample_trajectory(t_plan, q_cmd, t), q, dq, load, imu))
+        push!(rows, vcat(t, ref(t), cmd(t), q, dq, load, imu))
     end
-    recording = isempty(rows) ? zeros(0, length(RECORDING_HEADER) + 6) : reduce(vcat, permutedims.(rows))
-    return recording, done
+    return isempty(rows) ? zeros(0, length(RECORDING_HEADER) + 6) : reduce(vcat, permutedims.(rows))
+end
+
+"The firmware's acceleration limits for test signals (°/s², `AMAX_DPS2` in test_signal.h)."
+const SIGNAL_AMAX = [400.0, 400, 400, 2000, 2000, 2000]
+
+"`p` with the acceleration limit the firmware uses (`amax` capped at `SIGNAL_AMAX`)."
+firmware_signal(p::SignalParams) = SignalParams(p.joint, p.kind; amp=p.amp, f0=p.f0, f1=p.f1, duration=p.duration,
+                                                vmax=p.vmax, amax=min(p.amax, SIGNAL_AMAX[p.joint]), base=p.base)
+
+function pack_signal(p::SignalParams)
+    buf = IOBuffer()
+    write(buf, UInt8(p.joint), UInt8(SIGNAL_KINDS[p.kind]))
+    for x in (p.amp, p.f0, p.f1, p.duration, p.vmax, min(p.amax, SIGNAL_AMAX[p.joint]))
+        write(buf, htol(Float32(x)))
+    end
+    for b in p.base
+        write(buf, htol(Int16(round(Int, 100b))))
+    end
+    return take!(buf)
+end
+
+"""
+    atom_play_signal(link, p::SignalParams; rate=500, max_tracking_error=20, kwargs...) -> (recording, done)
+
+MOVES THE ROBOT. The ATOM computes the test signal `p` onboard (firmware 3.1+): it moves from
+the current pose to `p.base`, runs the signal on `p.joint`, and moves back. Nothing is uploaded,
+so there is no limit on the duration from the ATOM's memory. The recording has the same columns
+as `atom_play_trajectory`; the reference and command columns are computed here from `p` and
+the start pose.
+"""
+function atom_play_signal(link::AtomLink, p::SignalParams; mechanism=load_mechanism(), kwargs...)
+    v = atom_ping(link).version
+    v >= v"3.1.0" || error("PLAY_SIGNAL needs controller firmware 3.1 or later (the ATOM has $v)")
+    p = firmware_signal(p)
+    start = atom_state(link).q
+    t, q = signal_plan(p, start)
+    lo, hi = joint_limits_deg(mechanism)
+    all(lo' .+ 10 .< q .< hi' .- 10) || throw(ArgumentError("the test comes within 10° of a joint limit"))
+    samples, done = atom_play(link; signal=p, kwargs...)
+    ref(ti) = signal_pose(p, start, ti)
+    return decode_telemetry(samples, ref, ref), done
 end
 
 "Write an ATOM recording (`RECORDING_HEADER` + `IMU_HEADER` columns)."
