@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This repository (to be renamed `mycobot-280-lab` on GitHub; currently `MyCobot.jl`) holds the Julia package `MyCobot`, the ATOM firmware, Python tools and the documentation site for the myCobot 280 (for Arduino). The Julia package controls the arm over serial and WiFi. It provides a high-level interface built on LibSerialPort.jl for sending commands and receiving data from the robot using a custom binary protocol.
+This repository (`mycobot-280-lab` on GitHub, renamed from `MyCobot.jl`; docs at https://ferrolho.github.io/mycobot-280-lab/) holds the Julia package `MyCobot`, the ATOM firmware, Python tools and the documentation site for the myCobot 280 (for Arduino). The Julia package controls the arm over serial and WiFi. It provides a high-level interface built on LibSerialPort.jl for sending commands and receiving data from the robot using a custom binary protocol.
 
 ## Development Commands
 
