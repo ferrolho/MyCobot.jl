@@ -28,7 +28,7 @@ urdfvisuals = MeshCatMechanisms.URDFVisuals(filename, package_path=[package_path
 mvis = MeshCatMechanisms.MechanismVisualizer(mechanism, urdfvisuals, vis[robot_name])
 
 # Open the serial port connection to the robot
-portname = "/dev/tty.usbserial-B00033ZX"
+portname = MyCobot.default_port()
 baudrate = 1000000
 sp = LibSerialPort.open(portname, baudrate)
 

@@ -67,6 +67,7 @@ export default defineConfig({
             { label: 'Julia package', slug: 'software/julia' },
             { label: 'Scripts', slug: 'software/scripts' },
             { label: 'Python tools', slug: 'software/python' },
+            { label: 'Raspberry Pi 5', slug: 'software/raspberry-pi' },
             { label: 'Trajectory optimisation (TORA)', slug: 'software/tora' },
             { label: 'Tests', slug: 'software/tests' },
           ],

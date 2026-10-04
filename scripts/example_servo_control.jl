@@ -2,7 +2,7 @@ import LibSerialPort
 import MyCobot
 
 # Set the serial port connection parameters
-portname = "/dev/tty.usbserial-B00033ZX"
+portname = MyCobot.default_port()
 baudrate = 1000000
 
 # Open the serial port connection

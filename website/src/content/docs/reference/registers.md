@@ -30,7 +30,8 @@ multiplier that applies when the acceleration is 0). They are not read yet.
 | 50–54 | Not in Feetech's table (reserved). Read 0. |
 | 64 | Named "async write flag" from older Feetech documentation. Not checked. |
 | 67–68 | Not in Feetech's table. They follow the present position within a few steps. |
-| 80–86 | Factory registers in Feetech's table. Not read yet. |
+| 71–79 | Read 0 (71–77) and 255 (78–79). Not used. |
+| 80–86 | Factory registers. Read on 2026-10-04; see [Factory registers](#factory-registers-8086). The units are not checked. |
 
 All the other registers in the dump have a name in Feetech's table, and the ones
 that the players use are confirmed below.
@@ -134,3 +135,23 @@ that the players use are confirmed below.
 | 68 | ? position-like (H) | 7 | 14 | 14 | 14 | 4 | 9 |
 | 69 | present current (L) | 0 | 0 | 1 | 0 | 0 | 0 |
 | 70 | present current (H) | 0 | 0 | 0 | 0 | 0 | 0 |
+
+## Factory registers 80–86
+
+Read on 2026-10-04 from the Raspberry Pi (read only). The names are from Feetech's
+table (via LeRobot). The units in the last column are a guess and are **not checked**.
+
+| Addr | Name | J1 | J2 | J3 | J4 | J5 | J6 | Possible meaning |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 80 | moving velocity threshold | 1 | 1 | 1 | 2 | 1 | 1 | |
+| 81 | DTs (ms) | 20 | 20 | 20 | 10 | 10 | 10 | |
+| 82 | velocity unit factor | 50 | 50 | 50 | 50 | 50 | 50 | |
+| 83 | Hts (ns) | 1 | 1 | 1 | 1 | 1 | 1 | |
+| 84 | maximum velocity limit | 68 | 68 | 68 | 120 | 150 | 150 | × 50 steps/s: 3400 / 6000 / 7500 steps/s (≈ 300 / 530 / 660 °/s) |
+| 85 | maximum acceleration | 50 | 50 | 50 | 250 | 250 | 250 | × 100 steps/s²: ≈ 440 / 2200 °/s² |
+| 86 | acceleration multiplier (applies when acceleration = 0) | 1 | 1 | 1 | 4 | 5 | 5 | |
+
+The values follow the three servo types (J1–J3, J4, J5–J6). The players write
+acceleration 0, so register 86 may set the real acceleration of each joint. This can
+explain part of the lag of J1–J3. Test it with the acceleration step tests in the
+[roadmap](/mycobot-280-lab/reference/roadmap/).

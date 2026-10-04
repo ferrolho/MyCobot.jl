@@ -6,11 +6,13 @@ Feetech STS servos on the shared servo bus (FF FF ... checksum packets).
 Documentation: website/src/content/docs/comms/laptop-link.md.
 """
 
+import sys
 import time
 
 import serial
 
-PORT = "/dev/tty.usbserial-B00033ZX"
+PORT = ("/dev/serial/by-id/usb-FTDI_FT232R_USB_UART_B00033ZX-if00-port0" if sys.platform.startswith("linux")
+        else "/dev/tty.usbserial-B00033ZX")
 BAUDRATE = 1_000_000
 SERVO_IDS = [1, 2, 3, 4, 5, 6]
 

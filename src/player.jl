@@ -73,28 +73,43 @@ function play_trajectory(io, t_plan::AbstractVector, q_plan::AbstractMatrix;
     start.ok || error("not every servo replied")
     maximum(abs, start.q) < max_start_error || error("start from the zero pose (max joint angle $(maximum(abs, start.q))°)")
 
-    cmd(t) = q_cmd === nothing ? [sample_trajectory(t_plan, q_plan, t + lag[j])[j] for j in 1:6] :
-                                 sample_trajectory(t_plan, q_cmd, t)
+    # The loop below allocates nothing (BusBuffers, in-place sampling, preallocated recording),
+    # so the garbage collector cannot stall it.
+    bus = BusBuffers()
+    q_ref = zeros(6); q_now = zeros(6)
+    command!(t) = q_cmd === nothing ? sample_trajectory!(q_now, t_plan, q_plan, t; lag=lag) :
+                                      sample_trajectory!(q_now, t_plan, q_cmd, t)
     enable_motion(io; speed_cap=speed_cap)   # holds every joint first
-    write_goals(io, cmd(0.0))
+    write_goals!(bus, io, command!(0.0))
 
-    rows = Vector{Vector{Float64}}()
-    aborted = nothing
     duration = t_plan[end] + tail
+    rec = Matrix{Float64}(undef, ceil(Int, duration * 1500) + 16, length(RECORDING_HEADER))
+    n = 0
+    aborted = nothing
     t0 = time()
     try
-        while (t = time() - t0) < duration
+        while (t = time() - t0) < duration && n < size(rec, 1)
             t_cycle = time()
-            q_ref = sample_trajectory(t_plan, q_plan, t)
-            q_now = cmd(t)
-            write_goals(io, q_now)
-            s = read_state(io)
-            push!(rows, vcat(t, q_ref, q_now, s.q, s.dq, s.load))
+            sample_trajectory!(q_ref, t_plan, q_plan, t)
+            write_goals!(bus, io, command!(t))
+            read_state!(bus, io)
+            n += 1
+            @inbounds begin
+                rec[n, 1] = t
+                for j in 1:6
+                    rec[n, 1+j] = q_ref[j]; rec[n, 7+j] = q_now[j]; rec[n, 13+j] = bus.q[j]
+                    rec[n, 19+j] = bus.dq[j]; rec[n, 25+j] = bus.load[j]
+                end
+            end
             while time() - t_cycle < 1 / rate end   # optional rate cap (busy wait)
-            s.ok || continue
-            err = abs.(s.q .- q_ref)
-            if maximum(err) > max_tracking_error
-                aborted = "J$(argmax(err)) tracking error $(round(maximum(err), digits=1))°"
+            bus.ok || continue
+            worst, jw = 0.0, 0
+            @inbounds for j in 1:6
+                e = abs(bus.q[j] - q_ref[j])
+                e > worst && ((worst, jw) = (e, j))
+            end
+            if worst > max_tracking_error
+                aborted = "J$jw tracking error $(round(worst, digits=1))°"
                 break
             end
         end
@@ -103,7 +118,7 @@ function play_trajectory(io, t_plan::AbstractVector, q_plan::AbstractMatrix;
         sleep(0.5)
         disable_motion(io)
     end
-    return reduce(vcat, permutedims.(rows)), aborted
+    return rec[1:n, :], aborted
 end
 
 """

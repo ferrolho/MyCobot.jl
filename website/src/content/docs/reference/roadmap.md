@@ -49,6 +49,7 @@ description: Open work, grouped by topic. Done items move to the results and his
 - [ ] Why did the stock ATOM ignore `send_angle` before it froze?
 - [ ] Is a mode change (EEPROM area, lock = 1) lost at power-off?
 - [ ] Identify the servo models (label, Feetech's FD software, or Feetech).
-- [ ] Read the factory registers 80–86 (acceleration multiplier, velocity limits).
+- [x] Read the factory registers 80–86 (2026-10-04, [register map](/mycobot-280-lab/reference/registers/#factory-registers-8086)).
+- [ ] Find what acceleration the servos use when register 41 is 0 (register 86 differs per servo type: 1 on J1–J3, 4–5 on J4–J6). Step tests with 41 = 0, 50 and 254.
 - [ ] Record the stock firmware's bus traffic at power-up and during `send_angles` (registers 19 and 41, gripper ID 7). This is easier than reverse engineering the binary.
 - [ ] Post the findings on [elephantrobotics/myCobot#53](https://github.com/elephantrobotics/myCobot/issues/53). A draft is in `~/myCobot/issue-53-reply-draft.md`.

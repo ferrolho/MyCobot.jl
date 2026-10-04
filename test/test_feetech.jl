@@ -92,6 +92,57 @@ end
     @test !s.ok && isnan(s.q[4])
 end
 
+# A transport that replays a fixed reply without allocating, to check that the fast loop
+# itself allocates nothing.
+mutable struct ReplayIO
+    reply::Vector{UInt8}
+    written::Int
+end
+MyCobot.transport_write(io::ReplayIO, bytes::Vector{UInt8}) = (io.written += length(bytes); nothing)
+MyCobot.transport_discard_input(::ReplayIO) = nothing
+function MyCobot.transport_read!(io::ReplayIO, buf::Vector{UInt8}, n::Integer, ::Integer)
+    m = min(n, length(io.reply))
+    copyto!(buf, 1, io.reply, 1, m)
+    return m
+end
+allocs_read(b, io) = @allocated MyCobot.read_state!(b, io)
+allocs_write(b, io, q) = @allocated MyCobot.write_goals!(b, io, q; gap=0.0)
+allocs_sample(out, t, q, x, lag) = @allocated MyCobot.sample_trajectory!(out, t, q, x; lag=lag)
+
+@testset "Allocation-free bus loop" begin
+    bus = SimulatedBus(positions=Dict(1 => 2100, 2 => 2048, 3 => 2300, 4 => 2048, 5 => 1900, 6 => 2000))
+    b = MyCobot.BusBuffers()
+    @test MyCobot.read_state!(b, bus)
+    s = MyCobot.read_state(bus)
+    @test b.q == s.q && b.dq == s.dq && b.load == s.load
+
+    # write_goals! sends the same packet as write_goals (ft_sync_write)
+    q = [10.0, -20.0, 30.5, -45.0, 60.0, -90.0]
+    MyCobot.write_goals!(b, bus, q)
+    params = UInt8[42, 2]
+    for j in 1:6
+        append!(params, UInt8(j), MyCobot.le16(MyCobot.angle_to_position(j, q[j])))
+    end
+    @test b.tx == MyCobot.ft_packet(0xFE, 0x83, params)
+    @test all(get16(bus, j, 42) == MyCobot.angle_to_position(j, q[j]) for j in 1:6)
+
+    # A missing servo: !ok and NaN
+    delete!(bus.regs, 4)
+    @test !MyCobot.read_state!(b, bus) && isnan(b.q[4]) && !isnan(b.q[3])
+
+    # No allocations per cycle
+    bus = SimulatedBus()
+    io = ReplayIO(MyCobot.ft_request(bus, b.read_req, 72), 0)
+    allocs_read(b, io); allocs_write(b, io, q)
+    @test allocs_read(b, io) == 0
+    @test allocs_write(b, io, q) == 0
+    @test b.ok && maximum(abs, b.q) < 0.1
+    t_plan = collect(0:0.01:1.0); q_plan = rand(length(t_plan), 6); out = zeros(6); lag = fill(0.05, 6)
+    allocs_sample(out, t_plan, q_plan, 0.3, lag)
+    @test allocs_sample(out, t_plan, q_plan, 0.3, lag) == 0
+    @test out ≈ MyCobot.sample_trajectory(t_plan, q_plan, 0.35)
+end
+
 @testset "Trajectory player on the simulated bus" begin
     mechanism = MyCobot.load_mechanism()
     t_plan = collect(0:0.01:1.0)

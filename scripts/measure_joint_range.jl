@@ -17,7 +17,7 @@ import MyCobot
 const FT = MyCobot          # bus functions
 const REG = MyCobot.Feetech # register addresses
 
-const PORT = "/dev/tty.usbserial-B00033ZX"
+const PORT = MyCobot.default_port()
 const BAUDRATE = 1_000_000
 const OUT = joinpath(@__DIR__, "..", "tools", "python", "recordings", "joint_ranges.csv")
 

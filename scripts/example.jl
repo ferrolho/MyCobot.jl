@@ -3,7 +3,7 @@ using Revise
 import LibSerialPort
 import MyCobot
 
-portname = "/dev/tty.usbserial-B00033ZX"
+portname = MyCobot.default_port()
 baudrate = 1000000
 
 sp = LibSerialPort.open(portname, baudrate)

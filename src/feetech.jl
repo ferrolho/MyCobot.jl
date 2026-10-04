@@ -66,7 +66,7 @@ end
 
 Drop any bytes waiting in the input buffer.
 """
-transport_discard_input(sp::LibSerialPort.SerialPort) = (LibSerialPort.sp_flush(sp, LibSerialPort.SP_BUF_INPUT); nothing)
+transport_discard_input(sp::LibSerialPort.SerialPort) = (LibSerialPort.sp_flush(sp.ref, LibSerialPort.SP_BUF_INPUT); nothing)
 
 # --- Packets -------------------------------------------------------------------
 

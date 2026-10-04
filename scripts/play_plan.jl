@@ -16,7 +16,7 @@ import Dates
 import LibSerialPort
 import MyCobot
 
-const PORT = "/dev/tty.usbserial-B00033ZX"
+const PORT = MyCobot.default_port()
 const BAUDRATE = 1_000_000
 
 plan_path = ARGS[1]

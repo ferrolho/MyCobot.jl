@@ -66,11 +66,30 @@ function control_transfer(handle, request_type, request, value, index, buffer::V
 end
 
 """
+    default_port(; serial=FT232_SERIAL)
+
+The FT232R's serial port: `/dev/tty.usbserial-<serial>` on macOS and
+`/dev/serial/by-id/usb-FTDI_FT232R_USB_UART_<serial>-if00-port0` on Linux.
+"""
+default_port(; serial::AbstractString=FT232_SERIAL) =
+    Sys.islinux() ? "/dev/serial/by-id/usb-FTDI_FT232R_USB_UART_$(serial)-if00-port0" : "/dev/tty.usbserial-$serial"
+
+# On Linux the ftdi_sio driver has the latency timer in sysfs. Writing it needs root, so a udev rule
+# sets it to 1 ms when the adapter is plugged in:
+#   /etc/udev/rules.d/99-ftdi-latency.rules:
+#   ACTION=="add", SUBSYSTEM=="usb-serial", DRIVER=="ftdi_sio", ATTR{latency_timer}="1"
+function sysfs_latency_path(serial::AbstractString)
+    tty = basename(realpath(default_port(; serial=serial)))
+    return "/sys/bus/usb-serial/devices/$tty/latency_timer"
+end
+
+"""
     get_latency_timer(; serial=FT232_SERIAL)
 
 Read the FT232R latency timer in milliseconds.
 """
 function get_latency_timer(; serial::AbstractString=FT232_SERIAL)
+    Sys.islinux() && return parse(Int, strip(read(sysfs_latency_path(serial), String)))
     with_ftdi_device(; serial=serial) do handle
         buf = zeros(UInt8, 1)
         rc = control_transfer(handle, 0xC0, SIO_GET_LATENCY_TIMER, 0, FTDI_INTERFACE_A, buf)
@@ -82,10 +101,21 @@ end
 """
     set_latency_timer(ms=1; serial=FT232_SERIAL)
 
-Set the FT232R latency timer (1–255 ms). Use 1 ms for fast replies.
+Set the FT232R latency timer (1–255 ms). Use 1 ms for fast replies. On Linux this needs
+write access to sysfs; with the udev rule above the value is already 1 ms.
 """
 function set_latency_timer(ms::Integer=1; serial::AbstractString=FT232_SERIAL)
     1 <= ms <= 255 || throw(ArgumentError("latency must be 1–255 ms"))
+    if Sys.islinux()
+        path = sysfs_latency_path(serial)
+        get_latency_timer(; serial=serial) == ms && return ms
+        try
+            write(path, string(ms))
+        catch
+            error("cannot write $path (needs root). Add the udev rule in src/ftdi.jl, or run: echo $ms | sudo tee $path")
+        end
+        return get_latency_timer(; serial=serial)
+    end
     with_ftdi_device(; serial=serial) do handle
         rc = control_transfer(handle, 0x40, SIO_SET_LATENCY_TIMER, ms, FTDI_INTERFACE_A, UInt8[])
         rc == 0 || error("setting the latency timer failed ($rc)")
