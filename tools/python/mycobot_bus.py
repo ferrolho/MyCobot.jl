@@ -3,7 +3,7 @@ Helpers for talking to the myCobot 280 (for Arduino) over its serial port, both
 through the ATOM firmware protocol (FE FE ... FA frames) and directly to the
 Feetech STS servos on the shared servo bus (FF FF ... checksum packets).
 
-See docs/fast-communication.md for the background.
+Documentation: website/src/content/docs/comms/laptop-link.md.
 """
 
 import time
@@ -81,7 +81,7 @@ def atom_write_servo_register(sp, servo_id, address, value):
 FT_PING, FT_READ, FT_WRITE, FT_SYNC_READ, FT_SYNC_WRITE = 0x01, 0x02, 0x03, 0x82, 0x83
 BROADCAST_ID = 0xFE
 
-# Register addresses (Feetech STS memory map, see docs/servo-registers.md)
+# Register addresses (Feetech STS memory map, see website/src/content/docs/reference/registers.md)
 REG_OFFSET = 31          # 2 bytes, calibration offset
 REG_MODE = 33            # 0 position, 1 velocity, 2 PWM, 3 step
 REG_TORQUE_ENABLE = 40

@@ -1,0 +1,30 @@
+---
+// One iteration of iterative learning control.
+---
+<svg class="diagram" viewBox="0 0 640 300" role="img" aria-label="ILC loop: the commands are played and recorded. The error between the plan and the measurement is filtered, shifted by the joint lag, multiplied by 0.5 and added to the commands for the next run.">
+  <defs>
+    <marker id="ilc-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" style="fill: var(--sl-color-gray-3)" />
+    </marker>
+  </defs>
+  <rect x="20" y="20" width="170" height="64" rx="8" class="box" />
+  <text x="105" y="48" text-anchor="middle" class="title">Commands</text>
+  <text x="105" y="70" text-anchor="middle" class="small">cmd[k](t)</text>
+  <rect x="235" y="20" width="170" height="64" rx="8" class="box" />
+  <text x="320" y="48" text-anchor="middle" class="title">Play</text>
+  <text x="320" y="70" text-anchor="middle" class="small">laptop or ATOM</text>
+  <rect x="450" y="20" width="170" height="64" rx="8" class="box" />
+  <text x="535" y="48" text-anchor="middle" class="title">Recording</text>
+  <text x="535" y="70" text-anchor="middle" class="small">measured(t)</text>
+  <path class="line" marker-end="url(#ilc-arrow)" d="M 190 52 L 233 52" />
+  <path class="line" marker-end="url(#ilc-arrow)" d="M 405 52 L 448 52" />
+  <rect x="235" y="150" width="385" height="120" rx="8" class="accent" />
+  <text x="427" y="178" text-anchor="middle" class="title">error = plan − measured</text>
+  <text x="427" y="204" text-anchor="middle" class="small">low-pass filter (80 ms)</text>
+  <text x="427" y="226" text-anchor="middle" class="small">shift by the joint lag, × 0.5</text>
+  <text x="427" y="248" text-anchor="middle" class="small">taper to 0 at the ends</text>
+  <path class="line" marker-end="url(#ilc-arrow)" d="M 535 84 L 535 148" />
+  <path class="line" marker-end="url(#ilc-arrow)" d="M 235 210 L 105 210 L 105 86" />
+  <text x="20" y="240" class="small">cmd[k+1] = cmd[k]</text>
+  <text x="20" y="260" class="small">+ correction</text>
+</svg>

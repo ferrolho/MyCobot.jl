@@ -1,0 +1,45 @@
+---
+// One control cycle on the ATOM (2 ms at 500 Hz) and on the laptop (~3.3 ms), to scale.
+const scale = 150; // px per ms
+const x0 = 20;
+const rows = [
+  { label: 'ATOM, 500 Hz', segs: [
+      { ms: 0.28, cls: 'write', text: '' }, { ms: 1.26, cls: 'read', text: 'SYNC READ' }, { ms: 0.46, cls: 'idle', text: 'wait' } ] },
+  { label: 'Laptop, ~300 Hz', segs: [
+      { ms: 0.3, cls: 'write', text: '' }, { ms: 1.0, cls: 'gap', text: 'gap' }, { ms: 2.0, cls: 'read', text: 'SYNC READ via USB', at: 0.68 } ] },
+];
+---
+<svg class="diagram" viewBox="0 0 540 250" role="img" aria-label="Timing of one cycle, to scale. ATOM: SYNC WRITE 0.28 ms, SYNC READ 1.26 ms, then 0.46 ms of waiting, for a 2 ms period. Laptop: SYNC WRITE 0.3 ms, a 1 ms gap, and about 2 ms for the SYNC READ through USB, for about 3.3 ms.">
+  {rows.map((row, r) => {
+    let x = x0;
+    const y = 36 + r * 95;
+    return (
+      <g>
+        <text x={x0} y={y - 10} class="title">{row.label}</text>
+        {row.segs.map((s) => {
+          const w = s.ms * scale;
+          const g = (
+            <g>
+              <rect x={x} y={y} width={w} height="36" class={`seg ${s.cls}`} />
+              {s.text && <text x={x + w * (s.at ?? 0.5)} y={y + 24} text-anchor="middle" class="seglabel">{s.text}</text>}
+              <text x={x + w / 2} y={y + 56} text-anchor="middle" class="small">{s.ms} ms</text>
+            </g>
+          );
+          x += w;
+          return g;
+        })}
+      </g>
+    );
+  })}
+  <line class="line" x1={x0 + 2 * scale} y1="18" x2={x0 + 2 * scale} y2="215" stroke-dasharray="4 4" />
+  <text x={x0 + 2 * scale + 6} y="236" class="small">2 ms = one period at 500 Hz</text>
+  <rect x="330" y="20" width="14" height="14" class="seg write" /><text x="350" y="32" class="small">SYNC WRITE</text>
+</svg>
+<style>
+  .seg { stroke: var(--sl-color-gray-1); stroke-width: 1; }
+  .write { fill: #3d6bff; }
+  .read { fill: #2fd15a; }
+  .gap { fill: #ffb020; }
+  .idle { fill: var(--sl-color-gray-5); }
+  .seglabel { fill: #0b0c0e !important; font-weight: 600; font-size: 14px !important; }
+</style>

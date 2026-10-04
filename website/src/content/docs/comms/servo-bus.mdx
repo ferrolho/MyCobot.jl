@@ -1,0 +1,79 @@
+---
+title: Servo bus protocol
+description: The Feetech packet format, the instructions in use, timing, and the rules for writes.
+---
+
+import PacketLayout from '../../../components/PacketLayout.astro';
+import CycleTiming from '../../../components/CycleTiming.astro';
+
+
+The six servos share one half-duplex serial bus at **1 Mbaud**, 8N1. Each servo
+has an ID from 1 to 6. ID 0xFE is the broadcast ID.
+
+## Packet format
+
+<PacketLayout kind="request" />
+<PacketLayout kind="reply" />
+
+```text
+Request:  FF FF <ID> <LEN> <INSTR> <params...> <CHK>
+Reply:    FF FF <ID> <LEN> <ERROR> <data...>   <CHK>
+```
+
+- `LEN` = the number of params (or data bytes) + 2.
+- `CHK` = `~(ID + LEN + INSTR/ERROR + params/data) & 0xFF`.
+- Multi-byte values are little-endian.
+
+| Instruction | Code | Reply | Use |
+| --- | --- | --- | --- |
+| PING | `0x01` | Status, no data | Check that a servo is present. |
+| READ | `0x02` | Data | `[address, length]` |
+| WRITE | `0x03` | Status | `[address, data...]` |
+| SYNC READ | `0x82` | One reply per servo | `[address, length, id1, id2, ...]`, broadcast ID |
+| SYNC WRITE | `0x83` | **None** | `[address, length, id1, data1..., id2, data2..., ...]`, broadcast ID |
+
+## Examples captured on the robot
+
+| Packet | Meaning |
+| --- | --- |
+| `ff ff 01 04 02 38 02 be` | READ 2 bytes at 56 (position) from servo 1 |
+| `ff ff 01 04 00 80 08 72` | Reply: position `0x0880` = 2176 |
+| `ff ff fe 0a 82 38 0f 01 02 03 04 05 06 19` | SYNC READ 15 bytes at 56 from servos 1–6 |
+| `ff ff fe 34 83 29 07 01 32 00 08 …` | SYNC WRITE 7 bytes at 41: acceleration, goal position, goal time, goal speed |
+
+The last packet is what the stock firmware sends for `send_angles` to zero. The
+Julia tests rebuild it byte for byte.
+
+## Timing
+
+<CycleTiming />
+
+| Transaction (6 servos) | On the ATOM | From the laptop (FT232R, 1 ms latency timer) |
+| --- | --- | --- |
+| SYNC READ, 6 bytes (position, speed, load) | 1.26 ms | ~2.0 ms |
+| SYNC WRITE goals + SYNC READ state | 1.54 ms (~650 Hz) | ~3.2–3.3 ms (~300 Hz), with a 1 ms gap |
+
+The bytes alone take about 1.1 ms at 1 Mbaud. The rest is servo reply time and,
+on the laptop path, USB.
+
+## Rules for writes
+
+SYNC WRITE has no reply, so a lost write is silent. Two measured problems:
+
+1. **Laptop path: a SYNC WRITE followed by another request within ~0.3 ms is
+   lost by every servo.** With no gap, 24 % of writes were lost. With 0.3 ms,
+   0.17 %. With 0.5 ms or more, none. The Julia layer waits 1 ms after each
+   SYNC WRITE (`SYNC_WRITE_GAP`). Python's `flush()` waits for the bytes to
+   drain, which has the same effect. On the ATOM, a SYNC WRITE followed by a
+   SYNC READ loses nothing, even with no gap.
+2. **ATOM: back-to-back SYNC WRITEs lost the second write on some servos.** The
+   controller firmware now reads back every setup write and sends it again if
+   necessary.
+
+## Sharing the bus
+
+- The stock ATOM protocol uses `FE FE` frames and the servos use `FF FF`
+  packets. Each device ignores the other protocol, so both can share the wire.
+- There is no arbitration. Only one device may transmit at a time.
+- The ATOM answers as servo ID 7 only with the probe firmware. The stock firmware
+  pings ID 7 because it expects a gripper there.

@@ -1,0 +1,81 @@
+---
+// The rating label on the robot base, reconstructed. The serial number is a placeholder, and the
+// barcode and QR code are decorative patterns (they encode nothing).
+let seed = 280;
+const rand = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+const bars: { x: number; w: number }[] = [];
+for (let x = 0; x < 300; ) {
+  const w = 1 + Math.floor(rand() * 4);
+  if (rand() > 0.42) bars.push({ x, w });
+  x += w + 1 + Math.floor(rand() * 2);
+}
+const N = 21, cell = 5;
+const finder = (r: number, c: number) => {
+  const inF = (r0: number, c0: number) => r >= r0 && r < r0 + 7 && c >= c0 && c < c0 + 7;
+  for (const [r0, c0] of [[0, 0], [0, N - 7], [N - 7, 0]]) {
+    if (inF(r0, c0)) {
+      const rr = r - r0, cc = c - c0;
+      return rr === 0 || rr === 6 || cc === 0 || cc === 6 || (rr >= 2 && rr <= 4 && cc >= 2 && cc <= 4) ? 1 : 0;
+    }
+  }
+  return -1;
+};
+const qr: { r: number; c: number }[] = [];
+for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) {
+  const f = finder(r, c);
+  if (f === 1 || (f === -1 && rand() > 0.55)) qr.push({ r, c });
+}
+const rows = [
+  ['产品/Product', '大象协作机械臂'],
+  ['型号/Model', 'myCobot 280 for Arduino'],
+  ['自由度/DoF', '6'],
+  ['电源/Charger', 'DC 12V 60W'],
+];
+---
+<svg class="diagram robot-label" viewBox="0 0 620 330" role="img" aria-label="Robot rating label. Elephant Robotics. Product: 大象协作机械臂 (collaborative robot arm). Model: myCobot 280 for Arduino. DoF: 6. Charger: DC 12 V, 60 W. Serial number: ERMC2800XXXXXXXXXXX (placeholder). Marks: RoHS, CE, KC. FCC ID: 2AN3WATOM. 深圳市大象机器人科技有限公司, www.elephantrobotics.com.">
+  <defs>
+    <linearGradient id="silver" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#eceef0" /><stop offset="1" stop-color="#cfd3d7" />
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="612" height="322" rx="14" fill="url(#silver)" stroke="#a9aeb4" stroke-width="2" />
+  <text x="30" y="46" class="brand">Elephant Robotics</text>
+  <line x1="30" y1="62" x2="380" y2="62" class="rule" />
+  {rows.map(([k, v], i) => (
+    <g>
+      <text x="30" y={90 + i * 28} class="key">{k}</text>
+      <text x="150" y={90 + i * 28} class="val">{v}</text>
+    </g>
+  ))}
+  <line x1="30" y1="190" x2="380" y2="190" class="rule" />
+  <text x="30" y="214" class="key">产品序列号 / SN</text>
+  <g transform="translate(30,224)">
+    {bars.map((b) => <rect x={b.x} y="0" width={b.w} height="48" fill="#111" />)}
+  </g>
+  <text x="30" y="296" class="sn">ERMC2800XXXXXXXXXXX</text>
+  <g transform="translate(400,72)">
+    <rect x="-6" y="-6" width={N * cell + 12} height={N * cell + 12} fill="#fff" />
+    {qr.map((q) => <rect x={q.c * cell} y={q.r * cell} width={cell} height={cell} fill="#111" />)}
+  </g>
+  <g class="marks">
+    <circle cx="545" cy="95" r="20" /><text x="545" y="100" text-anchor="middle" class="mk">RoHS</text>
+    <text x="400" y="238" class="mk big">CE</text>
+    <text x="470" y="238" class="mk big">KC</text>
+    <circle cx="555" cy="225" r="20" /><text x="555" y="230" text-anchor="middle" class="mk">RoHS</text>
+  </g>
+  <text x="400" y="268" class="small">FCC ID: 2AN3WATOM</text>
+  <text x="400" y="290" class="small">深圳市大象机器人科技有限公司</text>
+  <text x="400" y="310" class="small">www.elephantrobotics.com</text>
+</svg>
+<style>
+  .robot-label text { fill: #1a1a1a !important; }
+  .brand { font-size: 24px !important; font-weight: 700; }
+  .key { font-size: 15px !important; }
+  .val { font-size: 16px !important; }
+  .sn { font-family: var(--sl-font-mono); font-size: 21px !important; letter-spacing: 1px; }
+  .rule { stroke: #3a3a3a; stroke-width: 1.2; }
+  .marks circle { fill: none; stroke: #1a1a1a; stroke-width: 2; }
+  .mk { font-size: 11px !important; font-weight: 700; }
+  .mk.big { font-size: 34px !important; font-weight: 800; }
+  .robot-label .small { font-size: 13px !important; }
+</style>

@@ -1,0 +1,21 @@
+{
+  "name": "mycobot-docs",
+  "type": "module",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Documentation site for high-rate control of the myCobot 280 (for Arduino): hardware, servo bus, ATOM firmware, Julia and Python tools, and experiment results.",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "check:diagrams": "node scripts/check-diagrams.mjs"
+  },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "dependencies": {
+    "@astrojs/starlight": "^0.42.5",
+    "astro": "^7.1.3",
+    "starlight-links-validator": "^0.26.0"
+  }
+}

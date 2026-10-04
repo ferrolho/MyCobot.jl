@@ -1,0 +1,88 @@
+---
+title: Robot and wiring
+description: The myCobot 280 for Arduino, its base connectors, the FT232R wiring and the joint limits.
+---
+
+import FtdiWiring from '../../../components/FtdiWiring.astro';
+import BaseHeaders from '../../../components/BaseHeaders.astro';
+import RobotLabel from '../../../components/RobotLabel.astro';
+import BaseOrientation from '../../../components/BaseOrientation.astro';
+
+
+## The robot
+
+<RobotLabel />
+
+The rating label on the robot's right side (−y), redrawn. The serial number is a placeholder, and the barcode and QR code are decorative.
+
+| Item | Value |
+| --- | --- |
+| Model | Elephant Robotics myCobot 280 for Arduino |
+| Degrees of freedom | 6 (servos J1–J6) |
+| Power | 12 V DC, 60 W |
+| Controller at the end of the arm | ATOM (M5Stack ATOM Matrix). See [ATOM](/mycobot-280-lab/system/atom/). |
+| Stock ATOM firmware | v7.2 |
+
+## Where the interfaces are
+
+The base is round, with a rectangular box at the back. In robot axes, +x is the
+front: the arm points in that direction at the zero pose.
+
+<BaseOrientation />
+
+| Location | This site | Elephant's documentation | Contents |
+| --- | --- | --- | --- |
+| Back face of the box (−x) | back face | "front of the base", function interface groups 1–4 | 2.54 mm Arduino-style sockets and pins. Groups 1 and 4 follow the Arduino UNO/MEGA layout, groups 2 and 3 the MKR WiFi 1010 layout. The FT232R connects here. |
+| Top face of the box | top face | "top of the base", function interface group 5 | Header strip with Arduino pin labels, and the 4-pin TRVG port. |
+| −y side | robot's right | "right side of the base" | DC power jack (12 V; 6.5 mm outer, 2.0 mm inner) on the box, next to the round part. The rating label on the round part. |
+| Arm end | ATOM socket | function interface group 6 | See [ATOM](/mycobot-280-lab/system/atom/#the-socket-in-the-arm) and [Gripper](/mycobot-280-lab/system/gripper/#mount-and-cable). |
+
+The −y side is on your left when you face the robot. Photos of the base
+(2026-10-04) agree with the URDF mesh and with Elephant's documentation.
+
+## Back face: function interface groups 1–4
+
+<BaseHeaders panel="ft232" />
+
+Only GND and pins 13 and 14 are used.
+
+<FtdiWiring />
+
+| FT232R | Base |
+| --- | --- |
+| TXD | pin 14 |
+| RXD | pin 13 |
+| GND | GND |
+
+The base passes the bytes on pins 13/14 to the servo bus, and the servo replies
+back. The laptop does not receive its own transmissions. The servos also answer
+when the ATOM is removed, so the base, not the ATOM, makes this bridge.
+
+## Top face: function interface group 5 and the TRVG port
+
+<BaseHeaders panel="trvg" />
+
+The 4-pin **TRVG** port is probably TX, RX, V and GND. It is not yet known if it
+carries the same serial line as pins 13/14.
+
+:::note[Not yet measured]
+The logic level on pins 13/14 (3.3 V or 5 V) is not measured. Measure the `IOR`
+pin and pin 13 to GND before you connect a 3.3 V device such as an ESP32.
+:::
+
+## Joint limits
+
+From the URDF (`mycobot_description/urdf/mycobot_280_arduino/`):
+
+| Joint | J1 | J2 | J3 | J4 | J5 | J6 |
+| --- | --- | --- | --- | --- | --- | --- |
+| Limit (±°) | 168 | 135 | 150 | 145 | 165 | 180 |
+
+The servos do not enforce these limits (their angle limit registers allow 0–4095).
+The arm can rest outside them, for example when it is folded by hand while limp.
+The players use a margin of 10°.
+
+## Zero pose
+
+At 0° on every joint the arm is upright, and the flange points forward (+x).
+The flange is at (45.6, −64.6, 411.1) mm in the URDF base frame.

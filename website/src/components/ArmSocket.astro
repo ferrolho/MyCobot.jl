@@ -1,0 +1,42 @@
+---
+// The ATOM socket at the end of the arm (Elephant: function interface group 6), redrawn from a
+// photo. From the top: the opening for the ATOM's USB-C port, the Grove port, the 7-pin header,
+// and the header labels.
+const pins = [
+  { p: '5V0', c: '#e53935' }, { p: 'GND', c: '#f08a24' }, { p: '3V3', c: '#5fb83a' },
+  { p: 'G22', c: '#2b3f9e' }, { p: 'G19', c: '#2b3f9e' }, { p: 'G23', c: '#2b3f9e' }, { p: 'G33', c: '#2b3f9e' },
+];
+---
+<svg class="diagram" viewBox="0 0 600 330" role="img" aria-label="The ATOM socket in the arm. From the top: an opening for the ATOM's USB-C port, a 4-pin Grove connector, a 7-pin header, and the header labels 5V0, GND, 3V3, G22, G19, G23, G33. G22 and G19 carry the servo bus.">
+  <rect x="20" y="20" width="560" height="290" rx="40" class="shell" />
+  <rect x="215" y="40" width="170" height="110" rx="8" class="window" />
+  <rect x="255" y="52" width="90" height="26" rx="13" class="usb" />
+  <text x="430" y="70" class="small">USB-C opening</text>
+  <text x="430" y="88" class="small">(the ATOM's own port)</text>
+  <rect x="235" y="96" width="130" height="38" rx="4" class="grove" />
+  {[0, 1, 2, 3].map((k) => <rect x={252 + k * 28} y="106" width="8" height="18" class="male" />)}
+  <text x="430" y="120" class="small">Grove (HY2.0-4P)</text>
+  <rect x="105" y="175" width="390" height="32" rx="6" class="hdr" />
+  {pins.map((_, i) => <rect x={133 + i * 54} y="183" width="16" height="16" class="sock" />)}
+  {[3, 4].map((i) => <circle cx={141 + i * 54} cy="191" r="14" class="mark" />)}
+  {pins.map((x, i) => (
+    <g>
+      <rect x={115 + i * 54} y="218" width="52" height="28" style={`fill:${x.c}`} />
+      <text x={141 + i * 54} y="238" text-anchor="middle" class="pin">{x.p}</text>
+    </g>
+  ))}
+  <text x="105" y="274" class="small">◯ servo bus: G22 TX, G19 RX.</text>
+  <text x="105" y="294" class="small">Elephant's docs list them as general I/O; here they are the bus.</text>
+</svg>
+<style>
+  .shell { fill: #eeeeea; stroke: #c9c9c3; stroke-width: 2; }
+  .pin { fill: #ffffff !important; font-size: 13.5px !important; font-weight: 700; }
+  .hdr { fill: #1d1e20; }
+  .sock { fill: #050505; stroke: #3a3b3e; }
+  .window { fill: #dcdcd6; stroke: #bdbdb6; }
+  .grove { fill: #f3ecd8; stroke: #b7ad92; }
+  .male { fill: #c9ccd1; stroke: #8b8f96; }
+  .usb { fill: #8a8e94; stroke: #55585d; stroke-width: 2; }
+  .mark { fill: none; stroke: #ffd400; stroke-width: 3.5; }
+  svg .small { fill: #4a4a4a !important; }
+</style>

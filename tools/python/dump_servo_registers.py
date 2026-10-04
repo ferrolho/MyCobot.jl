@@ -1,6 +1,6 @@
 """
 Dump registers 0-70 of servos 1-6, one byte at a time through the ATOM
-(GET_SERVO_DATA 0x53). Read-only. Output format matches docs/servo-registers.md.
+(GET_SERVO_DATA 0x53). Read-only. Output format matches website/src/content/docs/reference/registers.md.
 """
 
 from mycobot_bus import SERVO_IDS, atom_read_servo_register, open_port

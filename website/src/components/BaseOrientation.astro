@@ -1,0 +1,57 @@
+---
+// Top view of the base, from the URDF meshes (joint1.dae) and photos (2026-10-04), with the
+// interfaces in robot axes.
+---
+<svg class="diagram" viewBox="0 80 680 360" role="img" aria-label="Top view of the base. The round part is under joint 1. A rectangular box sticks out at the back (minus x). The back face of the box has function interface groups 1 to 4, where the FT232R is connected. The top face of the box has function interface group 5: a header strip that runs from side to side, with its labels on the round-part side, and the TRVG port between the strip and the back face, at the plus y end. The power jack is on the minus y side of the box, next to the round part, and the rating label is on the minus y side of the round part. Minus y is the robot's right, which is on your left when you face the robot. The arm points forward (plus x) at the zero pose.">
+  <defs>
+    <marker id="bo-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" style="fill: var(--sl-color-accent)" />
+    </marker>
+  </defs>
+  <!-- robot axes: +x to the right of the drawing, +y up. Scale 2.3 px/mm from joint1.dae:
+       round part r 48 mm, box 66 mm wide (y), back face at x = -67 mm. -->
+  <rect x="205" y="139" width="95" height="152" rx="6" class="box" />
+  <circle cx="360" cy="215" r="110" class="box" />
+  <circle cx="360" cy="215" r="34" class="accent" />
+  <text x="360" y="220" text-anchor="middle" class="small">J1</text>
+
+  <!-- back face: groups 1-4 -->
+  <line x1="205" y1="147" x2="205" y2="283" class="iface" />
+  <text x="193" y="200" text-anchor="end" class="title">Back face</text>
+  <text x="193" y="220" text-anchor="end" class="small">groups 1–4</text>
+  <text x="193" y="238" text-anchor="end" class="small">FT232R on 13/14/GND</text>
+
+  <!-- top face of the box: group 5 (header along y, labels on the +x side) + TRVG port -->
+  <rect x="211" y="147" width="17" height="26" rx="3" class="trvg" />
+  <rect x="230" y="168" width="16" height="93" rx="2" class="hdr" />
+  <rect x="246" y="168" width="11" height="93" class="strip" />
+  <text x="236" y="104" text-anchor="middle" class="small">group 5 + TRVG port</text>
+  <text x="236" y="122" text-anchor="middle" class="title">Top face</text>
+  <line x1="236" y1="128" x2="236" y2="165" class="line" />
+
+  <!-- robot's right (-y): power jack on the box, label on the round part -->
+  <rect x="252" y="291" width="24" height="9" class="jack" />
+  <path d="M 415 310.3 A 110 110 0 0 1 305 310.3" class="labelarc" />
+  <text x="264" y="320" text-anchor="middle" class="small">jack</text>
+  <text x="360" y="345" text-anchor="middle" class="small">label</text>
+  <text x="240" y="372" text-anchor="middle" class="title">Power jack and label: robot's right (−y)</text>
+  <text x="240" y="392" text-anchor="middle" class="small">your left when you face the robot</text>
+
+  <!-- axes -->
+  <line x1="540" y1="330" x2="620" y2="330" class="axis" marker-end="url(#bo-arrow)" />
+  <text x="628" y="335" class="title">+x</text>
+  <line x1="540" y1="330" x2="540" y2="260" class="axis" marker-end="url(#bo-arrow)" />
+  <text x="548" y="262" class="title">+y</text>
+  <text x="660" y="360" text-anchor="end" class="small">front: the arm points</text>
+  <text x="660" y="378" text-anchor="end" class="small">to +x at 0°</text>
+  <text x="20" y="428" class="small">Elephant's names: their "front of the base" is this back face. Their "right side" is −y.</text>
+</svg>
+<style>
+  .iface { stroke: #ffd400; stroke-width: 6; }
+  .hdr { fill: #1d1e20; }
+  .strip { fill: #5fb83a; stroke: #2e3034; }
+  .trvg { fill: #e9e2cf; stroke: #b7ad92; }
+  .jack { fill: #ffd400; }
+  .labelarc { fill: none; stroke: #ffd400; stroke-width: 7; }
+  .axis { stroke: var(--sl-color-accent); stroke-width: 2.5; }
+</style>

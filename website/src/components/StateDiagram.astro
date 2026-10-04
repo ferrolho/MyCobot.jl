@@ -1,0 +1,41 @@
+---
+// State machine of atom_controller. Colours match the LED matrix.
+const S = [
+  { id: 'BOOTING', x: 20, y: 20, c: '#3d6bff' },
+  { id: 'HOLDING', x: 250, y: 20, c: '#2fd15a' },
+  { id: 'READY', x: 480, y: 20, c: '#ffb020' },
+  { id: 'ERROR', x: 135, y: 250, c: '#ff3b3b' },
+  { id: 'PLAYING', x: 480, y: 250, c: '#22d3d3' },
+];
+const W = 160, H = 46;
+---
+<svg class="diagram" viewBox="0 0 660 360" role="img" aria-label="State diagram. BOOTING goes to HOLDING when the pose is held, or to ERROR if a servo is missing. HOLDING goes to READY when a valid plan arrives. READY goes to PLAYING on PLAY. PLAYING goes back to READY when the plan is done or stopped, or to ERROR on a tracking or bus error. ERROR goes back to HOLDING on HOLD or a button press. Any state except PLAYING can go to OTA.">
+  <defs>
+    <marker id="st-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" style="fill: var(--sl-color-gray-3)" />
+    </marker>
+  </defs>
+  {S.map((s) => (
+    <g>
+      <rect x={s.x} y={s.y} width={W} height={H} rx="23" class="box" style={`stroke:${s.c}; stroke-width:3`} />
+      <circle cx={s.x + 24} cy={s.y + H / 2} r="9" fill={s.c} />
+      <text x={s.x + 44} y={s.y + 29} class="title">{s.id}</text>
+    </g>
+  ))}
+  <path class="line" marker-end="url(#st-arrow)" d="M 180 43 L 248 43" />
+  <text x="183" y="88" class="small">pose held</text>
+  <path class="line" marker-end="url(#st-arrow)" d="M 410 43 L 478 43" />
+  <text x="395" y="88" class="small">valid plan</text>
+  <path class="line" marker-end="url(#st-arrow)" d="M 540 66 L 540 248" />
+  <text x="548" y="150" class="small">PLAY</text>
+  <path class="line" marker-end="url(#st-arrow)" d="M 600 248 L 600 68" />
+  <text x="608" y="190" class="small">done</text>
+  <text x="608" y="208" class="small">STOP</text>
+  <path class="line" marker-end="url(#st-arrow)" d="M 478 273 L 297 273" />
+  <text x="300" y="300" class="small">tracking or bus error</text>
+  <path class="line" marker-end="url(#st-arrow)" d="M 80 66 L 160 248" />
+  <text x="20" y="160" class="small">servo missing</text>
+  <path class="line" marker-end="url(#st-arrow)" d="M 255 248 L 315 68" />
+  <text x="300" y="160" class="small">HOLD / button</text>
+  <text x="20" y="345" class="small">Any state except PLAYING → OTA (magenta). After an update the ATOM restarts at BOOTING.</text>
+</svg>

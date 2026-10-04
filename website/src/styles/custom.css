@@ -1,0 +1,26 @@
+/* Wider content column: the pages carry measurement tables and long commands. */
+:root {
+  --sl-content-width: 52rem;
+}
+
+/* Tables are data. Let them scroll on narrow screens instead of squeezing the columns. */
+.sl-markdown-content table {
+  display: block;
+  overflow-x: auto;
+}
+
+/* Diagrams drawn in inline SVG follow the theme colours. */
+.diagram {
+  width: 100%;
+  height: auto;
+  font-family: var(--sl-font);
+}
+.diagram .box { fill: var(--sl-color-gray-6); stroke: var(--sl-color-gray-3); stroke-width: 1.5; }
+.diagram .accent { fill: var(--sl-color-accent-low); stroke: var(--sl-color-accent); stroke-width: 1.5; }
+.diagram .line { stroke: var(--sl-color-gray-3); stroke-width: 2; fill: none; }
+.diagram .bus { stroke: var(--sl-color-accent); stroke-width: 3; fill: none; }
+.diagram .wifi { stroke: var(--sl-color-gray-3); stroke-width: 2; stroke-dasharray: 6 5; fill: none; }
+.diagram text { fill: var(--sl-color-white); font-size: 16px; }
+.diagram .small { font-size: 13.5px; fill: var(--sl-color-gray-2); }
+.diagram { max-width: 680px; display: block; margin: 1rem auto; }
+.diagram .title { font-weight: 600; }

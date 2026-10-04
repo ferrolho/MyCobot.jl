@@ -1,0 +1,74 @@
+---
+// The adaptive gripper (myCobot_gripper_ag), front view. The outlines and pivots come from the
+// gripper meshes and joints in mycobot_ros (mycobot_280m5_with_gripper_parallel.urdf), in mm.
+// One servo turns the left gear; the right gear turns the other way. On each side, the geared
+// link and a parallel link carry the finger, so the finger stays parallel.
+// The animation opens and closes the fingers; it stops for reduced motion.
+const BASE = 'M-29.0 -3.5 L-28.6 -3.5 L-28.6 -1.5 L-29.0 -1.5 L-28.9 6.2 L-27.7 11.5 L-23.5 18.6 L-19.1 23.1 L-16.5 25.0 L-10.9 27.9 L-4.8 29.6 L-1.6 29.9 L4.8 29.6 L7.9 28.9 L13.8 26.6 L19.1 23.1 L23.5 18.6 L26.9 13.2 L28.2 9.8 L29.0 4.4 L28.8 -30.5 L27.7 -31.8 L26.1 -32.3 L-27.3 -32.0 L-28.5 -31.0 L-29.0 -29.3 Z';
+const LINK3 = 'M-19.4 -15.4 L-22.2 -13.6 L-25.1 -10.4 L-26.5 -7.7 L-27.6 -2.9 L-28.4 -1.5 L-38.1 8.0 L-41.9 9.2 L-43.5 10.6 L-44.1 13.5 L-42.7 16.0 L-41.3 16.7 L-39.4 16.7 L-20.8 9.6 L-19.2 10.4 L-17.8 9.3 L-16.9 7.7 L-15.4 8.1 L-15.4 9.9 L-14.8 11.6 L-14.1 11.7 L-13.7 11.1 L-12.9 8.3 L-11.4 8.2 L-10.8 9.9 L-9.6 11.2 L-8.9 11.0 L-8.7 10.0 L-9.0 7.5 L-7.6 6.8 L-5.7 8.6 L-4.9 9.0 L-4.3 8.5 L-4.7 6.8 L-5.7 5.3 L-4.7 4.1 L-3.1 5.0 L-1.3 5.2 L-0.9 4.6 L-1.3 3.8 L-3.4 2.0 L-2.8 0.6 L-0.1 0.6 L0.7 0.3 L0.8 -0.4 L-0.6 -1.4 L-2.4 -1.8 L-2.4 -3.4 L-0.7 -3.9 L0.8 -4.9 L0.7 -5.6 L-0.2 -5.9 L-2.9 -5.8 L-3.5 -7.2 L-1.4 -9.0 L-1.0 -9.8 L-1.4 -10.4 L-3.2 -10.2 L-4.8 -9.3 L-5.8 -10.5 L-4.8 -12.0 L-4.5 -13.7 L-5.1 -14.2 L-5.9 -13.8 L-7.8 -11.9 L-9.2 -12.6 L-8.8 -14.7 L-9.5 -16.3 L-10.8 -15.2 L-11.6 -13.3 L-13.1 -13.4 L-13.8 -16.0 L-14.3 -16.7 L-15.1 -16.7 L-15.6 -14.9 L-15.6 -13.1 L-17.0 -12.7 L-18.0 -14.3 Z M-8.2 -0.0 L-8.6 -0.8 L-8.4 -1.6 L-7.6 -2.1 L-6.8 -1.8 L-6.3 -1.1 L-6.6 -0.2 L-7.3 0.2 Z M-11.1 -0.4 L-13.3 0.5 L-15.4 -0.4 L-16.2 -2.5 L-15.4 -4.7 L-13.2 -5.5 L-11.1 -4.6 L-10.3 -2.5 Z M-11.1 -7.3 L-12.6 -7.6 L-12.8 -8.6 L-12.2 -9.3 L-11.4 -9.4 L-10.6 -8.7 L-10.6 -8.0 Z M-13.9 4.0 L-14.7 4.4 L-15.5 4.2 L-16.0 3.4 L-15.7 2.6 L-15.0 2.1 L-14.1 2.4 L-13.7 3.1 Z M-18.5 -3.1 L-19.9 -3.4 L-20.1 -4.4 L-19.6 -5.1 L-18.7 -5.2 L-18.0 -4.7 L-17.9 -3.8 Z M-26.0 -2.5 L-25.7 -5.1 L-25.2 -6.9 L-24.5 -8.5 L-24.1 -9.2 L-23.0 -10.7 L-22.4 -11.4 L-21.1 -12.5 L-20.4 -13.1 L-21.6 -12.1 L-21.3 -12.4 L-22.9 -10.8 L-22.6 -11.1 L-24.5 -8.5 L-25.5 -6.0 Z M-39.3 14.1 L-40.3 14.3 L-41.3 13.9 L-41.7 12.4 L-41.1 11.6 L-40.1 11.3 L-39.1 11.7 L-38.7 13.2 Z'; // geared link, pivot A
+const LINK2 = 'M-30.7 38.6 L-3.0 22.6 L-1.9 21.3 L-1.5 19.7 L-1.7 18.0 L-2.7 16.3 L-4.1 15.3 L-5.6 14.8 L-8.2 15.4 L-35.6 31.0 L-37.0 32.7 L-37.4 35.1 L-36.9 36.9 L-35.9 38.0 L-34.2 39.0 L-32.5 39.1 Z M-7.4 18.9 L-6.7 18.0 L-5.6 17.9 L-4.7 18.6 L-4.6 19.7 L-5.3 20.6 L-6.4 20.7 L-7.3 20.0 Z M-31.5 34.5 L-31.8 35.5 L-32.8 36.1 L-33.8 35.8 L-34.4 34.8 L-34.2 33.8 L-33.1 33.2 L-32.1 33.4 Z'; // parallel link, pivot B
+const FINGER = 'M-35.9 11.4 L-36.8 9.8 L-38.5 8.6 L-41.6 8.5 L-44.0 10.5 L-44.6 13.5 L-37.2 36.1 L-35.7 38.2 L-33.5 39.1 L-33.4 66.3 L-20.2 66.1 L-20.3 40.4 L-26.3 40.3 Z M-32.3 33.3 L-31.5 34.8 L-32.5 36.1 L-33.6 36.0 L-34.4 35.1 L-34.5 34.5 L-33.4 33.2 Z M-39.5 11.5 L-38.7 12.9 L-39.7 14.2 L-40.9 14.1 L-41.6 13.3 L-41.2 11.7 L-40.7 11.4 Z';
+const A = [-12, -2.5]; // gear centre (joint gripper_controller)
+const B = [-5, 19.5]; // parallel-link pivot
+const C = [-39, 13.5]; // finger pin on the geared link
+const D = [-32, 35.5]; // finger pin on the parallel link
+// gripper_controller angle in degrees, between the URDF limits: -40 is closed (pads ~6 mm apart,
+// as on the real gripper), +8.6 is open (~43 mm).
+const steps = [-40, 8.6, 8.6, -40, -40];
+const KT = '0;0.4;0.5;0.9;1';
+const DUR = '5s';
+const rot = (sign: number, [x, y]: number[]) => steps.map((a) => `${sign * a} ${x} ${y}`).join(';');
+const S = 3.4;
+---
+<svg class="diagram gripper" viewBox="0 0 660 400" role="img" aria-label="The adaptive gripper, front view, drawn from Elephant's 3D model. One servo turns a gear in the body. The gear on the other side turns the opposite way. On each side, the geared link and a parallel link connect the body to a finger with a black pad. The animation shows the fingers open and close: they move on an arc and stay parallel. Closed, the pads stay a few millimetres apart. Open, the gap is about 43 mm.">
+  <g transform={`translate(240 128) scale(${S})`}>
+    {[1, -1].map((m) => (
+      <g transform={`scale(${m} 1)`}>
+        <g>
+          <animateTransform attributeName="transform" type="rotate" values={rot(1, A)} keyTimes={KT} dur={DUR} repeatCount="indefinite" />
+          <path d={LINK3} class="link gear" fill-rule="evenodd" />
+          <g>
+            <animateTransform attributeName="transform" type="rotate" values={rot(-1, C)} keyTimes={KT} dur={DUR} repeatCount="indefinite" />
+            <path d={FINGER} class="finger" fill-rule="evenodd" />
+            <rect x="-21.6" y="41" width="1.6" height="25.5" class="fpad" />
+            <circle cx={C[0]} cy={C[1]} r="2.3" class="pin" />
+          </g>
+        </g>
+      </g>
+    ))}
+    <path d={BASE} class="body" fill-rule="evenodd" />
+    {[1, -1].map((m) => (
+      <g transform={`scale(${m} 1)`}>
+        <g>
+          <animateTransform attributeName="transform" type="rotate" values={rot(1, B)} keyTimes={KT} dur={DUR} repeatCount="indefinite" />
+          <path d={LINK2} class="link" fill-rule="evenodd" />
+          <circle cx={D[0]} cy={D[1]} r="2.3" class="pin" />
+        </g>
+        <circle cx={B[0]} cy={B[1]} r="2.3" class="pin" />
+      </g>
+    ))}
+  </g>
+  <text x="240" y="392" text-anchor="middle" class="small">The gears are inside the body (drawn see-through).</text>
+  <text x="450" y="150" class="title">Clamp width</text>
+  <text x="450" y="170" class="small">20–45 mm (label)</text>
+  <text x="450" y="200" class="title">Load</text>
+  <text x="450" y="220" class="small">150 g maximum</text>
+  <text x="450" y="250" class="title">Size</text>
+  <text x="450" y="270" class="small">110 × 90 × 60 mm</text>
+</svg>
+<script>
+  // SMIL ignores prefers-reduced-motion, so pause the drawing at its first frame.
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    document.querySelectorAll<SVGSVGElement>('svg.gripper').forEach((s) => {
+      s.pauseAnimations();
+      s.setCurrentTime(0);
+    });
+  }
+</script>
+<style>
+  .body { fill: #f3f3ef; fill-opacity: 0.82; stroke: #a9a9a2; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+  .link { fill: #e4e4de; stroke: #9d9d96; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+  .finger { fill: #f6f6f2; stroke: #9d9d96; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+  .fpad { fill: #1b1b1b; }
+  .pin { fill: #c3c7cd; stroke: #7d8188; stroke-width: 1; vector-effect: non-scaling-stroke; }
+</style>

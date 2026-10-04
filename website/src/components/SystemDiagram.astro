@@ -1,0 +1,47 @@
+---
+// The two control paths: laptop -> FT232 -> base -> servo bus, and laptop -> WiFi -> ATOM -> servo bus.
+---
+<svg class="diagram" viewBox="0 0 860 400" role="img" aria-label="System diagram: the laptop reaches the servo bus through the FT232 adapter and the base, or over WiFi through the ATOM.">
+  <!-- laptop -->
+  <rect class="box" x="20" y="150" width="150" height="90" rx="8" />
+  <text x="95" y="185" text-anchor="middle" class="title">Laptop</text>
+  <text x="95" y="207" text-anchor="middle" class="small">Julia / Python</text>
+  <text x="95" y="225" text-anchor="middle" class="small">planning, analysis</text>
+
+  <!-- FT232 path -->
+  <line class="line" x1="170" y1="215" x2="250" y2="300" />
+  <text x="150" y="285" class="small">USB</text>
+  <rect class="box" x="250" y="270" width="130" height="60" rx="8" />
+  <text x="315" y="296" text-anchor="middle" class="title">FT232R</text>
+  <text x="315" y="316" text-anchor="middle" class="small">latency timer 1 ms</text>
+  <line class="line" x1="380" y1="300" x2="430" y2="300" />
+  <text x="405" y="350" text-anchor="middle" class="small">pins 13/14/GND</text>
+  <rect class="box" x="430" y="270" width="120" height="60" rx="8" />
+  <text x="490" y="296" text-anchor="middle" class="title">Base</text>
+  <text x="490" y="316" text-anchor="middle" class="small">bus bridge</text>
+
+  <!-- WiFi path -->
+  <path class="wifi" d="M 170 175 C 330 60, 520 50, 640 95" />
+  <text x="330" y="46" class="small">WiFi (UDP): plans, commands, telemetry</text>
+  <rect class="accent" x="640" y="60" width="200" height="80" rx="8" />
+  <text x="740" y="90" text-anchor="middle" class="title">ATOM (ESP32)</text>
+  <text x="740" y="110" text-anchor="middle" class="small">500 Hz onboard player</text>
+  <text x="740" y="127" text-anchor="middle" class="small">IMU, LED matrix, button</text>
+
+  <!-- servo bus -->
+  <line class="bus" x1="550" y1="300" x2="840" y2="300" />
+  <line class="bus" x1="740" y1="140" x2="740" y2="300" />
+  <text x="752" y="200" class="small">G19 RX / G22 TX</text>
+  <text x="575" y="270" class="small">Feetech servo bus</text>
+  <text x="575" y="289" class="small">1 Mbaud, half-duplex</text>
+
+  <!-- servos -->
+  {[0, 1, 2, 3, 4, 5].map((i) => (
+    <g>
+      <line class="bus" x1={575 + i * 45} y1="300" x2={575 + i * 45} y2="335" />
+      <rect class="box" x={557 + i * 45} y="335" width="36" height="36" rx="6" />
+      <text x={575 + i * 45} y="358" text-anchor="middle" class="small">J{i + 1}</text>
+    </g>
+  ))}
+  <text x="20" y="385" class="small">Only one side drives the bus at a time: the laptop (through the FT232) or the ATOM.</text>
+</svg>

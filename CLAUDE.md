@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-MyCobot.jl is a Julia package for controlling the myCobot 280 (for Arduino) robotic arm via serial communication. It provides a high-level interface built on LibSerialPort.jl for sending commands and receiving data from the robot using a custom binary protocol.
+This repository (to be renamed `mycobot-280-lab` on GitHub; currently `MyCobot.jl`) holds the Julia package `MyCobot`, the ATOM firmware, Python tools and the documentation site for the myCobot 280 (for Arduino). The Julia package controls the arm over serial and WiFi. It provides a high-level interface built on LibSerialPort.jl for sending commands and receiving data from the robot using a custom binary protocol.
 
 ## Development Commands
 
@@ -64,7 +64,7 @@ The package is organized by functional domains in `src/serial/`:
   - `set_fresh_mode()` - Toggle between "latest" and "queue" motion modes
 - **servo_control.jl** - Low-level servo operations
   - Individual servo power control
-  - PID parameter reading/writing (see docs/pid-tuning.md)
+  - PID parameter reading/writing (see website/src/content/docs/system/servos.md)
   - Servo calibration
 - **gripper_control.jl** - End effector control
 - **atom_io_control.jl** - ATOM controller I/O (LED, digital pins)
@@ -92,9 +92,18 @@ The package supports real-time robot visualization:
 - URDF files in `mycobot_description/urdf/mycobot_280_arduino/`
 - `scripts/viewer.jl` demonstrates live visualization by polling `get_angles()` and updating the model
 
+## Documentation site (source of truth)
+
+- All prose documentation lives in `website/src/content/docs/` (Astro + Starlight). There is no `docs/` directory any more.
+- The site is the source of truth. When code, firmware or wiring changes, update the matching page in the same commit. Record measurements with dates and numbers; mark what is not verified.
+- Write the pages in a style based on ASD-STE100 Simplified Technical English (`reference/writing-style.md`): short sentences, active voice, imperative steps, one term for one thing.
+- Prefer visual representations where they help (SVG diagram components in `website/src/components/`, e.g. `LedMatrix.astro` for LED signals), with a text description alongside for accessibility.
+- Run the site: `cd website && npm run dev`. Check it: `npm run build` (fails on broken internal links).
+- After you change a diagram, run `npm run check:diagrams` with the dev server running. It reports SVG text that leaves the drawing, overlaps other text, or is crossed by a line or shape edge.
+
 ## Important Context
 
-### Fast communication (read docs/fast-communication.md first)
+### Fast communication (read the documentation site first: website/src/content/docs/)
 - The FT232R USB latency timer defaults to 16 ms and resets on every unplug. Set it to 1 ms (`tools/python/ftdi_latency.py 1`), otherwise every reply takes ≥16 ms.
 - The Feetech STS servo bus (IDs 1–6, 1 Mbaud, `FF FF` packets) is reachable directly on the same serial port. A sync read of all servos takes ~3 ms, and a SYNC WRITE + SYNC READ loop runs at ~300 Hz. Never mix ATOM commands with a direct-bus loop.
 - Goal position uses the same units as present position (no offset). Goal speed 0 means no motion in position mode, so set a nonzero speed cap to move. Writing a goal switches torque on; writing the mode switches it off.
@@ -111,7 +120,7 @@ The robot has two motion command queuing modes:
 - **Latest mode** (fresh_mode=true): New commands replace previous ones immediately
 
 ### PID Tuning
-Servo PID parameters vary by joint (J1-J6). Default parameters documented in `docs/pid-tuning.md`. Use `read_servo_parameter()` and `set_servo_parameter()` to adjust. Parameter indices:
+Servo PID parameters vary by joint (J1-J6). Defaults are in `website/src/content/docs/system/servos.md`. Use `read_servo_parameter()` and `set_servo_parameter()` to adjust. Parameter indices:
 - 21: Proportional gain (P)
 - 22: Derivative gain (D)
 - 23: Integral gain (I)

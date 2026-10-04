@@ -1,0 +1,75 @@
+---
+title: ATOM link (WiFi)
+description: The UDP protocol between the laptop and the controller firmware, and the Julia API that uses it.
+---
+
+The laptop talks to the [controller firmware](/mycobot-280-lab/firmware/controller/) over
+WiFi with UDP. All values are little-endian.
+
+| Port | Direction | Content |
+| --- | --- | --- |
+| 5006 | laptop → ATOM | Commands |
+| 5007 | ATOM → laptop | Replies and telemetry, sent to the address of the last command |
+| 5005 | ATOM → broadcast | Status log, one text line per second |
+
+## Messages
+
+| Code | Message | Content | Reply |
+| --- | --- | --- | --- |
+| `0x01` | PING | — | `0x81` PONG: u16 version, u8 state, u32 plan samples, u16 plan rate, u8 IMU ok |
+| `0x02` | STATE | — | `0x82` STATE: u8 ok, u16 position[6], u16 speed[6], u16 load[6], i16 acc[3], i16 gyro[3] |
+| `0x03` | HOLD | — | `0x83` ACK |
+| `0x04` | PLAN_BEGIN | u32 samples, u16 rate (Hz) | ACK (`-3` = not enough memory) |
+| `0x05` | PLAN_DATA | u32 offset, u16 count, count × {u16 cmd[6], u16 ref[6]} | ACK with the offset |
+| `0x06` | PLAN_END | u32 CRC-32C of all samples | ACK (`-1` = CRC mismatch) |
+| `0x07` | PLAY | u16 rate (Hz), u16 speed cap, u16 max error (steps), u16 start tolerance (steps) | ACK, then TELEM packets, then DONE |
+| `0x08` | STOP | — | ACK |
+| `0x84` | TELEM | u32 first sequence number, u8 n, n × sample | — |
+| `0x85` | DONE | u8 result, u32 cycles, u32 max period (µs), u32 late cycles, u32 telemetry dropped, u8 joint, i16 error (steps) | — |
+
+ACK (`0x83`) is: u8 message code, i8 status (0 = OK), u32 value.
+
+### Plans
+
+A plan is a list of samples at a fixed rate (250 Hz by default). Each sample has
+two sets of six servo positions, in steps:
+
+- **cmd**: the goals the ATOM sends (lag-compensated or learned).
+- **ref**: the wanted positions. The ATOM uses them for the start check and the tracking check.
+
+The ATOM interpolates linearly between samples at the control rate. The circle
+(15 s) is 3751 samples, about 90 KB.
+
+### Telemetry sample (53 bytes)
+
+`u32 t_us, u16 position[6], u16 speed[6], u16 load[6], i16 acc[3], i16 gyro[3], u8 ok`
+
+The values are raw register values. `src/atom.jl` converts them to degrees, °/s,
+%, g and °/s. The ATOM sends 20 samples per packet.
+
+### DONE results
+
+| Code | Result |
+| --- | --- |
+| 0 | done |
+| 1 | tracking error (the ATOM holds the pose) |
+| 2 | stopped (STOP received) |
+| 3 | not at the start pose |
+| 4 | bus error |
+
+## Julia API
+
+```julia
+import MyCobot
+link = MyCobot.AtomLink("192.168.1.107")
+MyCobot.atom_ping(link)                     # version, state, plan, IMU
+s = MyCobot.atom_state(link)                # q (°), dq (°/s), load (%), imu (g, °/s)
+MyCobot.atom_move_to(link, zeros(6))        # MOVES THE ROBOT: minimum-jerk move
+rec, done = MyCobot.atom_play_trajectory(link, t, q_plan)   # MOVES THE ROBOT
+MyCobot.write_atom_recording_csv("rec.csv", rec)
+close(link)
+```
+
+`atom_play_trajectory` has the same contract as the laptop player: it checks the
+plan, applies lag compensation (or uses `q_cmd`), uploads, plays and returns the
+recording with the IMU columns `acc_x … gyro_z`.

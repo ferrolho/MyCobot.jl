@@ -1,0 +1,82 @@
+---
+title: ATOM controller board
+description: The M5Stack ATOM Matrix at the end of the arm — chip, pins, peripherals and USB behaviour.
+---
+
+import AtomPinout from '../../../components/AtomPinout.astro';
+import ArmSocket from '../../../components/ArmSocket.astro';
+import LedMatrix from '../../../components/LedMatrix.astro';
+
+The **ATOM** is an M5Stack ATOM Matrix. It plugs into a socket at the end of the
+arm. It is on the servo bus, so it can control the servos directly.
+
+<AtomPinout />
+
+## Chip
+
+| Item | Value |
+| --- | --- |
+| Chip | ESP32-PICO-D4, revision v1.1 |
+| CPU | 2 × 240 MHz (Xtensa) |
+| Flash | 4 MB, embedded |
+| Radio | WiFi 2.4 GHz and Bluetooth |
+| MAC address | `e8:6b:ea:31:4c:f4` |
+| WiFi address | `192.168.1.107` on the home network (DHCP; check the status log) |
+
+## Pins
+
+| Function | Pin | Notes |
+| --- | --- | --- |
+| Servo bus RX | **G19** | Verified with the [bus probe](/mycobot-280-lab/firmware/probe/). |
+| Servo bus TX | **G22** | Verified. The ATOM does not receive its own transmissions. |
+| LED matrix (25 × SK6812) | G27 | Keep the brightness low (the firmware uses 20/255). |
+| Button (under the matrix) | G39 | Active low. |
+| IMU (MPU6886, I²C 0x68) | SDA G25, SCL G21 | ±8 g and ±2000°/s in the firmware. |
+| IR LED | G12 | Not used. |
+| Header (free) | G23, G33 | |
+| Grove port | G26, G32 | |
+
+### The socket in the arm
+
+Elephant's documentation calls this socket **function interface group 6**.
+
+<ArmSocket />
+
+:::caution[G19 and G22 are not free]
+Elephant's documentation lists G22, G19, G23 and G33 on this socket as general-purpose
+I/O. On this arm, **G19 and G22 carry the servo bus**. Do not use them as I/O.
+G23 and G33 are free.
+:::
+
+The arm end also has a 3-pin side port for a gripper (Elephant's adaptive gripper). The
+gripper servo is probably on the same bus as ID 7. This is why the stock firmware
+pings ID 7. See [Gripper](/mycobot-280-lab/system/gripper/).
+
+## USB
+
+The ATOM's USB-serial chip reports as FTDI `0403:6001` (vendor "Hades2001",
+serial `A952DE0075`). On macOS it is `/dev/cu.usbserial-A952DE0075`.
+
+| Condition | USB connects | Notes |
+| --- | --- | --- |
+| ATOM out of the arm | Yes | Use this to flash over USB. |
+| ATOM in the arm, 12 V on | **No** | |
+| ATOM in the arm, 12 V off | Yes | **Do not use.** The USB port then supplies the servos (4.4–5.4 V). |
+
+- Flash and read at **115 200 baud**. Reads at 250 and 750 kbaud corrupted data.
+- After the first USB flash, update the firmware over WiFi (OTA). See
+  [Build, flash and update](/mycobot-280-lab/firmware/build-flash/).
+
+## Firmware
+
+| Firmware | Status |
+| --- | --- |
+| Elephant stock firmware v7.2 | Backed up. See [Stock firmware backup](/mycobot-280-lab/firmware/stock-backup/). |
+| `atom_controller` | Installed. See [Controller firmware](/mycobot-280-lab/firmware/controller/). |
+| `atom_probe` | Diagnostic firmware. See [Bus probe firmware](/mycobot-280-lab/firmware/probe/). |
+
+In the arm, the LED matrix faces out. It shows the firmware state:
+
+<LedMatrix fill="#2fd15a" label="All pixels green" caption="Controller firmware: holding" />
+
+See [LED matrix signals](/mycobot-280-lab/firmware/led-signals/).

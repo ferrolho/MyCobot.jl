@@ -1,5 +1,5 @@
 # Direct access to the Feetech STS servo bus over the robot's serial port.
-# Background and measurements: docs/fast-communication.md.
+# Documentation: website/src/content/docs/comms/servo-bus.mdx and website/src/content/docs/reference/gotchas.md.
 #
 # Packets:  request FF FF <ID> <LEN = n_params + 2> <INSTR> <params...> <CHK>
 #           reply   FF FF <ID> <LEN> <ERROR> <data...> <CHK>
@@ -19,7 +19,7 @@ module Feetech
     const SYNC_WRITE = 0x83
     const BROADCAST_ID = 0xFE
 
-    # Register addresses (STS memory map, see docs/servo-registers.md)
+    # Register addresses (STS memory map, see website/src/content/docs/reference/registers.md)
     const REG_OFFSET = 31            # 2 bytes, sign-magnitude (bit 11)
     const REG_MODE = 33              # 0 position, 1 velocity, 2 PWM, 3 step
     const REG_TORQUE_ENABLE = 40

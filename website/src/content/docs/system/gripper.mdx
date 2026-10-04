@@ -1,0 +1,102 @@
+---
+title: Gripper
+description: The adaptive gripper (myCobot_gripper_ag) — size, mount, cable, model and how to control it. Not yet used.
+---
+
+import Gripper from '../../../components/Gripper.astro';
+import ArmEnd from '../../../components/ArmEnd.astro';
+
+:::note[Not yet used]
+The gripper is not yet connected to this arm. This page records what is known
+from the gripper, its label, Elephant's 3D model and Elephant's software. The items marked "not
+checked" need a test.
+:::
+
+<Gripper />
+
+## Data
+
+From the gripper label:
+
+| Item | Value |
+| --- | --- |
+| Name | 自适应夹爪 myCobot_gripper_ag (adaptive gripper) |
+| Type | End effector |
+| Clamp width | 20–45 mm (the range of object sizes) |
+| Maximum load | 150 g |
+| Size | 110 × 90 × 60 mm |
+
+## Mechanism
+
+- One servo in the body turns a gear. The gear meshes with a second gear, which
+  turns the other way.
+- On each side, the geared link and a parallel link carry the finger (a
+  parallelogram). The finger moves on an arc and stays parallel to the other
+  finger.
+- The finger pads are black rubber. Closed without an object, the pads stay a
+  few millimetres apart; they do not touch. Open, they are about 43 mm apart.
+- The drawing above uses the outlines and pivots of Elephant's 3D model (see
+  [Model](#model-urdf)). Its gripper matches the photos of this gripper.
+
+## Mount and cable
+
+<ArmEnd />
+
+- **Mount:** two black LEGO Technic-style pins on the back face of the body go into
+  the holes of the flange. The side faces of the body also have LEGO-style holes.
+- **Cable:** one cable with a 3-pin white plug. It connects to the 3-pin side port
+  at the end of the arm.
+
+:::caution[Before you connect the gripper]
+Do not run a joint motion with the gripper on before you add it to the model. The
+gripper adds mass at the flange, and the planner checks joint limits only, not
+collisions with the gripper.
+:::
+
+## Model (URDF)
+
+The ROS package has a model of this gripper for the 280 M5 arm:
+`mycobot_ros/mycobot_description/urdf/mycobot_280_m5/mycobot_280m5_with_gripper_parallel.urdf`
+(meshes `gripper_base.dae`, `gripper_left1–3.dae`, `gripper_right1–3.dae`).
+
+| Item | Value |
+| --- | --- |
+| Mount | Fixed joint `joint6output_to_gripper_base`, 34 mm along the J6 output axis, roll 1.579 rad |
+| Actuated joint | `gripper_controller`, −0.7 to 0.15 rad |
+| Other finger joints | Five joints that follow `gripper_controller` with `mimic` tags (multiplier ±1) |
+
+The M5 and Arduino versions use the same arm links, but check the mount offset
+on this arm before you use the model. Check also how the URDF parser handles the
+`mimic` tags.
+
+## Control
+
+### With the stock ATOM firmware
+
+pymycobot sends these stock-ATOM commands (`FE FE` frames):
+
+| Command | Code | Data |
+| --- | --- | --- |
+| `GET_GRIPPER_VALUE` | `0x65` | Reply: opening, 0–100 |
+| `SET_GRIPPER_STATE` | `0x66` | flag (0 open, 1 close, 10 release), speed 1–100 |
+| `SET_GRIPPER_VALUE` | `0x67` | opening 0–100, speed 1–100 |
+| `SET_GRIPPER_CALIBRATION` | `0x68` | The present position becomes 2048 |
+| `IS_GRIPPER_MOVING` | `0x69` | Reply: 0 or 1 |
+
+### Direct, on the servo bus (not checked)
+
+The evidence points to a bus servo with **ID 7**:
+
+- The stock firmware sends a PING to ID 7 before each angle read. See
+  [Stock ATOM protocol](/mycobot-280-lab/comms/stock-atom/).
+- Calibration sets the position to 2048, the centre of a 12-bit Feetech position.
+
+If this is correct, the ATOM controller and the laptop can control the gripper with
+the same packets as J1–J6.
+
+To check it:
+
+1. Switch off the 12 V supply. Connect the gripper cable.
+2. Switch on. Send a PING to ID 7.
+3. Read the model number (registers 3–4) and the present position (56–57).
+4. Read the angle limits (9–12) before you write a goal.

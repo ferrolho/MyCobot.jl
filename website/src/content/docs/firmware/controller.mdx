@@ -1,0 +1,101 @@
+---
+title: Controller firmware
+description: How atom_controller uses the two cores, its states, the play loop, and its limits.
+---
+
+import StateDiagram from '../../../components/StateDiagram.astro';
+import CycleTiming from '../../../components/CycleTiming.astro';
+
+
+import AtomCoresDiagram from '../../../components/AtomCoresDiagram.astro';
+
+`firmware/atom_controller/` is the firmware that runs on the ATOM now (version 2).
+It plays uploaded plans at a fixed rate, records joint state and IMU data, and
+sends the telemetry to the laptop over WiFi.
+
+## How the cores are used
+
+<AtomCoresDiagram />
+
+| Task | Core | Priority | Rate | Function |
+| --- | --- | --- | --- | --- |
+| Arduino `loop` | 1 | 1 | busy loop | Owns the servo bus. Power-up hold, requests, the play loop. |
+| `net_task` | 0 | 1 | every 1 ms | UDP commands, replies, telemetry, status log, OTA, LED matrix. |
+| `imu_task` | 0 | 2 | 500 Hz | Reads the MPU6886 and keeps the latest sample. |
+| ESP-IDF WiFi / TCP/IP | 0 | high | — | WiFi stack. WiFi power save is off for steady latency. |
+
+Rules that keep the loop deterministic:
+
+- Only core 1 uses the servo bus.
+- Only `net_task` uses the UDP sockets and the LED matrix. Core 1 posts its replies to a queue (`outbox`, 16 entries).
+- Telemetry goes through a single-producer, single-consumer ring of 512 samples with memory barriers. If the ring is full, the sample is dropped and counted.
+- OTA updates are not accepted while a plan plays.
+
+## States
+
+<StateDiagram />
+
+| State | LED | Meaning |
+| --- | --- | --- |
+| `BOOTING` | blue | Starting. |
+| `HOLDING` | green | Holding the pose (torque on, goal speed 0). No plan. |
+| `READY` | yellow | Holding, with a valid plan. |
+| `PLAYING` | cyan + progress bar | Playing a plan. |
+| `ERROR` | red | Bus error or tracking error. Press the button to clear it and hold. |
+| `OTA` | magenta | Receiving a firmware update. |
+
+See [LED matrix signals](/mycobot-280-lab/firmware/led-signals/).
+
+## Power-up
+
+1. Start the bus, the IMU and WiFi.
+2. Start `net_task` and `imu_task` on core 0.
+3. Wait 300 ms for the servos.
+4. Hold the pose: goal speed 0, then goal position = present position. Each write
+   is verified. Retry for up to 2 s.
+5. Go to `HOLDING`, or to `ERROR` if a servo does not reply.
+
+The button only acknowledges: in any state except `PLAYING`, a press holds the
+current pose and clears an error. It is not an emergency stop.
+
+## The play loop
+
+When `PLAY` arrives with a valid plan:
+
+1. Check the rate (50–800 Hz).
+2. Read the state. If any joint is more than the start tolerance from the plan's
+   first reference pose, stop with result 3.
+3. Write goal = present, acceleration 0 and the speed cap. Verify each write by
+   reading it back (up to 5 tries). If a write never takes, hold and stop with result 4.
+4. Every period (2 ms at 500 Hz):
+   1. Interpolate `cmd` and `ref` at the current time.
+   2. SYNC WRITE the goal positions.
+   3. SYNC READ position, speed and load.
+   4. Put a telemetry sample (with the latest IMU sample) in the ring.
+   5. If any joint is more than the maximum error from `ref`, stop with result 1.
+   6. Wait for the next period. If the cycle is late, count it and do not try to catch up.
+5. Continue 0.5 s after the last sample so the arm settles.
+6. At the end: hold the pose if the run stopped early, then set goal speed 0 and send `DONE`.
+
+<CycleTiming />
+
+A cycle uses about 1.54 ms of the 2 ms period. Measured over all runs so far: the
+period stays within 1.985–2.016 ms, with 0 late cycles.
+
+## Memory
+
+| Item | Size |
+| --- | --- |
+| Free heap with no plan | ~158 KB |
+| Plan sample (cmd + ref) | 24 bytes |
+| The 15 s circle at 250 Hz | 3751 samples, ~90 KB |
+| Telemetry ring | 512 × 53 bytes |
+
+A plan of about 20 s at 250 Hz is the practical maximum. Use a lower plan rate
+for longer plans.
+
+## IMU settings
+
+MPU6886 at I²C 400 kHz: accelerometer ±8 g (4096 LSB/g), gyroscope ±2000°/s
+(16.4 LSB per °/s), sample-rate divider 0, gyroscope low-pass ~176 Hz,
+accelerometer low-pass ~218 Hz. `imu_task` reads it every 2 ms.

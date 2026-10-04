@@ -1,0 +1,85 @@
+---
+title: LED matrix signals
+description: What each colour and pattern on the ATOM's 5×5 LED matrix means, for each firmware.
+---
+
+import LedMatrix from '../../../components/LedMatrix.astro';
+
+export const BLUE = '#3d6bff';
+export const GREEN = '#2fd15a';
+export const AMBER = '#ffb020';
+export const CYAN = '#22d3d3';
+export const RED = '#ff3b3b';
+export const MAGENTA = '#e04ce0';
+export const WHITE = '#f0f0f0';
+
+The ATOM's 5×5 LED matrix shows the state of the firmware. The pictures use
+bright colours so they are easy to see. On the robot the LEDs are dim: all
+firmware in this repository uses a brightness of 20/255 to keep the ATOM cool.
+
+## Controller firmware
+
+`atom_controller` fills the whole matrix with one colour. When a plan plays, the
+bottom row is a progress bar.
+
+<div>
+  <LedMatrix fill={BLUE} label="All pixels blue" caption="BOOTING" />
+  <LedMatrix fill={GREEN} label="All pixels green" caption="HOLDING" />
+  <LedMatrix fill={AMBER} label="All pixels yellow" caption="READY" />
+  <LedMatrix rows={[CYAN, CYAN, CYAN, CYAN, null]} animate={{ type: 'progress', row: 4, color: WHITE }} label="Top four rows cyan; the bottom row fills from left to right with white" caption="PLAYING" />
+  <LedMatrix fill={RED} label="All pixels red" caption="ERROR" />
+  <LedMatrix fill={MAGENTA} label="All pixels magenta" caption="OTA" />
+</div>
+
+| Colour | State | Meaning | What to do |
+| --- | --- | --- | --- |
+| Blue | `BOOTING` | The firmware starts. | Wait. It changes in less than 3 s. |
+| Green | `HOLDING` | All servos hold the pose. No plan is loaded. | Upload a plan. |
+| Yellow | `READY` | All servos hold the pose. A valid plan is loaded. | Send `PLAY`. |
+| Cyan, white bottom row | `PLAYING` | A plan plays. Each white pixel in the bottom row is one fifth of the run. | Keep clear of the arm. |
+| Red | `ERROR` | A servo did not reply, or a joint went too far from the plan. The arm holds where it is. | Find the cause. Then press the button to hold and clear the error. |
+| Magenta | `OTA` | A firmware update is in progress. | Do not disconnect the power. |
+
+## Bus probe firmware
+
+`atom_probe` uses one row for each signal. These examples show normal
+operation, an idle bus, and a problem.
+
+<div>
+  <LedMatrix rows={[GREEN, null, GREEN, null, GREEN]} animate={{ type: 'flicker', row: 1, color: WHITE }} label="Row 1 green, row 2 flickers white, row 3 green, row 5 green" caption="Bus traffic, all OK" />
+  <LedMatrix rows={[GREEN, null, GREEN, null, GREEN]} animate={{ type: 'flash', row: 3, color: AMBER }} label="Rows 1, 3 and 5 green; row 4 flashes yellow" caption="Answered a request to ID 7" />
+  <LedMatrix rows={[GREEN, null, null, null, GREEN]} label="Rows 1 and 5 green, other rows off" caption="WiFi OK, bus idle" />
+  <LedMatrix rows={[BLUE, null, RED, null, RED]} animate={{ type: 'flicker', row: 1, color: WHITE }} label="Row 1 blue, row 2 flickers white, rows 3 and 5 red" caption="WiFi connecting, bad checksums, no IMU" />
+  <LedMatrix fill={BLUE} label="All pixels blue" caption="Button pressed" />
+</div>
+
+| Row | Colour | Meaning |
+| --- | --- | --- |
+| 1 (top) | blue / green / red | WiFi: connecting / connected / no credentials |
+| 2 | white, flickers | Bytes arrived on the bus in the last 200 ms |
+| 3 | green / red | Valid Feetech packets in the last second / only bad checksums |
+| 4 | yellow flash | The probe answered a request to ID 7 |
+| 5 (bottom) | green / red | IMU found / not found |
+| all | blue | The button is pressed |
+
+## Stock firmware
+
+Elephant's stock firmware v7.2, from the FAQ in `assets/` and from observation:
+
+<div>
+  <LedMatrix fill={BLUE} label="All pixels blue" caption="After power-up" />
+  <LedMatrix fill={GREEN} label="All pixels green" caption="Joints locked" />
+  <LedMatrix fill={AMBER} label="All pixels yellow" caption="Free mode" />
+</div>
+
+| Colour | Meaning |
+| --- | --- |
+| Blue | After power-up, before the button is pressed. |
+| Green | Normal: the joints are locked. Shows after a button press at power-up. |
+| Yellow | Free mode: torque off while the button is held (FAQ). |
+
+## Rules for new signals
+
+- One colour per state. Keep the meanings above when you add a state.
+- Use a full-matrix colour for the state and a row or a pixel pattern for extra information.
+- Add the new signal to this page in the same commit as the firmware change.

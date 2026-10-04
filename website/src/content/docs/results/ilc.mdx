@@ -1,0 +1,53 @@
+---
+title: Iterative learning control
+description: How each run corrects the next one, and the results on the circle from the laptop and from the ATOM.
+---
+
+import IlcLoop from '../../../components/IlcLoop.astro';
+
+
+The tracking error repeats almost exactly from run to run. Iterative learning
+control (ILC) uses the error of one run to correct the commands of the next run:
+
+```text
+cmd[k+1](/mycobot-280-lab/results/ilc/t/) = cmd[k](/mycobot-280-lab/results/ilc/t/) + gain · w(t) · Q[ref − measured](t + lead_j)
+```
+
+<IlcLoop />
+
+| Term | Value | Purpose |
+| --- | --- | --- |
+| `gain` | 0.5 | Corrects half of the error per run. A low gain is stable. |
+| `Q` | forward-backward moving average, 80 ms | Learns only the slow, repeatable part. No phase shift. |
+| `lead_j` | the joint's lag (`DEFAULT_LAG`) | The command at `t` shows in the measurement near `t + lead_j`. |
+| `w(t)` | 1 inside, 0 within 0.3 s of the ends | The plan still starts and ends at rest. |
+
+ILC does not model the servos. It learns a correction for one trajectory. A new
+trajectory starts from zero again.
+
+On a model plant with delay, lag and sticking (the test suite), the error goes
+down in every iteration and halves in five.
+
+## Results on the circle
+
+| Run | Laptop, ~300 Hz (RMS / max) | ATOM, 500 Hz (RMS / max) |
+| --- | --- | --- |
+| Lag compensation only | 5.0 mm / 12.4 mm | 5.0 mm / 12.5 mm |
+| ILC iteration 1 | 2.5 mm / 6.5 mm | 2.6 mm / 6.8 mm |
+| ILC iteration 2 | 1.3 mm / 4.0 mm | 1.5 mm / 4.0 mm |
+| ILC iteration 3 | **0.8 mm** / 2.2 mm | **1.0 mm** / 3.4 mm |
+
+The error halves in each iteration, including the peaks where J2 and J3 stick.
+The largest correction in a step was 0.9°.
+
+![Laptop runs: planned and traced paths and the error for lag compensation and three ILC iterations.](../../../assets/plots/circle-ilc-laptop.png)
+
+## Run it
+
+```bash
+julia --project=. scripts/ilc_step.jl tools/python/plans/circle.csv tools/python/recordings/<last recording>.csv
+julia --project=. scripts/play_plan.jl tools/python/plans/circle_ilc1.csv [--atom=<ip>]
+```
+
+Keep separate plan names for the laptop series and the ATOM series. The ATOM
+series uses `circle_atom.csv` → `circle_atom_ilc1.csv` …

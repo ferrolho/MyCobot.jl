@@ -1,0 +1,40 @@
+---
+// How atom_controller uses the two ESP32 cores.
+---
+<svg class="diagram" viewBox="0 0 660 470" role="img" aria-label="Core 1 runs the control loop and owns the servo bus. Core 0 runs the network task, the IMU task and the WiFi stack. They share the plan buffer, the telemetry ring, the outbox queue and the request flags.">
+  <!-- core 1 -->
+  <rect class="box" x="10" y="10" width="310" height="300" rx="10" />
+  <text x="25" y="38" class="title">Core 1 — control</text>
+  <rect class="accent" x="25" y="55" width="280" height="240" rx="8" />
+  <text x="40" y="82" class="title">Arduino loop</text>
+  <text x="40" y="106" class="small">owns the servo bus (G19/G22)</text>
+  <text x="40" y="140" class="small">power-up: hold the pose</text>
+  <text x="40" y="164" class="small">idle: STATE, HOLD, PLAY</text>
+  <text x="40" y="198" class="small">play, every 2 ms:</text>
+  <text x="55" y="222" class="small">interpolate the plan</text>
+  <text x="55" y="244" class="small">SYNC WRITE goals</text>
+  <text x="55" y="266" class="small">SYNC READ state, check error</text>
+
+  <!-- core 0 -->
+  <rect class="box" x="340" y="10" width="310" height="300" rx="10" />
+  <text x="355" y="38" class="title">Core 0 — network, sensors</text>
+  <rect class="accent" x="355" y="55" width="280" height="110" rx="8" />
+  <text x="370" y="82" class="title">net task (1 ms)</text>
+  <text x="370" y="106" class="small">UDP commands, replies,</text>
+  <text x="370" y="128" class="small">telemetry, status log,</text>
+  <text x="370" y="150" class="small">OTA, LED matrix</text>
+  <rect class="accent" x="355" y="180" width="280" height="62" rx="8" />
+  <text x="370" y="206" class="title">imu task (500 Hz)</text>
+  <text x="370" y="229" class="small">MPU6886 → latest sample</text>
+  <rect class="box" x="355" y="255" width="280" height="40" rx="8" />
+  <text x="370" y="281" class="small">ESP-IDF WiFi and TCP/IP</text>
+
+  <!-- shared -->
+  <line class="line" x1="165" y1="310" x2="165" y2="350" />
+  <line class="line" x1="495" y1="310" x2="495" y2="350" />
+  <rect class="box" x="60" y="350" width="540" height="105" rx="10" />
+  <text x="330" y="378" text-anchor="middle" class="title">Shared memory</text>
+  <text x="330" y="404" text-anchor="middle" class="small">plan buffer (written by core 0, read by core 1)</text>
+  <text x="330" y="426" text-anchor="middle" class="small">telemetry ring, 512 samples (core 1 → core 0)</text>
+  <text x="330" y="448" text-anchor="middle" class="small">outbox queue and request flags</text>
+</svg>

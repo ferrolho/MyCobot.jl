@@ -1,0 +1,41 @@
+---
+// Byte-by-byte layout of a Feetech packet, with a captured example.
+interface Props { kind: 'request' | 'reply' }
+const { kind } = Astro.props;
+const fields = kind === 'request'
+  ? [
+      { name: 'FF', note: 'header', cls: 'hdr' }, { name: 'FF', note: 'header', cls: 'hdr' },
+      { name: '01', note: 'ID', cls: 'id' }, { name: '04', note: 'LEN = params + 2', cls: 'len' },
+      { name: '02', note: 'INSTR (READ)', cls: 'ins' }, { name: '38', note: 'address 56', cls: 'par' },
+      { name: '02', note: 'length 2', cls: 'par' }, { name: 'BE', note: 'checksum', cls: 'chk' },
+    ]
+  : [
+      { name: 'FF', note: 'header', cls: 'hdr' }, { name: 'FF', note: 'header', cls: 'hdr' },
+      { name: '01', note: 'ID', cls: 'id' }, { name: '04', note: 'LEN = data + 2', cls: 'len' },
+      { name: '00', note: 'ERROR (0 = OK)', cls: 'ins' }, { name: '80', note: 'data low', cls: 'par' },
+      { name: '08', note: 'data high', cls: 'par' }, { name: '72', note: 'checksum', cls: 'chk' },
+    ];
+const w = 96;
+const title = kind === 'request' ? 'Request: READ 2 bytes at register 56 from servo 1' : 'Reply: position 0x0880 = 2176';
+---
+<svg class="diagram" viewBox={`0 0 ${fields.length * w + 20} 130`} role="img" aria-label={`${title}. Bytes: ${fields.map((f) => `${f.name} (${f.note})`).join(', ')}.`}>
+  <text x="10" y="20" class="title">{title}</text>
+  {fields.map((f, i) => (
+    <g>
+      <rect x={10 + i * w} y="32" width={w - 6} height="44" rx="6" class={`byte ${f.cls}`} />
+      <text x={10 + i * w + (w - 6) / 2} y="61" text-anchor="middle" class="hex">{f.name}</text>
+      <text x={10 + i * w + (w - 6) / 2} y="96" text-anchor="middle" class="small">{f.note.split(' ').slice(0, 2).join(' ')}</text>
+      <text x={10 + i * w + (w - 6) / 2} y="112" text-anchor="middle" class="small">{f.note.split(' ').slice(2).join(' ')}</text>
+    </g>
+  ))}
+</svg>
+<style>
+  .byte { stroke: var(--sl-color-gray-3); stroke-width: 1.5; }
+  .hdr { fill: var(--sl-color-gray-5); }
+  .id { fill: #3d6bff55; }
+  .len { fill: #ffb02055; }
+  .ins { fill: #e04ce055; }
+  .par { fill: #2fd15a55; }
+  .chk { fill: #ff3b3b55; }
+  .hex { font-family: var(--sl-font-mono); font-size: 20px !important; font-weight: 600; }
+</style>

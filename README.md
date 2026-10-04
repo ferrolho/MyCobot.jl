@@ -1,25 +1,26 @@
-# MyCobot.jl
+# myCobot 280 Lab
 
-MyCobot.jl is a Julia package for the [myCobot 280 (for Arduino)][product-en] robotic arm. It provides a high-level interface to control the robotic arm using the [Julia](https://julialang.org/) programming language. The package is built on top of [LibSerialPort.jl](https://github.com/JuliaIO/LibSerialPort.jl) for serial communication with the robot.
+Fast, direct control of the Elephant Robotics [myCobot 280 (for Arduino)][product-en].
+
+- **500 Hz onboard control.** Custom firmware on the ATOM plays plans at a fixed 500 Hz and streams joint state and IMU data over WiFi.
+- **Direct servo-bus access.** The laptop talks to the Feetech servos through the FT232R at ~300 Hz.
+- **Julia package `MyCobot`.** Kinematics with RigidBodyDynamics.jl, planners, players, iterative learning control, and the ATOM link.
+- **Documentation site.** The hardware, the protocols, the firmware and every measured result.
+
+On a 100 mm circle, lag compensation and three runs of learning control reduce the tracking error from 12.5 mm to 0.8–1.0 mm RMS.
 
 > [!WARNING]
-> This package is a work in progress and is not yet feature-complete.
+> This is a research project and work in progress. There is no emergency stop: read the Safety page first.
 
-## Installation
+## The Julia package
 
-First, install Julia by following the instructions on the [official website](https://julialang.org/downloads/).
+Install Julia from the [official website](https://julialang.org/downloads/). Then add the package:
 
-Then, MyCobot.jl can be installed with the Julia package manager.
-
-From the Julia REPL, type `]` to enter the Pkg REPL mode and run:
 ```julia
-(@v1.11) pkg> add https://github.com/ferrolho/MyCobot.jl
+julia> import Pkg; Pkg.add(url="https://github.com/ferrolho/mycobot-280-lab")
 ```
 
-Or, equivalently, via the Pkg API:
-```julia
-julia> import Pkg; Pkg.add("https://github.com/ferrolho/MyCobot.jl")
-```
+Or work in the repository: `julia --project=.` from the repository root.
 
 ## Highlights
 
@@ -29,12 +30,17 @@ https://github.com/user-attachments/assets/d0974d83-21ab-439b-a25e-b0ce1fc81bdb
 
 ## Documentation
 
-- [Fast communication](docs/fast-communication.md): the FT232R latency fix (`get_angles` 20 ms → 8.5 ms) and direct Feetech servo-bus access from the laptop (all six servos read in ~3 ms; a 300 Hz closed loop with goal writes).
-- [Next steps](docs/next-steps.md): roadmap toward trajectory optimisation, MPC and RL on the real robot.
-- [Trajectory optimisation with TORA.jl](docs/tora-integration.md): connecting TORA to the 300 Hz player.
-- [Servo registers](docs/servo-registers.md): full Feetech STS register dump for J1–J6.
-- [PID tuning](docs/pid-tuning.md): default servo PID parameters.
-- [Python tools](tools/python/README.md): scripts used for the investigation (latency timer, benchmarks, bus sniffing, register dump).
+The documentation site in `website/` is the source of truth for this project: the
+hardware, the servo bus, the ATOM firmware, the Julia and Python tools, and every
+measured result. To browse it locally:
+
+```bash
+cd website
+npm install
+npm run dev     # then open http://localhost:4321/mycobot-280-lab/
+```
+
+The site will be published at https://ferrolho.github.io/mycobot-280-lab/.
 
 ## Resources
 

@@ -1,45 +1,39 @@
-# Servo registers (Feetech STS)
+---
+title: Servo register map
+description: Registers 0–70 of the six servos, read on 2026-10-03, with the encodings.
+---
 
-The six joint servos use the standard **Feetech STS** register map. This dump was taken on 2026-10-03 through the ATOM (`GET_SERVO_DATA 0x53`, one byte at a time) with [`tools/python/dump_servo_registers.py`](../tools/python/dump_servo_registers.py). Register names come from the Feetech STS memory map and are confirmed where noted below.
+The servos use the Feetech STS register map. This dump was read on 2026-10-03
+through the stock ATOM (`GET_SERVO_DATA`, one byte at a time) with
+`tools/python/dump_servo_registers.py`. Present position, load, voltage and
+temperature are live values. J1's goal position was written during the tests; on
+the other joints it reads 0 (not written since power-up).
 
-## Encoding
+## Encodings
 
-- Multi-byte values are **little-endian**: low byte at the lower address. For example, present position = `reg[56] | reg[57] << 8`.
-- Position is 12-bit, 0–4095, with 4096 steps per turn (0.088° per step).
-- **Joint angle ↔ position:** `angle = sign × (position − 2048) × 360 / 4096`, with sign = `[−1, −1, +1, −1, −1, −1]` for J1–J6. 0° is position 2048 on every joint (the ATOM writes 2048 for `send_angles` to zero). The signs come from comparing direct positions with the ATOM's `get_angles` at a non-zero pose. They agree within 0.1°.
-- **Speed** (58–59, 46–47): bit 15 is the direction (sign-magnitude), in steps/s.
-- **Load** (60–61): bit 10 is the direction, the magnitude is in 0.1 % units. For example, J4 `0x0421` = 3.3 % in the negative direction.
-- **Offset** (31–32): bit 11 is the sign (sign-magnitude), so J3 `0x0F7C`, J4 `0x0D1D` and J6 `0x0D4C` are negative. In position mode, present position has the offset applied, and **goal position uses those same units**: to hold a joint, write `goal = present`. In velocity mode, present position is reported raw, without the offset (see `fast-communication.md`, gotchas 1–5).
-- Voltage (62) is in 0.1 V. Temperature (63) is in °C.
+- Little-endian: low byte at the lower address. Present position = `reg[56] | reg[57] << 8`.
+- Speed (46–47, 58–59): bit 15 is the sign. Load (60–61): bit 10 is the sign, 0.1 % units.
+- Offset (31–32): bit 11 is the sign. J3 `0x0F7C`, J4 `0x0D1D` and J6 `0x0D4C` are negative.
+- Goal position (42–43) uses the same units as present position (56–57) in position mode.
+- Voltage (62): 0.1 V. Temperature (63): °C.
+- Register 19 (unloading condition) read 44/38 with the stock firmware and 0 with the custom firmware. The stock firmware probably writes it at power-up.
 
-## Confirmed by observation
+## Registers confirmed by observation
 
-| Register | Evidence |
+| Register | Observation |
 | --- | --- |
-| 5 ID | Reads 1–6 on J1–J6. |
-| 6 baud rate | 0 means 1 Mbaud; direct packets at 1 Mbaud work. |
-| 33 mode | Writing 1 put J1 into velocity mode. |
-| 40 torque enable | Turned off by writing the mode (33). Writing a goal position (42–43) sets it back to 1. |
-| 46–47 goal speed | Drives J1 in velocity mode. In position mode, 0 means no motion and nonzero is the speed cap. |
-| 42–43 goal position | Same units as present position. Used in the 300 Hz SYNC WRITE loop. |
-| 56–57 present position | Matches the ATOM's `get_angles`. |
-| 58–59 present speed | Tracked the commanded speed. |
+| 5 ID | 1–6 on J1–J6. |
+| 6 baud rate | 0 = 1 Mbaud. |
+| 33 mode | Writing 1 put J1 in velocity mode. Writing the mode turns torque off. |
+| 40 torque enable | A goal write sets it to 1. |
+| 41 acceleration | The stock firmware writes 50; the players write 0 (no ramp). |
+| 42–43 goal position | Same units as present position. |
+| 46–47 goal speed | 0 = no motion in position mode; otherwise the speed cap. Drives the joint in velocity mode. |
+| 56–57, 58–59 | Present position and speed; match the stock firmware's `get_angles`. |
 | 62 voltage | J1–J3 ≈ 7.6 V, J4–J6 ≈ 6.4–6.8 V. |
-| 67–68 | Tracks present position within a few steps (meaning unknown). |
+| 67–68 | Follows the present position within a few steps. Meaning not known. |
 
-## Model numbers
-
-| Joints | Model (reg 3–4) | Firmware (reg 0–1) | Notes |
-| --- | --- | --- | --- |
-| J1–J3 | `0x0809` (2057) | 3.9 | larger servo, P=32/D=8 (J1–J2) |
-| J4 | `0x0709` (1801) | 3.9 | speed loop I = 10, unlike the others |
-| J5–J6 | `0x0209` (521) | 3.9 | |
-
-For comparison, the common STS3215 reports `0x0309` (777).
-
-## Full dump (2026-10-03)
-
-J1's goal position (2159) was written during the tests, at a time when the goal units were misunderstood (see gotcha 1). On the other joints it reads 0, meaning never written since power-up. Present position, load, voltage and temperature are live values.
+## Full dump
 
 | Addr | Name | J1 | J2 | J3 | J4 | J5 | J6 |
 | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: |

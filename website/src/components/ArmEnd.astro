@@ -1,0 +1,57 @@
+---
+// The end of the arm, redrawn from photos (2026-10-04): the flange face (left) and a side view of
+// the J6 housing (right). The hole pattern is schematic.
+const P = 28;
+const holes = [
+  [0, 0], [P, 0], [-P, 0], [0, P], [0, -P],
+  [P, P], [P, -P], [-P, P], [-P, -P],
+  [2 * P, 0], [-2 * P, 0], [0, 2 * P], [0, -2 * P],
+];
+const inserts = [45, 135, 225, 315].map((a) => [72 * Math.cos((a * Math.PI) / 180), 72 * Math.sin((a * Math.PI) / 180)]);
+---
+<svg class="diagram" viewBox="0 0 680 380" role="img" aria-label="The end of the arm. Left: the flange face, a grey disc with a pattern of LEGO-style holes and four threaded brass inserts. The gripper's two pins go into these holes. Right: a side view of the J6 housing. The flange is at the left end. The LED matrix of the ATOM faces out of the right end. The ATOM socket (function interface group 6) is on the top. A 3-pin port is on the side. The gripper cable connects there.">
+  <!-- flange face -->
+  <circle cx="130" cy="170" r="88" class="flange" />
+  {holes.map(([x, y]) => <circle cx={130 + x} cy={170 + y} r="10" class="hole" />)}
+  {inserts.map(([x, y]) => <circle cx={130 + x} cy={170 + y} r="6" class="insert" />)}
+  <text x="130" y="290" text-anchor="middle" class="title">Flange face</text>
+  <text x="130" y="310" text-anchor="middle" class="small">LEGO-style holes</text>
+  <text x="130" y="328" text-anchor="middle" class="small">4 threaded brass inserts</text>
+
+  <!-- side view of the J6 housing -->
+  <rect x="440" y="225" width="80" height="90" class="shell" />
+  <rect x="280" y="115" width="32" height="120" rx="4" class="flange" />
+  <path d="M 312 115 H 560 Q 580 115 580 135 V 215 Q 580 235 560 235 H 312 Z" class="shell" />
+  <rect x="578" y="140" width="10" height="70" rx="2" class="matrix" />
+  <!-- top: the ATOM socket, from the flange side: labels, header, Grove, USB-C opening -->
+  <rect x="380" y="111" width="34" height="6" class="sticker" />
+  <rect x="420" y="111" width="30" height="6" class="slot" />
+  <rect x="470" y="109" width="80" height="8" rx="2" class="slot" />
+  <line x1="465" y1="105" x2="465" y2="75" class="line" />
+  <text x="465" y="50" text-anchor="middle" class="title">ATOM socket on top</text>
+  <text x="465" y="68" text-anchor="middle" class="small">group 6 (drawing below)</text>
+  <!-- side port -->
+  <rect x="470" y="160" width="20" height="34" rx="2" class="port" />
+  {[0, 1, 2].map((k) => <rect x="477" y={166 + k * 9} width="6" height="4" class="contact" />)}
+  <line x1="480" y1="198" x2="480" y2="250" class="line" />
+  <text x="530" y="268" class="title">Side port</text>
+  <text x="530" y="286" class="small">3 pins, for the</text>
+  <text x="530" y="304" class="small">gripper cable</text>
+  <!-- labels -->
+  <text x="296" y="262" text-anchor="middle" class="small">flange</text>
+  <text x="600" y="130" class="small">LED</text>
+  <text x="600" y="148" class="small">matrix</text>
+  <text x="480" y="345" text-anchor="middle" class="small">J5 below</text>
+  <text x="20" y="372" class="small">The hole pattern is schematic. Count the holes on the robot before you design a part for the flange.</text>
+</svg>
+<style>
+  .flange { fill: #b9bcc1; stroke: #8c9096; stroke-width: 2; }
+  .hole { fill: #7f8389; stroke: #5d6066; }
+  .insert { fill: #c9a24a; stroke: #8a6d2a; }
+  .shell { fill: #eeeeea; stroke: #c9c9c3; stroke-width: 2; }
+  .matrix { fill: #1d1e20; }
+  .sticker { fill: #2b3f9e; }
+  .slot { fill: #1d1e20; }
+  .port { fill: #f6f3ea; stroke: #b7ad92; }
+  .contact { fill: #9a9ea5; }
+</style>

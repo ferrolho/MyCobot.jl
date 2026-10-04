@@ -1,0 +1,58 @@
+---
+title: Architecture
+description: The parts of the system, the two control paths, and the repository layout.
+---
+
+import SystemDiagram from '../../../components/SystemDiagram.astro';
+
+<SystemDiagram />
+
+## Parts
+
+| Part | Function |
+| --- | --- |
+| **Servos J1–J6** | Feetech STS bus servos, IDs 1–6, on one half-duplex bus at 1 Mbaud. Each servo runs its own position controller. |
+| **Base** | Holds the 12 V input and an Arduino-style header. It bridges a UART on header pins 13/14 to the servo bus. The circuit inside is not known. |
+| **FT232R adapter** | USB-serial adapter on the base pins. It gives the laptop direct access to the servo bus. |
+| **ATOM** | M5Stack ATOM Matrix (ESP32-PICO-D4) at the end of the arm. It is on the servo bus (G19/G22). It has WiFi, a 5×5 LED matrix, a button and an IMU. |
+| **Laptop** | Plans trajectories (Julia, RigidBodyDynamics.jl), plays them through the FT232R or uploads them to the ATOM, and analyses the recordings. |
+
+## The two control paths
+
+| | Laptop path | ATOM path |
+| --- | --- | --- |
+| Who runs the loop | Laptop (Julia or Python) | ATOM firmware, core 1 |
+| Link to the bus | USB → FT232R → base | Direct (G19/G22) |
+| Loop rate | ~285–320 Hz | 500 Hz (fixed) |
+| Timing jitter | Stalls of 6–80 ms (OS, USB, garbage collection) | ±15 µs |
+| Link to the laptop | USB cable | WiFi (UDP) |
+| IMU data | No | Yes, every cycle |
+
+Both paths use the same plan format and produce the same recording columns. The
+ATOM recordings have six more columns for the IMU.
+
+:::caution[One driver at a time]
+The servo bus has no arbitration. Only one device may drive it at a time. The
+controller firmware is silent on the bus when it is idle, so the laptop path
+works while the ATOM is idle. Do not run both at the same time.
+:::
+
+## Coordinates and units
+
+- **Joint angles** are in degrees, with the same signs and zeros as the stock
+  firmware's `get_angles`. 0° on every joint is the upright pose.
+- **Servo positions** are in steps: 4096 steps per turn, 0° = step 2048.
+  `angle = sign × (step − 2048) × 360 / 4096`, with sign `[−1, −1, +1, −1, −1, −1]` for J1–J6.
+- **Cartesian positions** are in millimetres in the base frame of the URDF.
+
+## Repository layout
+
+| Path | Contents |
+| --- | --- |
+| `src/` | Julia package `MyCobot`: kinematics, servo bus, FT232R control, players, ILC, ATOM link. |
+| `scripts/` | Julia scripts: plan, play, trace, learn, analyse. |
+| `test/` | Julia tests, including a simulated servo bus. |
+| `firmware/` | ATOM firmware: `atom_controller` and `atom_probe`. |
+| `tools/python/` | Python tools for the laptop path, plots and offline analysis. |
+| `mycobot_description/` | URDF and meshes. |
+| `website/` | This documentation site. |

@@ -4,6 +4,12 @@
 tools/python/plans/
 tools/python/recordings/*_path.csv
 
+# Firmware build output and the documentation site's build artefacts
+/build/
+website/node_modules/
+website/dist/
+website/.astro/
+
 
 # === Global/macOS.gitignore
 

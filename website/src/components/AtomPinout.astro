@@ -1,0 +1,71 @@
+---
+// M5Stack ATOM Matrix pinout (label side), redrawn from the module, with this project's use of each pin.
+const left = [
+  { p: '3V3', c: '#e53935', use: '' },
+  { p: 'G22', c: '#3d6bff', use: 'servo bus TX' },
+  { p: 'G19', c: '#3d6bff', use: 'servo bus RX' },
+  { p: 'G23', c: '#5c6066', use: 'free' },
+  { p: 'G33', c: '#5c6066', use: 'free' },
+];
+const right = [
+  { p: 'G21', c: '#5c6066', use: 'IMU SCL' },
+  { p: 'G25', c: '#5c6066', use: 'IMU SDA' },
+  { p: '5V', c: '#e53935', use: '' },
+  { p: 'GND', c: '#141414', use: '' },
+];
+const grove = ['GND', '5V', 'G26', 'G32'];
+---
+<svg class="diagram" viewBox="0 0 660 470" role="img" aria-label="ATOM Matrix pinout. Left header from the top: 3V3, G22 (servo bus TX), G19 (servo bus RX), G23, G33. Right header: G21 (IMU SCL), G25 (IMU SDA), 5V, GND. Grove port at the bottom: GND, 5V, G26, G32. Inside: ESP32-PICO-D4, LED matrix on G27, button on G39, MPU6886 IMU on G21 and G25, IR LED on G12. USB-C at the bottom.">
+  <rect x="190" y="30" width="280" height="330" rx="26" class="module" />
+  <rect x="215" y="55" width="230" height="200" rx="10" class="face" />
+  <text x="330" y="88" text-anchor="middle" class="brand">ATOM</text>
+  <text x="330" y="114" text-anchor="middle" class="chip">ESP32-PICO-D4</text>
+  <text x="240" y="148" class="inner">LED matrix  G27</text>
+  <text x="240" y="170" class="inner">button  G39</text>
+  <text x="240" y="192" class="inner">IMU MPU6886  G21 / G25</text>
+  <text x="240" y="214" class="inner">IR LED  G12</text>
+  <text x="240" y="236" class="inner">USB serial  115.2k … 1.5M</text>
+
+  {left.map((l, i) => (
+    <g>
+      <rect x="196" y={92 + i * 40} width="22" height="26" class="sock" />
+      <rect x="120" y={92 + i * 40} width="66" height="26" rx="4" style={`fill:${l.c}`} />
+      <text x="153" y={110 + i * 40} text-anchor="middle" class="pin">{l.p}</text>
+      {l.use && <text x="112" y={110 + i * 40} text-anchor="end" class={l.p === 'G22' || l.p === 'G19' ? 'use bususe' : 'use'}>{l.use}</text>}
+    </g>
+  ))}
+  {right.map((r, i) => (
+    <g>
+      <rect x="442" y={132 + i * 40} width="22" height="26" class="sock" />
+      <rect x="474" y={132 + i * 40} width="66" height="26" rx="4" style={`fill:${r.c}`} />
+      <text x="507" y={150 + i * 40} text-anchor="middle" class="pin">{r.p}</text>
+      {r.use && <text x="548" y={150 + i * 40} class="use">{r.use}</text>}
+    </g>
+  ))}
+  <rect x="245" y="275" width="170" height="50" rx="6" class="grove" />
+  {grove.map((g, i) => (
+    <g>
+      <rect x={262 + i * 38} y="287" width="10" height="26" class="male" />
+      <text x={267 + i * 38} y="345" text-anchor="middle" class="small">{g}</text>
+    </g>
+  ))}
+  <text x="330" y="270" text-anchor="middle" class="small">Grove (HY2.0-4P)</text>
+  <rect x="290" y="352" width="80" height="18" rx="9" class="usb" />
+  <text x="330" y="395" text-anchor="middle" class="small">USB-C</text>
+  <text x="20" y="440" class="small">Blue: the servo bus pins, verified on this arm (G19 RX, G22 TX).</text>
+  <text x="20" y="460" class="small">The pins plug into the arm socket; the matrix faces out of the arm.</text>
+</svg>
+<style>
+  .module { fill: #b9bcc1; stroke: #8c9096; stroke-width: 2; }
+  .face { fill: #f4f4f2; stroke: #c8c8c4; }
+  .brand { fill: #1b1b1b !important; font-size: 26px !important; font-weight: 800; letter-spacing: 3px; }
+  .chip { fill: #c62828 !important; font-size: 15px !important; font-weight: 600; }
+  .inner { fill: #2b2b2b !important; font-size: 13.5px !important; }
+  .sock { fill: #121314; }
+  .pin { fill: #ffffff !important; font-size: 13.5px !important; font-weight: 700; }
+  .use { font-size: 13.5px !important; fill: var(--sl-color-gray-2) !important; }
+  .use.bususe { fill: #3d6bff !important; }
+  .grove { fill: #e9e2cf; stroke: #b7ad92; }
+  .male { fill: #c9ccd1; stroke: #8b8f96; }
+  .usb { fill: #6b6f75; stroke: #3d4045; }
+</style>

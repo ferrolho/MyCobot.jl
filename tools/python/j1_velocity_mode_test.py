@@ -7,7 +7,7 @@ Aborts if J1 moves more than ~25°. Keep a hand near the power switch.
 
 First run 2026-10-03 (through the ATOM): tracked 103 steps/s for 100
 commanded, with ~0.25 s of dead time before motion started. See
-docs/fast-communication.md.
+website/src/content/docs/system/servos.md.
 """
 
 import time

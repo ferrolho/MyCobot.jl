@@ -1,0 +1,80 @@
+---
+// A picture of the ATOM's 5×5 LED matrix.
+//   fill:    colour of every pixel (or null = off)
+//   rows:    five colours, one per row from the top (overrides fill; null = off)
+//   animate: { type: 'progress' | 'flash' | 'flicker' | 'pulse', row?: number, color?: string }
+//            progress: the row lights left to right (the playing progress bar)
+//            flash:    the row flashes briefly
+//            flicker:  the row flickers (bus activity)
+//            pulse:    the whole matrix pulses
+//   label:   accessible description (also shown as the caption)
+interface Props {
+  fill?: string | null;
+  rows?: (string | null)[];
+  animate?: { type: 'progress' | 'flash' | 'flicker' | 'pulse'; row?: number; color?: string };
+  label: string;
+  caption?: string;
+  size?: number;
+}
+const { fill = null, rows, animate, label, caption, size = 112 } = Astro.props;
+const OFF = '#26282c';
+const colorOf = (r: number) => (rows ? rows[r] ?? null : fill);
+const pixels = [...Array(25).keys()].map((i) => {
+  const r = Math.floor(i / 5), c = i % 5;
+  const animated = animate && animate.type !== 'pulse' && animate.row === r;
+  return { r, c, color: animated ? null : colorOf(r), animated };
+});
+const pitch = 20, radius = 7.2;
+---
+<figure class="led-figure" style={`width:${size}px`}>
+  <svg viewBox="0 0 110 110" role="img" aria-label={label} class={animate?.type === 'pulse' ? 'pulse' : ''}>
+    <rect x="0" y="0" width="110" height="110" rx="12" class="frame" />
+    {pixels.map((p) => (
+      <g>
+        <circle cx={15 + p.c * pitch} cy={15 + p.r * pitch} r={radius} fill={OFF} />
+        {p.color && (
+          <circle cx={15 + p.c * pitch} cy={15 + p.r * pitch} r={radius} fill={p.color} class="lit" style={`--glow:${p.color}`} />
+        )}
+        {p.animated && (
+          <circle
+            cx={15 + p.c * pitch} cy={15 + p.r * pitch} r={radius}
+            fill={animate!.color ?? '#ffffff'}
+            class={`lit anim-${animate!.type}${animate!.type === 'progress' ? ` anim-progress-${p.c}` : ''}`}
+            style={`--glow:${animate!.color ?? '#ffffff'}; --i:${p.c}`}
+          />
+        )}
+      </g>
+    ))}
+  </svg>
+  <figcaption>{caption ?? label}</figcaption>
+</figure>
+
+<style>
+  .led-figure { display: inline-block; margin: 0.5rem 1rem 0.5rem 0; vertical-align: top; text-align: center; }
+  .led-figure svg { width: 100%; height: auto; }
+  .led-figure figcaption { font-size: var(--sl-text-xs); color: var(--sl-color-gray-2); margin-top: 0.25rem; line-height: 1.3; }
+  .frame { fill: #111214; stroke: #3a3d42; stroke-width: 2; }
+  .lit { filter: drop-shadow(0 0 3px var(--glow)); }
+  .anim-progress { opacity: 0; }
+  .anim-progress-0 { animation: progress-0 6s infinite; }
+  @keyframes progress-0 { 0%, 15.9% { opacity: 0; } 16%, 95.9% { opacity: 1; } 96%, 100% { opacity: 0; } }
+  .anim-progress-1 { animation: progress-1 6s infinite; }
+  @keyframes progress-1 { 0%, 31.9% { opacity: 0; } 32%, 95.9% { opacity: 1; } 96%, 100% { opacity: 0; } }
+  .anim-progress-2 { animation: progress-2 6s infinite; }
+  @keyframes progress-2 { 0%, 47.9% { opacity: 0; } 48%, 95.9% { opacity: 1; } 96%, 100% { opacity: 0; } }
+  .anim-progress-3 { animation: progress-3 6s infinite; }
+  @keyframes progress-3 { 0%, 63.9% { opacity: 0; } 64%, 95.9% { opacity: 1; } 96%, 100% { opacity: 0; } }
+  .anim-progress-4 { animation: progress-4 6s infinite; }
+  @keyframes progress-4 { 0%, 79.9% { opacity: 0; } 80%, 95.9% { opacity: 1; } 96%, 100% { opacity: 0; } }
+  .anim-flash { animation: flash 1.6s infinite; }
+  @keyframes flash { 0%, 18% { opacity: 1; } 19%, 100% { opacity: 0; } }
+  .anim-flicker { animation: flicker 0.9s infinite steps(1); }
+  @keyframes flicker { 0% { opacity: 1; } 30% { opacity: 0.2; } 45% { opacity: 1; } 70% { opacity: 0.4; } 85% { opacity: 1; } }
+  .pulse { animation: pulse 2s infinite ease-in-out; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+  @media (prefers-reduced-motion: reduce) {
+    .anim-flash, .anim-flicker, .pulse { animation: none; }
+    .anim-progress-0, .anim-progress-1, .anim-progress-2 { animation: none; opacity: 1; }
+    .anim-progress-3, .anim-progress-4 { animation: none; opacity: 0; }
+  }
+</style>
