@@ -57,6 +57,8 @@ Keyword arguments: `lag`, `speed_cap` (steps/s), `max_tracking_error` (°),
 `q_cmd`: explicit commands on the same grid (e.g. from `ilc_update`). With `q_cmd`,
 `q_plan` is only the reference (for recording and the tracking-error check) and no
 lag shift is applied. `rate` caps the loop rate in Hz (default: as fast as the bus allows).
+`acceleration` is written to register 41 of every servo (0 = the servo's own default).
+`max_joint_speed` (°/s) is the plan speed limit for `check_plan`.
 
 Returns `(recording, aborted)`, where `recording` is a matrix with columns
 `RECORDING_HEADER` and `aborted` is `nothing` or a reason string.
@@ -65,10 +67,11 @@ function play_trajectory(io, t_plan::AbstractVector, q_plan::AbstractMatrix;
                          lag::AbstractVector=DEFAULT_LAG, speed_cap::Integer=2000,
                          max_tracking_error::Real=20.0, max_start_error::Real=3.0,
                          tail::Real=1.0, mechanism=load_mechanism(),
-                         q_cmd::Union{Nothing,AbstractMatrix}=nothing, rate::Real=Inf)
-    check_plan(t_plan, q_plan, mechanism)
+                         q_cmd::Union{Nothing,AbstractMatrix}=nothing, rate::Real=Inf,
+                         acceleration::Integer=0, max_joint_speed::Real=90.0)
+    check_plan(t_plan, q_plan, mechanism; max_joint_speed=max_joint_speed)
     q_cmd === nothing || (size(q_cmd) == size(q_plan) || throw(ArgumentError("q_cmd must match q_plan")))
-    q_cmd === nothing || check_plan(t_plan, q_cmd, mechanism)
+    q_cmd === nothing || check_plan(t_plan, q_cmd, mechanism; max_joint_speed=max_joint_speed)
     start = read_state(io)
     start.ok || error("not every servo replied")
     maximum(abs, start.q) < max_start_error || error("start from the zero pose (max joint angle $(maximum(abs, start.q))°)")
@@ -79,7 +82,7 @@ function play_trajectory(io, t_plan::AbstractVector, q_plan::AbstractMatrix;
     q_ref = zeros(6); q_now = zeros(6)
     command!(t) = q_cmd === nothing ? sample_trajectory!(q_now, t_plan, q_plan, t; lag=lag) :
                                       sample_trajectory!(q_now, t_plan, q_cmd, t)
-    enable_motion(io; speed_cap=speed_cap)   # holds every joint first
+    enable_motion(io; speed_cap=speed_cap, acceleration=acceleration)   # holds every joint first
     write_goals!(bus, io, command!(0.0))
 
     duration = t_plan[end] + tail

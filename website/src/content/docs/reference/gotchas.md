@@ -36,23 +36,24 @@ Read this page before you write code that talks to the servos.
 | --- | --- | --- |
 | 16 | The FT232R latency timer is 16 ms by default and resets on unplug and on robot power-cycle. | Set it to 1 ms each time you connect. The scripts do this. |
 | 17 | The FT232R and the ATOM's USB chip have the same USB ID (`0403:6001`). | Select the FT232R by serial (`B00033ZX`). |
-| 18 | The Julia loop allocates memory, so the garbage collector stalls it for 30–80 ms at times. | Use the ATOM path for deterministic timing. |
+| 18 | The old bus functions (`read_state`, `write_goals`) allocate ~2 KB per call, so the garbage collector stalled the loop for 30–80 ms at times. | Use `BusBuffers` with `read_state!` and `write_goals!` in control loops: they allocate nothing (the players do). |
+| 19 | On Linux (Raspberry Pi), `LibSerialPort.open` leaves XON/XOFF output flow control on. A 0x13 byte in a servo reply paused the writes for 100 ms: 96 stalls of 221 ms in a 25 s run (2026-10-04). | Open the bus with `MyCobot.open_bus()`, which turns all flow control off. |
 
 ## ATOM
 
 | # | Problem | Rule |
 | --- | --- | --- |
-| 19 | With the ATOM in the arm and the 12 V supply off, the ATOM's USB powers the servos. | Flash the ATOM out of the arm. Then use OTA. |
-| 20 | With the 12 V supply on, the ATOM's USB does not connect. | Use OTA updates. |
-| 21 | The ATOM's USB corrupts data above 115 200 baud. | Flash and read at 115 200 baud. |
-| 22 | Without firmware that does it, the servos start with torque off (limp arm). | The controller firmware holds the pose at power-up. Park the arm before you change firmware. |
-| 23 | The LED matrix blocks for ~0.75 ms per update. | Update it from core 0, never inside the control loop. |
-| 24 | `WiFiUDP` is not safe across cores. | Only the network task uses the sockets. |
-| 25 | The ATOM button is out of reach when the arm moves. | Do not use it as an emergency stop. |
-| 26 | Elephant's documentation lists G19 and G22 (function interface group 6) as general-purpose I/O. They carry the servo bus. | Do not use G19 or G22 as I/O. |
+| 20 | With the ATOM in the arm and the 12 V supply off, the ATOM's USB powers the servos. | Flash the ATOM out of the arm. Then use OTA. |
+| 21 | With the 12 V supply on, the ATOM's USB does not connect. | Use OTA updates. |
+| 22 | The ATOM's USB corrupts data above 115 200 baud. | Flash and read at 115 200 baud. |
+| 23 | Without firmware that does it, the servos start with torque off (limp arm). | The controller firmware holds the pose at power-up. Park the arm before you change firmware. |
+| 24 | The LED matrix blocks for ~0.75 ms per update. | Update it from core 0, never inside the control loop. |
+| 25 | `WiFiUDP` is not safe across cores. | Only the network task uses the sockets. |
+| 26 | The ATOM button is out of reach when the arm moves. | Do not use it as an emergency stop. |
+| 27 | Elephant's documentation lists G19 and G22 (function interface group 6) as general-purpose I/O. They carry the servo bus. | Do not use G19 or G22 as I/O. |
 
 ## Power
 
 | # | Problem | Rule |
 | --- | --- | --- |
-| 27 | A power cycle resets servo goals and speeds, and the arm can sag while the power is off. | Support the arm. Expect a new start pose. |
+| 28 | A power cycle resets servo goals and speeds, and the arm can sag while the power is off. | Support the arm. Expect a new start pose. |

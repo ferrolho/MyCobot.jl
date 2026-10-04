@@ -99,6 +99,7 @@ The package supports real-time robot visualization:
 - Write the pages in a style based on ASD-STE100 Simplified Technical English (`reference/writing-style.md`): short sentences, active voice, imperative steps, one term for one thing.
 - Prefer visual representations where they help (SVG diagram components in `website/src/components/`, e.g. `LedMatrix.astro` for LED signals), with a text description alongside for accessibility.
 - Run the site: `cd website && npm run dev`. Check it: `npm run build` (fails on broken internal links).
+- The dev server does not see new or renamed pages: restart it after you add or rename a page (otherwise every page fails with "slug ... does not exist"). `npm run build` does not catch this.
 - After you change a diagram, run `npm run check:diagrams` with the dev server running. It reports SVG text that leaves the drawing, overlaps other text, or is crossed by a line or shape edge.
 
 ## Important Context

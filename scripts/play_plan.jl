@@ -2,7 +2,7 @@
 # Feetech bus at full rate and record it. Julia counterpart of tools/python/play_trajectory.py,
 # with the same recording format.
 #
-#   julia --project=. scripts/play_plan.jl tools/python/plans/circle.csv [--no-lag-comp] [--rate=240] [--atom=192.168.1.107]
+#   julia --project=. scripts/play_plan.jl tools/python/plans/circle.csv [--no-lag-comp | --ff=model] [--rate=240] [--atom=192.168.1.107]
 #
 # With --atom=IP the plan is uploaded over WiFi and played onboard the ATOM (firmware/atom_controller)
 # at --rate (default 500 Hz); the recording then also has IMU columns.
@@ -26,6 +26,12 @@ rate = rate_arg === nothing ? Inf : parse(Float64, split(ARGS[rate_arg], "=")[2]
 
 atom_arg = findfirst(a -> startswith(a, "--atom="), ARGS)
 t_plan, q_plan, q_cmd = MyCobot.read_plan_csv(plan_path)
+if "--ff=model" in ARGS
+    q_cmd === nothing || error("--ff=model and a plan with explicit commands")
+    peak, ok = MyCobot.check_acceleration(t_plan, q_plan)
+    println("plan peak acceleration (°/s²): ", round.(peak, digits=0), ok ? "" : "  !! above 80 % of the servo limit")
+    q_cmd = MyCobot.model_feedforward(t_plan, q_plan)
+end
 
 if atom_arg !== nothing
     link = MyCobot.AtomLink(split(ARGS[atom_arg], "=")[2])
@@ -38,7 +44,7 @@ if atom_arg !== nothing
     done.result == "done" || println("!! ", done.result, done.joint > 0 ? " (J$(done.joint), $(round(done.error_deg, digits=1))°)" : "")
 else
     println("FT232R latency timer: ", MyCobot.set_latency_timer(1), " ms")
-    sp = LibSerialPort.open(PORT, BAUDRATE)
+    sp = MyCobot.open_bus(PORT; baudrate=BAUDRATE)
     recording, aborted = try
         MyCobot.play_trajectory(sp, t_plan, q_plan; lag=lag, q_cmd=q_cmd, rate=rate)
     finally
@@ -54,7 +60,7 @@ println("$(size(recording, 1)) cycles, $failed failed reads, $(round(Int, 1 / (s
         "(max period $(round(1000maximum(dt), digits=1)) ms)")
 
 name = splitext(basename(plan_path))[1]
-tag = q_cmd !== nothing ? "ilc" : all(iszero, lag) ? "nolag" : "lagcomp"
+tag = "--ff=model" in ARGS ? "modelff" : q_cmd !== nothing ? "ilc" : all(iszero, lag) ? "nolag" : "lagcomp"
 stamp = Dates.format(Dates.now(), "yyyymmdd-HHMMSS")
 tag *= isfinite(rate) ? "_$(round(Int, rate))hz" : ""
 tag *= atom_arg !== nothing ? "_atom" : "_jl"

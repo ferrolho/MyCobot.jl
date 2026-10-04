@@ -29,7 +29,7 @@ function main()
     all(j -> 1 <= j <= 6, joints) || error("JOINT must be 1–6 or all")
 
     println("FT232R latency timer: ", MyCobot.set_latency_timer(1), " ms")
-    sp = LibSerialPort.open(PORT, BAUDRATE)
+    sp = MyCobot.open_bus(PORT; baudrate=BAUDRATE)
     q_min = fill(NaN, 6); q_max = fill(NaN, 6)
     released = Int[]
     try

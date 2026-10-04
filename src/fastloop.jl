@@ -7,6 +7,19 @@
 
 import LibSerialPort
 
+"""
+    open_bus(port=default_port(); baudrate=1_000_000) -> SerialPort
+
+Open the servo bus port with raw settings: 8N1 and **no flow control**. On Linux,
+`LibSerialPort.open` leaves XON/XOFF output flow control on, so a 0x13 byte in a servo
+reply paused every write until its 100 ms timeout (2026-10-04 on the Raspberry Pi).
+"""
+function open_bus(port::AbstractString=default_port(); baudrate::Integer=1_000_000)
+    sp = LibSerialPort.open(port, baudrate)
+    LibSerialPort.set_flow_control(sp)          # all flow control off (XON/XOFF, RTS/CTS, DTR/DSR)
+    return sp
+end
+
 const N_JOINTS = 6
 const STATE_BYTES = 6                                # present position, speed, load (2 bytes each)
 const STATE_REPLY = 6 + STATE_BYTES                  # FF FF ID LEN ERR data... CHK

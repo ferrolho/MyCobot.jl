@@ -88,6 +88,12 @@ let count = 0;
 for (const url of pages) {
   await send('Page.navigate', { url }, sessionId);
   await new Promise((r) => setTimeout(r, 1500));
+  const title = await send('Runtime.evaluate', { expression: 'document.title', returnByValue: true }, sessionId);
+  if (/Error/.test(title.result?.result?.value ?? '')) {
+    console.log(`\n## ${url.slice(BASE.length - 1)}\n  PAGE FAILED: ${title.result.result.value} (restart the dev server after adding or renaming a page)`);
+    count += 1;
+    continue;
+  }
   const res = await send('Runtime.evaluate', { expression: probe, returnByValue: true }, sessionId);
   const issues = JSON.parse(res.result?.result?.value || '[]');
   const uniq = [...new Map(issues.map((x) => [JSON.stringify(x), x])).values()];

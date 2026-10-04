@@ -77,6 +77,7 @@ export default defineConfig({
           items: [
             { label: 'Latency and loop rate', slug: 'results/latency' },
             { label: 'Servo response', slug: 'results/servo-response' },
+            { label: 'Servo dynamics', slug: 'results/servo-dynamics' },
             { label: 'Circle and lag compensation', slug: 'results/circle' },
             { label: 'Iterative learning control', slug: 'results/ilc' },
             { label: 'Onboard control and vibration', slug: 'results/onboard' },

@@ -30,7 +30,7 @@ mvis = MeshCatMechanisms.MechanismVisualizer(mechanism, urdfvisuals, vis[robot_n
 # Open the serial port connection to the robot
 portname = MyCobot.default_port()
 baudrate = 1000000
-sp = LibSerialPort.open(portname, baudrate)
+sp = MyCobot.open_bus(portname; baudrate=baudrate)
 
 # Power on the robot arm
 MyCobot.power_on(sp)

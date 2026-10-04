@@ -4,7 +4,7 @@ import MyCobot
 portname = MyCobot.default_port()
 baudrate = 1000000
 
-sp = LibSerialPort.open(portname, baudrate)
+sp = MyCobot.open_bus(portname; baudrate=baudrate)
 
 # Query the ATOM power state
 atom_state = MyCobot.is_power_on(sp)

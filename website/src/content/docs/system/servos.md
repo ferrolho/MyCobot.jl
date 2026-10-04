@@ -99,7 +99,10 @@ Elephant's documentation calls register 22 "I" and register 23 "D". This is wron
 [Stock protocol commands](/mycobot-280-lab/reference/stock-protocol/#problems-in-elephants-documentation).
 :::
 
-:::note[PID defaults]
-An older note in the repository listed J4–J6 with P = 25, D = 25, I = 1. The
-values read from the servos on 2026-10-03 are in the table above.
+:::note[PID values depend on the firmware]
+The PID column was read on 2026-10-03 with the **stock** ATOM firmware, which writes
+10/0/1 to J3–J6 at power-up. The servos themselves store **32/8/0** on all joints, and
+with the custom firmware all six run 32/8/0 (read on 2026-10-04). An older note in the
+repository listed J4–J6 with P = 25, D = 25, I = 1. For tuned gains, see
+[Servo dynamics](/mycobot-280-lab/results/servo-dynamics/#servo-gains-pid-and-the-imu).
 :::
