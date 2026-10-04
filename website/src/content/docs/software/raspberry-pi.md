@@ -14,6 +14,23 @@ connected to it, so the arm can be controlled and watched remotely.
 | Webcam | Logitech C505, `/dev/video0` |
 | Repository | `~/myCobot/MyCobot.jl` (working copy) and `~/git/MyCobot.jl.git` (hub) |
 | Julia | 1.11 with juliaup: `~/.juliaup/bin/julia` (only login shells have it on `PATH`) |
+| Kernel | `kernel8.img`, **4 KB memory pages** (since 2026-10-04) |
+| Tools | Python `~/venvs/mycobot`, `~/bin/arduino-cli` (ESP32 core 3.3.10), Node `~/.local/opt/node` |
+
+## Kernel: 4 KB pages
+
+The Pi 5's default kernel (`kernel_2712.img`) uses 16 KB memory pages. Some prebuilt
+programs assume 4 KB pages and crash: Pagefind, the docs search indexer, failed with
+"memory allocation of 16 bytes failed". `/boot/firmware/config.txt` now selects the
+4 KB-page kernel:
+
+```text
+[all]
+kernel=kernel8.img
+```
+
+The original file is `/boot/firmware/config.txt.bak-20261004`. To undo it, remove the
+line and reboot. Check with `getconf PAGESIZE` (4096 now).
 
 ## Repository sync
 

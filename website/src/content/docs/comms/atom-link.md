@@ -14,6 +14,8 @@ WiFi with UDP. All values are little-endian.
 
 ## Messages
 
+From 4.2 the same messages also go over a WebSocket (`ws://<ATOM>/ws`), and commands that move the robot need control; see the WebSocket API page (`comms/websocket-api.md`, on branch `control-ui` until it is merged) and the [changelog](/mycobot-280-lab/firmware/changelog/).
+
 | Code | Message | Content | Reply |
 | --- | --- | --- | --- |
 | `0x01` | PING | — | `0x81` PONG: u16 version, u8 state, u32 plan samples, u16 plan rate, u8 IMU ok, u8 gains ok (3.0+), u8 minor, u8 patch (3.1+) |
@@ -27,6 +29,9 @@ WiFi with UDP. All values are little-endian.
 | `0x09` | REG_READ (v3+) | u8 servo id (1–7), u8 address, u8 length (1–32) | `0x86`: u8 id, u8 address, u8 length, i8 status, data |
 | `0x0A` | REG_WRITE (v3+) | u8 servo id, u8 address, u8 length, data | `0x87`: u8 id, u8 address, i8 status, u8 servo error |
 | `0x0B` | PLAY_SIGNAL (3.1+) | the PLAY parameters, then `sig::Params` (38 bytes: u8 joint, u8 kind, f32 amp, f0, f1, duration, vmax, amax, i16 base[6] in 0.01°) | ACK (−11…−18 invalid parameters, −29/−30 bad start pose), then TELEM and DONE |
+| `0x0D` | CONTROL (4.2+) | u8 action: 0 release, 1 take, 2 take over | ACK: 0, −2 another client has control, −1 robot moving |
+| `0x0E` | MOVE_TO (4.2+) | i16 goal[6] (0.01°), u16 duration (ms, 0 = shortest) | ACK, TELEM, DONE |
+| `0x0F` | JOG (4.2+) | u8 frame (0 = joints), i16 velocity[6] (0.1°/s); 200 ms deadman | ACK only if refused |
 | `0x0C` | SUBSCRIBE (4.1+) | u16 rate (Hz, 1–100; 0 = stop), renew at least once a second | `0x88` STREAM packets to the sender; see [Clients](/mycobot-280-lab/comms/clients/#firmware-41) |
 
 REG_READ and REG_WRITE are refused while a plan plays. The ATOM reads every write

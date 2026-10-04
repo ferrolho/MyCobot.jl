@@ -12,12 +12,14 @@
 #pragma once
 #include <math.h>
 #include <stdint.h>
+#include "motion_limits.h"
 
 namespace sig {
 
 const float MOVE_S = 2.0f, HOLD_S = 1.0f;
-const float LIMIT_DEG[6] = {155, 130, 140, 140, 150, 170};   // model limits − 10° (MyCobot URDF)
-const float AMAX_DPS2[6] = {400, 400, 400, 2000, 2000, 2000}; // servo acceleration limits (≈ reg 85)
+// Model limits minus SIGNAL_MARGIN, and the servo acceleration limits (motion_limits.h).
+inline float limit_deg(int k) { return lim::MODEL_LIMIT_DEG[k] - lim::SIGNAL_MARGIN; }
+const float* const AMAX_DPS2 = lim::AMAX_DPS2;
 const float MAX_MOVE_DEG = 90;                                  // start→base distance per joint
 
 enum Kind : uint8_t { CHIRP = 1, STEPS = 2 };
@@ -49,7 +51,7 @@ inline int validate(const Params& p) {
     if (p.kind == CHIRP && !(p.f0_hz > 0 && p.f1_hz > p.f0_hz && p.f1_hz <= 20)) return 7;
     for (int k = 0; k < 6; k++) {
         float reach = fabsf(base_deg(p, k)) + (k == j ? p.amp_deg : 0);
-        if (reach > LIMIT_DEG[k]) return 8;
+        if (reach > limit_deg(k)) return 8;
     }
     return 0;
 }
@@ -57,7 +59,7 @@ inline int validate(const Params& p) {
 // Check the start pose (degrees): each joint within MAX_MOVE_DEG of the base and inside the limits.
 inline int validate_start(const Params& p, const float start[6]) {
     for (int k = 0; k < 6; k++) {
-        if (fabsf(start[k]) > LIMIT_DEG[k]) return 9;
+        if (fabsf(start[k]) > limit_deg(k)) return 9;
         if (fabsf(start[k] - base_deg(p, k)) > MAX_MOVE_DEG) return 10;
     }
     return 0;

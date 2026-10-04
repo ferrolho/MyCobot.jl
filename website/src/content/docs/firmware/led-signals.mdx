@@ -12,6 +12,7 @@ export const CYAN = '#22d3d3';
 export const RED = '#ff3b3b';
 export const MAGENTA = '#e04ce0';
 export const WHITE = '#f0f0f0';
+export const LAVENDER = '#9a9aff';
 
 The ATOM's 5×5 LED matrix shows the state of the firmware. The pictures use
 bright colours so they are easy to see. On the robot the LEDs are dim: all
@@ -27,6 +28,8 @@ bottom row is a progress bar.
   <LedMatrix fill={GREEN} label="All pixels green" caption="HOLDING" />
   <LedMatrix fill={AMBER} label="All pixels yellow" caption="READY" />
   <LedMatrix rows={[CYAN, CYAN, CYAN, CYAN, null]} animate={{ type: 'progress', row: 4, color: WHITE }} label="Top four rows cyan; the bottom row fills from left to right with white" caption="PLAYING" />
+  <LedMatrix rows={[CYAN, CYAN, CYAN, CYAN, null]} animate={{ type: 'progress', row: 4, color: WHITE }} label="Top four rows cyan; the bottom row fills from left to right with white" caption="MOVING (4.2+)" />
+  <LedMatrix fill={LAVENDER} label="All pixels pale blue" caption="JOGGING (4.2+)" />
   <LedMatrix fill={RED} label="All pixels red" caption="ERROR" />
   <LedMatrix fill={MAGENTA} label="All pixels magenta" caption="OTA" />
 </div>
@@ -37,6 +40,8 @@ bottom row is a progress bar.
 | Green | `HOLDING` | All servos hold the pose. No plan is loaded. | Upload a plan. |
 | Yellow | `READY` | All servos hold the pose. A valid plan is loaded. | Send `PLAY`. |
 | Cyan, white bottom row | `PLAYING` | A plan plays. Each white pixel in the bottom row is one fifth of the run. | Keep clear of the arm. |
+| Cyan, white bottom row | `MOVING` (4.2+) | A MOVE_TO runs. The bottom row shows its progress. | Keep clear of the arm. |
+| Pale blue | `JOGGING` (4.2+) | A client jogs the joints. The arm stops by itself 200 ms after the client stops sending. | Keep clear of the arm. |
 | Red | `ERROR` | A servo did not reply, or a joint went too far from the plan. The arm holds where it is. | Find the cause. Then press the button to hold and clear the error. |
 | Magenta | `OTA` | A firmware update is in progress. | Do not disconnect the power. |
 

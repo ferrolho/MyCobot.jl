@@ -14,6 +14,29 @@ UDP port 5005 shows it with the git commit of the build, for example
 `atom_controller v4.0.0 (bff4529)`. Each version has a git tag
 `atom-controller-vX.Y.Z` (local until the repository is pushed).
 
+## 4.2.0 — 2026-10-04
+
+A browser can now see and control the arm directly (the API is in
+`comms/websocket-api.md`).
+
+- **WebSocket** `ws://<ATOM>/ws` on port 80: the same binary messages as UDP, and the
+  status log as text frames. **mDNS** name `mycobot.local`.
+- **Control**: one client at a time may move the robot or write registers
+  (CONTROL `0x0D`). If nobody has control, such a command takes it for its sender,
+  so old clients keep working. Control ends on release, on WebSocket close, or 2 s
+  after the holder's last message (not during its run). HOLD and STOP work for
+  every client.
+- **MOVE_TO** (`0x0E`): minimum-jerk move to a pose; the shortest duration within
+  90°/s and the servo acceleration limits.
+- **JOG** (`0x0F`): joint velocities, ≤ 30°/s and 200°/s², stops 2° inside the
+  limits; **deadman** 200 ms with a ramped stop.
+- STREAM has a control byte (74 bytes); states 6 (moving) and 7 (jogging).
+- One limits table (`motion_limits.h`); MOVE_TO/JOG logic in `motion.h` with C++
+  property tests. Smoke test on the robot: `tools/firmware-tests/ws_smoke_test.py`
+  (all checks passed: control hand-over between UDP and WebSocket, JOG and deadman,
+  MOVE_TO).
+- Fixed during testing: UDP replies went to the last WebSocket client.
+
 ## 4.1.0 — 2026-10-04
 
 Several clients can now use the ATOM at the same time.

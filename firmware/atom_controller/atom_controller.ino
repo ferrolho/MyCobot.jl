@@ -8,6 +8,18 @@
 // On the bus the ATOM is silent except at power-up and when commanded, so the laptop can
 // still drive the servos through the FT232 while the ATOM is idle (never at the same time).
 //
+// Transports (4.2+): UDP (lab tools) and WebSocket ws://<ATOM>/ws, port 80 (browsers; binary frames =
+// the same messages; text frames = the status log). mDNS name: mycobot.local.
+// Control (4.2+): one client at a time may send PLAN_*, PLAY, PLAY_SIGNAL, REG_WRITE, MOVE_TO, JOG. If
+// nobody has control, such a command takes it for its sender; otherwise another client gets status -2.
+// Control ends on release, when its WebSocket closes, or 2 s after its last message (not during its run).
+// HOLD and STOP work for every client (during a run they stop it).
+//   0x0D CONTROL u8 action (0 release, 1 take, 2 take over) -> ACK 0 / -2 another client / -1 robot moving
+//   0x0E MOVE_TO i16 goal[6] (0.01°), u16 duration_ms (0 = shortest) -> ACK, TELEM, DONE; state 6 moving
+//   0x0F JOG u8 frame (0 = joints), i16 velocity[6] (0.1°/s); ACK only if refused; 200 ms deadman; state 7
+//   STREAM (4.2+) has one more byte at offset 73: control 0 nobody, 1 you, 2 another client (74 bytes).
+// Full API: website/src/content/docs/comms/websocket-api.md.
+//
 // UDP protocol (little-endian). Clients -> ATOM port 5006. Replies go to the sender of each request
 // (its IP and UDP port; 4.0 and older replied to the last sender's IP, port 5007). PLAY telemetry and
 // DONE go to the client that started the run.
@@ -56,17 +68,20 @@
 #include <WiFi.h>
 #include <WiFiUdp.h>
 #include <Adafruit_NeoPixel.h>
+#include <ESPmDNS.h>
+#include <WebSocketsServer.h>
 
 #include "bus.h"
 #include "imu.h"
 #include "test_signal.h"
+#include "motion.h"
 #include "wifi_secrets.h"
 
 // Semantic version: MAJOR for protocol changes that break old clients, MINOR for added commands,
 // PATCH for fixes. PING reports MAJOR as its u16 version, then MINOR and PATCH (3.1+).
 // History: docs (firmware/changelog). FW_GIT is set by the build (git describe).
 #define FW_MAJOR 4
-#define FW_MINOR 1
+#define FW_MINOR 2
 #define FW_PATCH 0
 #define FW_VERSION FW_MAJOR
 #ifndef FW_GIT
@@ -78,14 +93,21 @@
 #define REPLY_PORT 5007
 #define LOG_PORT   5005
 
-enum State : uint8_t { BOOTING = 0, HOLDING = 1, READY = 2, PLAYING = 3, ERROR_STATE = 4, OTA = 5 };
+enum State : uint8_t { BOOTING = 0, HOLDING = 1, READY = 2, PLAYING = 3, ERROR_STATE = 4, OTA = 5, MOVING = 6, JOGGING = 7 };
 volatile State state = BOOTING;
 
 Adafruit_NeoPixel matrix(25, LED_PIN, NEO_GRB + NEO_KHZ800);
 WiFiUDP cmd_udp, out_udp;
 // Reply addresses (4.1+): every reply goes to the sender of its request, and PLAY telemetry to the
 // client that started the run. port 0 = nobody (e.g. a HOLD from the button).
-struct Addr { uint32_t ip = 0; uint16_t port = 0; };   // plain data: it goes through a FreeRTOS queue
+struct PlanSample;   // the Arduino builder puts function prototypes above the first function
+struct Addr { uint32_t ip = 0; uint16_t port = 0; uint8_t ws = 0xFF; };   // plain data: it goes through a FreeRTOS queue
+// ws != 0xFF: a WebSocket client (connection number); otherwise UDP (ip, port); port 0 and no ws: nobody.
+inline bool valid(const Addr& a) { return a.ws != 0xFF || a.port != 0; }
+inline bool same(const Addr& a, const Addr& b) {
+    return valid(a) && a.ws == b.ws && (a.ws != 0xFF || (a.ip == b.ip && a.port == b.port));
+}
+WebSocketsServer wss(80);   // ws://<ATOM>/ws (4.2+), network task only
 Addr cmd_from;   // sender of the packet that the network task is handling
 Addr req_from;   // sender of the request handed to the control loop
 Addr play_to;    // client of the running PLAY / PLAY_SIGNAL
@@ -121,7 +143,7 @@ Sample ring[RING];
 volatile uint32_t ring_head = 0, ring_tail = 0, telem_dropped = 0;
 
 // ---- Requests from the network task to the control loop ---------------------------------------
-enum Request : uint8_t { REQ_NONE, REQ_STATE, REQ_HOLD, REQ_PLAY, REQ_REG, REQ_SIGNAL };
+enum Request : uint8_t { REQ_NONE, REQ_STATE, REQ_HOLD, REQ_PLAY, REQ_REG, REQ_SIGNAL, REQ_MOVE, REQ_JOG };
 volatile Request request = REQ_NONE;
 volatile bool stop_requested = false;
 struct PlayParams { uint16_t rate, speed_cap, max_err, start_tol; } play_params;
@@ -176,6 +198,7 @@ void post(const void* data, size_t n, const Addr& to) {
 }
 
 void send_to(const Addr& to, const void* data, size_t n) {           // network task only
+    if (to.ws != 0xFF) { wss.sendBIN(to.ws, (const uint8_t*)data, n); return; }
     if (to.port == 0) return;
     out_udp.beginPacket(IPAddress(to.ip), to.port);
     out_udp.write(reinterpret_cast<const uint8_t*>(data), n);
@@ -219,7 +242,7 @@ void publish_state(bool ok, const uint16_t pos[], const uint16_t spd[], const ui
 void subscribe(const Addr& a, uint16_t rate) {
     int free_slot = -1;
     for (int i = 0; i < MAX_SUBS; i++) {
-        if (subs[i].rate && subs[i].a.ip == a.ip && subs[i].a.port == a.port) {
+        if (subs[i].rate && same(subs[i].a, a)) {
             subs[i].rate = min<uint16_t>(rate, 100); subs[i].last_ms = millis();
             return;
         }
@@ -229,10 +252,24 @@ void subscribe(const Addr& a, uint16_t rate) {
                                   subs[free_slot].last_ms = subs[free_slot].next_ms = millis(); }
 }
 
+// ---- Control (4.2+): one client at a time may move the robot or write registers ---------------------
+Addr ctrl;                 // the client with control (network task only)
+uint32_t ctrl_ms = 0;      // last message from it
+inline bool busy() { return state == PLAYING || state == MOVING || state == JOGGING; }
+inline bool is_ctrl(const Addr& a) { return same(a, ctrl); }
+void control_tick() {      // control ends 2 s after the holder's last message, but not during its run
+    if (valid(ctrl) && !busy() && millis() - ctrl_ms > 2000) ctrl = Addr();
+}
+
+// MOVE_TO and JOG requests (network task -> control loop)
+float move_goal[N_SERVOS]; uint16_t move_dur_ms = 0;
+float jog_target[N_SERVOS]; volatile uint32_t jog_ms = 0;
+portMUX_TYPE jog_mux = portMUX_INITIALIZER_UNLOCKED;
+
 void serve_stream() {                              // network task
     uint32_t now = millis();
     uint16_t top = 0;
-    uint8_t pkt[73]; bool built = false;
+    uint8_t pkt[74]; bool built = false;
     for (int i = 0; i < MAX_SUBS; i++) {
         Sub& s = subs[i];
         if (!s.rate) continue;
@@ -252,13 +289,68 @@ void serve_stream() {                              // network task
             memcpy(pkt + 61, im.acc, 6); memcpy(pkt + 67, im.gyro, 6);
             built = true;
         }
+        pkt[73] = !valid(ctrl) ? 0 : (same(s.a, ctrl) ? 1 : 2);   // control: nobody, you, another client
         send_to(s.a, pkt, sizeof(pkt));
     }
     stream_rate = top;
 }
 
+bool needs_control(uint8_t c) {
+    return c == 0x04 || c == 0x05 || c == 0x06 || c == 0x07 || c == 0x0A || c == 0x0B || c == 0x0E || c == 0x0F;
+}
+
 void handle_command(const uint8_t* b, int n) {
+    if (n < 1) return;
+    if (is_ctrl(cmd_from)) ctrl_ms = millis();
+    if (needs_control(b[0])) {
+        if (!valid(ctrl)) { ctrl = cmd_from; ctrl_ms = millis(); }   // implicit take: old clients keep working
+        else if (!is_ctrl(cmd_from)) {                                 // another client has control
+            if (b[0] == 0x0A) { uint8_t m[5] = {0x87, n > 1 ? b[1] : (uint8_t)0, n > 2 ? b[2] : (uint8_t)0, (uint8_t)-2, 0}; send_to_host(m, 5); }
+            else ack(b[0], -2);
+            return;
+        }
+    }
     switch (b[0]) {
+    case 0x0D: {   // CONTROL u8 action: 0 release, 1 take, 2 take over
+        uint8_t action = n > 1 ? b[1] : 1;
+        if (action == 0) { if (is_ctrl(cmd_from)) ctrl = Addr(); ack(0x0D, 0); }
+        else if (action == 1) {
+            if (!valid(ctrl) || is_ctrl(cmd_from)) { ctrl = cmd_from; ctrl_ms = millis(); ack(0x0D, 0); }
+            else ack(0x0D, -2);
+        } else {
+            if (busy() && !is_ctrl(cmd_from)) ack(0x0D, -1);                // not while the robot moves
+            else { ctrl = cmd_from; ctrl_ms = millis(); ack(0x0D, 0); }
+        }
+        break;
+    }
+    case 0x0E: {   // MOVE_TO i16 goal[6] (0.01°), u16 duration_ms (0 = shortest within the limits)
+        if (n != 15) { ack(0x0E, -1); break; }
+        if (busy() || request != REQ_NONE) { ack(0x0E, -1); break; }
+        float g[N_SERVOS];
+        for (int j = 0; j < N_SERVOS; j++) { int16_t v; memcpy(&v, b + 1 + 2 * j, 2); g[j] = v * 0.01f; }
+        int err = motion::move_validate(g);
+        if (err) { ack(0x0E, -10 - err); break; }
+        memcpy(move_goal, g, sizeof(g)); memcpy(&move_dur_ms, b + 13, 2);
+        play_params = {500, 2000, 227, 34};   // 500 Hz, speed cap, abort at 20° tracking error
+        stop_requested = false;
+        req_from = play_to = cmd_from;
+        request = REQ_MOVE;
+        break;
+    }
+    case 0x0F: {   // JOG u8 frame (0 = joints), i16 velocity[6] (0.1°/s). ACK only if refused.
+        if (n != 14 || b[1] != 0) { ack(0x0F, -1); break; }
+        float v[N_SERVOS];
+        for (int j = 0; j < N_SERVOS; j++) { int16_t x; memcpy(&x, b + 2 + 2 * j, 2); v[j] = x * 0.1f; }
+        if (state == JOGGING) {
+            portENTER_CRITICAL(&jog_mux); memcpy(jog_target, v, sizeof(v)); jog_ms = millis(); portEXIT_CRITICAL(&jog_mux);
+        } else if ((state == HOLDING || state == READY) && request == REQ_NONE) {
+            portENTER_CRITICAL(&jog_mux); memcpy(jog_target, v, sizeof(v)); jog_ms = millis(); portEXIT_CRITICAL(&jog_mux);
+            stop_requested = false;
+            req_from = play_to = cmd_from;
+            request = REQ_JOG;
+        } else ack(0x0F, -1);
+        break;
+    }
     case 0x01: {   // PING
         uint8_t m[14] = {0x81};
         uint16_t v = FW_VERSION; memcpy(m + 1, &v, 2);
@@ -272,7 +364,10 @@ void handle_command(const uint8_t* b, int n) {
         break;
     }
     case 0x02: if (state != PLAYING && request == REQ_NONE) { req_from = cmd_from; request = REQ_STATE; } break;
-    case 0x03: if (state != PLAYING) { req_from = cmd_from; request = REQ_HOLD; } else ack(0x03, -1); break;
+    case 0x03:   // HOLD: from any client. During a run it stops the run (the robot holds).
+        if (busy()) { stop_requested = true; ack(0x03, 0); }
+        else { req_from = cmd_from; request = REQ_HOLD; }
+        break;
     case 0x04: {   // PLAN_BEGIN
         if (state == PLAYING || request == REQ_PLAY || n < 7) { ack(0x04, -1); break; }
         uint32_t cnt; uint16_t rate; memcpy(&cnt, b + 1, 4); memcpy(&rate, b + 5, 2);
@@ -311,7 +406,7 @@ void handle_command(const uint8_t* b, int n) {
         request = REQ_PLAY;
         break;
     }
-    case 0x08: stop_requested = true; ack(0x08, 0); break;
+    case 0x08: stop_requested = true; ack(0x08, 0); break;   // STOP: from any client
     case 0x0B: {   // PLAY_SIGNAL
         if (state == PLAYING || request != REQ_NONE || n != 1 + 8 + (int)sizeof(sig::Params)) { ack(0x0B, -1); break; }
         sig::Params p; memcpy(&p, b + 9, sizeof(p));
@@ -365,10 +460,25 @@ void update_led() {
     case PLAYING: show(0, 30, 30, play_progress_permille); break;
     case ERROR_STATE: show(50, 0, 0); break;
     case OTA:     show(40, 0, 40); break;
+    case MOVING:  show(0, 30, 30, play_progress_permille); break;
+    case JOGGING: show(20, 20, 40); break;
     }
 }
 
 // ---- Network task (core 0) -----------------------------------------------------------------------
+void ws_event(uint8_t num, WStype_t type, uint8_t* payload, size_t len) {   // network task (wss.loop)
+    if (type == WStype_BIN && len > 0) {
+        cmd_from = Addr(); cmd_from.ws = num;
+        handle_command(payload, (int)len);
+    } else if (type == WStype_DISCONNECTED) {
+        for (int i = 0; i < MAX_SUBS; i++) if (subs[i].rate && subs[i].a.ws == num) subs[i].rate = 0;
+        if (ctrl.ws == num) {
+            ctrl = Addr();
+            if (state == JOGGING) { portENTER_CRITICAL(&jog_mux); jog_ms = 0; portEXIT_CRITICAL(&jog_mux); }   // deadman now
+        }
+    }
+}
+
 void net_task(void*) {
     uint8_t buf[1500];
     uint32_t last_log = 0;
@@ -377,11 +487,19 @@ void net_task(void*) {
 
         int n = cmd_udp.parsePacket();
         if (n > 0) {
+            cmd_from = Addr();   // reset all fields: a WebSocket request before must not leave its .ws
             cmd_from.ip = (uint32_t)cmd_udp.remoteIP(); cmd_from.port = cmd_udp.remotePort();
             n = cmd_udp.read(buf, sizeof(buf));
             if (n > 0) handle_command(buf, n);
         }
 
+        static bool mdns_up = false;
+        if (!mdns_up && WiFi.status() == WL_CONNECTED) {   // mycobot.local, once WiFi is up
+            mdns_up = MDNS.begin("mycobot");
+            if (mdns_up) MDNS.addService("http", "tcp", 80);
+        }
+        wss.loop();
+        control_tick();
         OutMsg om;
         while (xQueueReceive(outbox, &om, 0) == pdTRUE) send_to(om.to, om.data, om.len);
         serve_stream();
@@ -414,6 +532,7 @@ void net_task(void*) {
             snprintf(line, sizeof(line), "atom_controller v%d.%d.%d (%s) ip=%s rssi=%d state=%d plan=%lu@%uHz valid=%d imu=%d write_retries=%lu heap=%lu up=%lus",
                      FW_MAJOR, FW_MINOR, FW_PATCH, FW_GIT, WiFi.localIP().toString().c_str(), WiFi.RSSI(), state, (unsigned long)plan_n, plan_rate,
                      plan_valid, imu_ok, (unsigned long)write_retries, (unsigned long)ESP.getFreeHeap(), (unsigned long)(now / 1000));
+            wss.broadcastTXT(line);
             if (WiFi.status() == WL_CONNECTED) {
                 out_udp.beginPacket(IPAddress(255, 255, 255, 255), LOG_PORT);
                 out_udp.write((const uint8_t*)line, strlen(line));
@@ -458,10 +577,12 @@ void finish(uint8_t result, uint32_t cycles, uint32_t max_period, uint32_t late,
 }
 
 // Result codes: 0 done, 1 tracking error, 2 stopped, 3 not at the start pose, 4 bus error
-// Plays the uploaded plan, or with `use_signal` the PLAY_SIGNAL test signal computed onboard.
-void play(bool use_signal = false) {
+// Runs a motion at a fixed rate with telemetry: src 0 = the uploaded plan (PLAY), 1 = the
+// PLAY_SIGNAL test signal, 2 = a MOVE_TO minimum-jerk move (4.2+), all computed onboard.
+void play(uint8_t src = 0) {
     const PlayParams pp = play_params;
-    const uint8_t type = use_signal ? 0x0B : 0x07;
+    const bool use_signal = src == 1, use_move = src == 2;
+    const uint8_t type = use_signal ? 0x0B : (use_move ? 0x0E : 0x07);
     if (pp.rate < 50 || pp.rate > 800) { ack_from_control(type, -2); return; }
     uint16_t pos[N_SERVOS], spd[N_SERVOS], load[N_SERVOS], cmd[N_SERVOS], ref[N_SERVOS];
     if (!read_state(pos, spd, load)) { ack_from_control(type, -4); finish(4, 0, 0, 0, 0, 0); state = ERROR_STATE; return; }
@@ -471,14 +592,21 @@ void play(bool use_signal = false) {
     if (use_signal) {
         int err = sig::validate_start(sp, start_deg);
         if (err) { ack_from_control(type, -20 - err); finish(3, 0, 0, 0, 0, 0); return; }
-    } else {
+    } else if (!use_move) {
         for (int j = 0; j < N_SERVOS; j++) {
             int e = (int)pos[j] - (int)plan[0].ref[j];
             if (abs(e) > pp.start_tol) { ack_from_control(type, -3); finish(3, 0, 0, 0, j + 1, e); return; }
         }
     }
+    float goal[N_SERVOS], move_T = 0;
+    if (use_move) {
+        memcpy(goal, move_goal, sizeof(goal));
+        float Tmin = motion::move_min_duration(start_deg, goal);
+        move_T = move_dur_ms ? move_dur_ms * 0.001f : Tmin;
+        if (move_T < Tmin * 0.999f) { ack_from_control(type, -1); finish(3, 0, 0, 0, 0, 0); return; }
+    }
     ack_from_control(type, 0);
-    state = PLAYING;
+    state = use_move ? MOVING : PLAYING;
     telem_dropped = 0;
 
     // Enable motion: hold, no acceleration ramp, speed cap (each write verified)
@@ -490,7 +618,7 @@ void play(bool use_signal = false) {
     }
 
     const uint32_t period = 1000000UL / pp.rate;
-    const float duration_s = (use_signal ? sig::total_s(sp) : (plan_n - 1) / (float)plan_rate) + 0.5f;   // plus 0.5 s settling
+    const float duration_s = (use_signal ? sig::total_s(sp) : use_move ? move_T : (plan_n - 1) / (float)plan_rate) + 0.5f;   // plus 0.5 s settling
     uint32_t t0 = micros(), next = t0, cycles = 0, late = 0, max_period = 0, last = t0;
     uint8_t result = 0, bad_joint = 0; int16_t bad_err = 0;
     for (;;) {
@@ -502,6 +630,9 @@ void play(bool use_signal = false) {
         if (use_signal) {
             sig::eval(sp, start_deg, t, q_deg);
             for (int j = 0; j < N_SERVOS; j++) cmd[j] = ref[j] = deg_to_pos(j, q_deg[j]);
+        } else if (use_move) {
+            float s_ = motion::minjerk(t / move_T);
+            for (int j = 0; j < N_SERVOS; j++) cmd[j] = ref[j] = deg_to_pos(j, start_deg[j] + s_ * (goal[j] - start_deg[j]));
         } else {
             interp(plan, plan_n, t * plan_rate, cmd, ref);
         }
@@ -568,6 +699,9 @@ void setup() {
     ArduinoOTA.onStart([]() { state = OTA; show(40, 0, 40); Bus.end(); });
     ArduinoOTA.begin();
     cmd_udp.begin(CMD_PORT);
+    wss.begin();
+    wss.onEvent(ws_event);
+
 
     outbox = xQueueCreate(16, sizeof(OutMsg));
     xTaskCreatePinnedToCore(imu_task, "imu", 4096, nullptr, 2, nullptr, 0);
@@ -579,6 +713,49 @@ void setup() {
     for (int k = 0; k < 5 && !gains_ok; k++) { gains_ok = write_gains(); if (!gains_ok) delay(100); }
     uint16_t p[N_SERVOS], s[N_SERVOS], l[N_SERVOS];
     state = read_state(p, s, l) ? HOLDING : ERROR_STATE;
+}
+
+// JOG (4.2+): the client streams joint velocities; the goals integrate them at 500 Hz within the
+// speed, acceleration and joint limits (motion.h). No JOG for 200 ms (deadman), STOP, HOLD or a
+// zero velocity: ramp down at the acceleration limit, then hold. The state stream shows the motion.
+void jog_run() {
+    uint16_t pos[N_SERVOS], spd[N_SERVOS], load[N_SERVOS], cmd[N_SERVOS];
+    if (!read_state(pos, spd, load)) { ack_from_control(0x0F, -4); return; }
+    uint16_t caps[N_SERVOS]; for (int j = 0; j < N_SERVOS; j++) caps[j] = 2000;
+    if (!sync_write_u16_verified(REG_GOAL_POSITION, pos) || !sync_write_u8_verified(REG_ACCELERATION, 0) ||
+        !sync_write_u16_verified(REG_GOAL_SPEED, caps)) { hold_pose(); state = ERROR_STATE; return; }
+    motion::Jog js = {};
+    for (int j = 0; j < N_SERVOS; j++) js.q[j] = pos_to_deg(j, pos[j]);
+    state = JOGGING;
+    const float dt = 0.002f;
+    const int max_err = 227;   // 20° in steps: abort and hold
+    uint32_t next = micros();
+    bool fault = false;
+    for (;;) {
+        float target[N_SERVOS];
+        portENTER_CRITICAL(&jog_mux);
+        memcpy(target, jog_target, sizeof(target));
+        uint32_t last = jog_ms;
+        portEXIT_CRITICAL(&jog_mux);
+        bool any = false;
+        if (stop_requested || millis() - last > (uint32_t)(lim::JOG_DEADMAN_S * 1000)) memset(target, 0, sizeof(target));
+        for (int j = 0; j < N_SERVOS; j++) any |= target[j] != 0;
+        motion::jog_step(js, target, dt);
+        for (int j = 0; j < N_SERVOS; j++) cmd[j] = deg_to_pos(j, js.q[j]);
+        sync_write_u16(REG_GOAL_POSITION, cmd);
+        bool ok = read_state(pos, spd, load);
+        publish_state(ok, pos, spd, load);
+        if (ok) for (int j = 0; j < N_SERVOS; j++) if (abs((int)pos[j] - (int)cmd[j]) > max_err) fault = true;
+        if (fault) break;
+        if (!any && motion::jog_stopped(js)) break;
+        next += 2000;
+        while ((int32_t)(micros() - next) < 0) {}
+        if ((int32_t)(micros() - next) > 2000) next = micros();
+    }
+    hold_pose();
+    uint16_t zero[N_SERVOS] = {0};
+    sync_write_u16_verified(REG_GOAL_SPEED, zero);
+    state = fault ? ERROR_STATE : (plan_valid ? READY : HOLDING);
 }
 
 // While idle and someone subscribes: read the state at the stream rate (≤ 100 Hz), and the
@@ -631,7 +808,11 @@ void loop() {
         } else if (r == REQ_PLAY) {
             play();
         } else if (r == REQ_SIGNAL) {
-            play(true);
+            play(1);
+        } else if (r == REQ_MOVE) {
+            play(2);
+        } else if (r == REQ_JOG) {
+            jog_run();
         } else if (r == REQ_REG) {
             uint8_t id = reg_req[1], addr = reg_req[2], len = reg_req[3];
             if (reg_req[0] == 0x09) {

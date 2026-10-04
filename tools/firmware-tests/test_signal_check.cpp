@@ -29,7 +29,7 @@ static void check_profile(const sig::Params& p, const float start[6], const char
     for (int i = 1; i * dt <= T; i++) {
         float t = i * dt;
         sig::eval(p, start, t, q);
-        for (int k = 0; k < 6; k++) CHECK(fabsf(q[k]) <= sig::LIMIT_DEG[k] + 1e-3f, "%s: J%d inside the limits", name, k + 1);
+        for (int k = 0; k < 6; k++) CHECK(fabsf(q[k]) <= sig::limit_deg(k) + 1e-3f, "%s: J%d inside the limits", name, k + 1);
         float v = (q[j] - prev[j]) / dt;
         if (t > t1 + 2 * dt && t < t2 - dt) {             // signal part only
             vmax = fmaxf(vmax, fabsf(v));
