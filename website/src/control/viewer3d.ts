@@ -17,12 +17,14 @@ export class ArmView {
   private ghost: URDFRobot | null = null;
   private needsRender = true;
 
-  constructor(private el: HTMLElement, urdfUrl: string) {
+  /** `interactive: false` shows the arm only (no drag or zoom), so the page scrolls over it (the home page). */
+  constructor(private el: HTMLElement, urdfUrl: string, { interactive = true } = {}) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     el.append(this.renderer.domElement);
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+    this.controls.enabled = interactive;
     this.resetView();
     this.controls.enableDamping = true;
     this.controls.addEventListener('change', () => (this.needsRender = true));

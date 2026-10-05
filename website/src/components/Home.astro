@@ -1,0 +1,422 @@
+---
+// The home page below the hero: the three parts of the site, measured results, how the system
+// works, safety and status. Every number comes from a results page and links to it.
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+
+const paths = [
+  {
+    href: `${base}/setup/`,
+    title: 'Set up',
+    text: 'Install the controller firmware on the ATOM and connect it to your WiFi. You need a USB-C cable and Chrome or Edge.',
+    action: 'Open Setup',
+    icon: '<path d="M10 9V4.5M14 9V4.5" /><rect x="7.5" y="9" width="9" height="7" rx="1.5" /><path d="M12 16v4.5" />',
+  },
+  {
+    href: `${base}/control/`,
+    title: 'Control',
+    text: 'Move the joints, set a goal pose, or let the arm follow the faders in Live mode. Watch the 3D model, the plots and a camera.',
+    action: 'Open Control',
+    icon: '<rect x="3" y="15" width="18" height="6" rx="2" /><path d="M12 15V9.5" /><circle cx="12" cy="6.5" r="3" /><path d="M7 15v-1.5" />',
+  },
+  {
+    href: `${base}/start/overview/`,
+    title: 'Learn',
+    text: 'Read how the system works, from the servo bus to the firmware. Every result has its numbers and its method.',
+    action: 'Read the docs',
+    icon: '<path d="M3 5h5.5A3.5 3.5 0 0 1 12 8.5V20a2.5 2.5 0 0 0-2.5-2.5H3z" /><path d="M21 5h-5.5A3.5 3.5 0 0 0 12 8.5V20a2.5 2.5 0 0 1 2.5-2.5H21z" />',
+  },
+];
+
+const stats = [
+  { value: '1.26 ms', text: 'to read all six servos. The stock get_angles took 20 ms.', href: `${base}/results/latency/`, source: 'Latency' },
+  { value: '500 Hz', text: 'control loop on the ATOM. Period 1.985–2.016 ms, 0 late cycles.', href: `${base}/results/latency/#onboard-loop`, source: 'Onboard loop' },
+  { value: '0.8 mm', text: 'RMS error on a 100 mm circle, from 12.5 mm, with lag compensation and learning control.', href: `${base}/results/ilc/`, source: 'Learning control' },
+  { value: '90 °/s', text: 'in Live mode: the joints follow the faders as fast as a planned move. Before, 30 °/s.', href: `${base}/comms/websocket-api/#track-live-mode`, source: 'Live mode' },
+];
+
+// Our controller firmware compared with Elephant's stock ATOM firmware (v7.2). Every row links to its source.
+const compare = [
+  {
+    what: 'Read the joints',
+    stock: 'get_angles over USB: 20 ms (8–9 ms with the latency fix).',
+    ours: 'The ATOM reads all six servos in 1.26 ms, 500 times a second.',
+    href: `${base}/results/latency/`,
+  },
+  {
+    what: 'Move the arm',
+    stock: 'send_angles: one goal per command. The servos move by themselves.',
+    ours: 'Smooth trajectories on the ATOM at 500 Hz: moves, plans and Live mode.',
+    href: `${base}/comms/stock-atom/#what-the-stock-firmware-does-on-the-bus`,
+  },
+  {
+    what: 'Connect',
+    stock: 'A USB cable to a computer with a Python library.',
+    ours: 'WiFi: a browser, with nothing to install on the computer.',
+    href: `${base}/comms/websocket-api/`,
+  },
+  {
+    what: 'Servo gains',
+    stock: 'The gains that the stock firmware writes at power-up.',
+    ours: 'Tuned gains at power-up: half the error on the test circle.',
+    href: `${base}/system/servos/#position-loop-gains`,
+  },
+  {
+    what: 'Watch and stop',
+    stock: 'Ask for each value.',
+    ours: 'A 50 Hz state stream (angles, load, temperature, IMU). One client has control. A deadman stops the arm.',
+    href: `${base}/software/control-page/`,
+  },
+];
+---
+
+<div class="home not-content">
+  <section aria-labelledby="paths-title">
+    <h2 id="paths-title" class="sr-only">Parts of the site</h2>
+    <div class="paths">
+      {paths.map((p) => (
+        <a class="path" href={p.href}>
+          <span class="path-icon" aria-hidden="true"><svg viewBox="0 0 24 24" set:html={p.icon} /></span>
+          <span class="path-title">{p.title}</span>
+          <span class="path-text">{p.text}</span>
+          <span class="path-action">{p.action} <span aria-hidden="true">→</span></span>
+        </a>
+      ))}
+    </div>
+  </section>
+
+  <section aria-labelledby="why-title">
+    <h2 id="why-title">Why custom firmware</h2>
+    <p class="why-lead">
+      The stock firmware on the ATOM answers one command at a time from a computer. Our controller firmware runs the motion
+      on the ATOM, next to the servos, and talks to the browser over WiFi.
+      Install it from the <a href={`${base}/setup/`}>Setup page</a>; you can <a href={`${base}/firmware/stock-backup/`}>go back to the stock firmware</a> at any time.
+    </p>
+    <div class="compare" role="table" aria-label="Stock firmware compared with our controller firmware">
+      <div class="compare-row compare-head" role="row">
+        <span role="columnheader"></span>
+        <span role="columnheader">Stock firmware (v7.2)</span>
+        <span role="columnheader">Our controller firmware</span>
+      </div>
+      {compare.map((c) => (
+        <a class="compare-row" role="row" href={c.href}>
+          <span class="compare-what" role="rowheader">{c.what}</span>
+          <span class="compare-stock" role="cell">{c.stock}</span>
+          <span class="compare-ours" role="cell">{c.ours}</span>
+        </a>
+      ))}
+    </div>
+  </section>
+
+  <section aria-labelledby="stats-title">
+    <h2 id="stats-title">Measured, with the method</h2>
+    <div class="stats">
+      {stats.map((s) => (
+        <a class="stat" href={s.href}>
+          <span class="stat-value num">{s.value}</span>
+          <span class="stat-text">{s.text}</span>
+          <span class="stat-source">{s.source} <span aria-hidden="true">→</span></span>
+        </a>
+      ))}
+    </div>
+  </section>
+
+  <section class="how" aria-labelledby="how-title">
+    <h2 id="how-title">How it works</h2>
+    <ol class="flow" aria-label="The path from the browser to the servos">
+      <li class="node">
+        <span class="node-title">Browser</span>
+        <span>Setup and Control pages</span>
+        <span>Chrome or Edge, no install</span>
+      </li>
+      <li class="link wifi" aria-label="WebSocket over WiFi"><span>WebSocket</span><span>over WiFi</span></li>
+      <li class="node accent">
+        <span class="node-title">ATOM (ESP32)</span>
+        <span>our controller firmware</span>
+        <span>500 Hz loop, IMU</span>
+      </li>
+      <li class="link bus" aria-label="Servo bus, 1 Mbaud"><span>servo bus</span><span>1 Mbaud</span></li>
+      <li class="node">
+        <span class="node-title">Six servos</span>
+        <span class="chips" aria-hidden="true">{[1, 2, 3, 4, 5, 6].map((j) => <span>J{j}</span>)}</span>
+        <span>Feetech STS, J1 to J6</span>
+      </li>
+    </ol>
+    <p class="flow-extra"><strong>Optional:</strong> a Raspberry Pi next to the robot serves the site and a camera, and keeps a log of each session.</p>
+    <ol class="how-steps">
+      <li><strong>The ATOM is the controller.</strong> It runs the motion at 500 Hz, next to the servos. WiFi delays do not change the path.</li>
+      <li><strong>The browser is the interface.</strong> It sends goals and shows the state that the ATOM streams.</li>
+      <li><strong>One client has control.</strong> Others can watch. If the page stops sending, the arm stops by itself.</li>
+    </ol>
+    <p class="how-more"><a href={`${base}/system/architecture/`}>Architecture</a> · <a href={`${base}/comms/websocket-api/`}>WebSocket API</a> · <a href={`${base}/firmware/controller/`}>Controller firmware</a></p>
+  </section>
+
+  <div class="notes">
+    <section class="note safety" aria-labelledby="safety-title">
+      <h2 id="safety-title">Safety</h2>
+      <p>The arm moves fast. Keep clear of it while it moves. The ATOM button is <strong>not</strong> an emergency stop: keep the 12 V switch within reach.</p>
+      <a href={`${base}/start/safety/`}>Read the safety rules <span aria-hidden="true">→</span></a>
+    </section>
+    <section class="note" aria-labelledby="status-title">
+      <h2 id="status-title">Status</h2>
+      <p>This is a lab project, and it changes often. The docs describe the system as it is: when the code changes, the docs change in the same commit.</p>
+      <a href={`${base}/reference/roadmap/`}>Roadmap</a> · <a href={`${base}/firmware/changelog/`}>Firmware changelog</a>
+    </section>
+  </div>
+</div>
+
+<script>
+  // The hero: the 3D arm (the Control page's viewer) moves between a few poses. The see-through arm
+  // shows the next goal, as on the Control page. Loaded after the page; no motion with reduced motion.
+  const el = document.getElementById('hero-arm');
+  const POSES = [
+    [0, -20, 55, 30, 0, 0],
+    [45, 20, -45, -35, 30, 0],
+    [-40, -30, 70, 20, -30, 0],
+    [15, 10, 35, -60, 0, 0],
+  ];
+  const TAU_S = 0.45; // the arm follows the goal with this time constant
+  const HOLD_MS = 1600; // pause at each goal
+
+  async function start(el: HTMLElement) {
+    const { ArmView } = await import('../control/viewer3d');
+    const arm = new ArmView(el, el.dataset.urdf!, { interactive: false });
+    await new Promise<void>((resolve) => {
+      const check = () => (el.dataset.loaded ? resolve() : setTimeout(check, 100));
+      check();
+    });
+    if (el.dataset.loaded !== 'true') return;
+    const q = POSES[0].slice();
+    arm.setPose(q);
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+    let visible = true;
+    new IntersectionObserver(([e]) => (visible = e.isIntersecting)).observe(el);
+    let k = 1;
+    let goal = POSES[k];
+    let last = performance.now();
+    let settledAt = 0;
+    const frame = (now: number) => {
+      requestAnimationFrame(frame);
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      if (!visible || document.hidden) return;
+      if (settledAt) {
+        if (now - settledAt < HOLD_MS) return;
+        settledAt = 0;
+        k = (k + 1) % POSES.length;
+        goal = POSES[k];
+      }
+      const f = 1 - Math.exp(-dt / TAU_S);
+      let far = 0;
+      for (let j = 0; j < 6; j++) {
+        q[j] += (goal[j] - q[j]) * f;
+        far = Math.max(far, Math.abs(goal[j] - q[j]));
+      }
+      arm.setPose(q);
+      arm.setGoal(far > 1 ? goal : null);
+      if (far < 0.05) settledAt = now;
+    };
+    requestAnimationFrame(frame);
+  }
+
+  if (el) {
+    const go = () => start(el);
+    if ('requestIdleCallback' in window) requestIdleCallback(go, { timeout: 1500 });
+    else setTimeout(go, 300);
+  }
+</script>
+
+<style is:global>
+  /* The hero's 3D arm (Starlight places this next to the title). */
+  .hero-arm {
+    width: min(100%, 30rem);
+    aspect-ratio: 1 / 1.05;
+    margin-inline: auto;
+    border-radius: 1.25rem;
+    background: radial-gradient(120% 90% at 50% 15%, var(--sl-color-accent-low), transparent 70%), var(--sl-color-gray-6);
+    border: 1px solid var(--sl-color-gray-5);
+    overflow: hidden;
+  }
+  .hero-arm canvas { display: block; width: 100% !important; height: 100% !important; }
+  :root[data-theme='light'] .hero-arm { background: radial-gradient(120% 90% at 50% 15%, var(--sl-color-accent-low), transparent 70%), var(--sl-color-gray-7, #f6f6f6); }
+</style>
+
+<style>
+  .home {
+    display: grid;
+    gap: 3.5rem;
+    margin-block: 1rem 3rem;
+  }
+  .home h2 {
+    font-size: var(--sl-text-2xl);
+    margin: 0 0 1.25rem;
+    color: var(--sl-color-white);
+  }
+  .home a { text-decoration: none; }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* Three parts of the site */
+  .paths { display: grid; gap: 1rem; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .path {
+    display: grid;
+    grid-template-rows: auto auto 1fr auto;
+    gap: 0.6rem;
+    padding: 1.4rem 1.4rem 1.2rem;
+    border-radius: 1rem;
+    border: 1px solid var(--sl-color-gray-5);
+    background: var(--sl-color-gray-6);
+    color: var(--sl-color-gray-2);
+    transition: border-color 0.15s, transform 0.15s;
+  }
+  :root[data-theme='light'] .path,
+  :root[data-theme='light'] .stat,
+  :root[data-theme='light'] .note { background: var(--sl-color-gray-7, #f6f6f6); }
+  .path:hover { border-color: var(--sl-color-accent); transform: translateY(-2px); }
+  .path-icon {
+    width: 3rem;
+    height: 3rem;
+    display: grid;
+    place-items: center;
+    border-radius: 0.8rem;
+    background: var(--sl-color-accent-low);
+    color: var(--sl-color-text-accent);
+  }
+  .path-icon svg { width: 1.65rem; height: 1.65rem; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .path-title { font-size: var(--sl-text-xl); font-weight: 700; color: var(--sl-color-white); }
+  .path-text { line-height: 1.55; }
+  .path-action { font-weight: 600; color: var(--sl-color-text-accent); }
+
+  /* Measured results */
+  .why-lead { max-width: 52rem; margin: 0 0 1rem; color: var(--sl-color-gray-2); line-height: 1.6; }
+  .why-lead a { text-decoration: underline; }
+  .compare { border: 1px solid var(--sl-color-gray-5); border-radius: 0.9rem; overflow: hidden; background: var(--sl-color-gray-6); }
+  :root[data-theme='light'] .compare { background: var(--sl-color-gray-7, #f6f6f6); }
+  .compare-row {
+    display: grid; grid-template-columns: minmax(8rem, 0.7fr) minmax(0, 1fr) minmax(0, 1.2fr); gap: 1rem;
+    padding: 0.8rem 1.2rem; border-top: 1px solid var(--sl-color-gray-5); color: var(--sl-color-gray-2); line-height: 1.5;
+  }
+  .compare-head { border-top: 0; font-size: var(--sl-text-xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--sl-color-gray-3); }
+  a.compare-row:hover { background: var(--sl-color-accent-low); }
+  .compare-what { font-weight: 700; color: var(--sl-color-white); }
+  .compare-stock { color: var(--sl-color-gray-3); }
+  .compare-ours { color: var(--sl-color-white); font-weight: 600; }
+  .compare-head span:last-child { color: var(--sl-color-text-accent); }
+  @media (max-width: 50rem) {
+    .compare-row { grid-template-columns: minmax(0, 1fr); gap: 0.25rem; }
+    .compare-head { display: none; }
+    .compare-stock::before { content: 'Stock: '; font-weight: 700; }
+    .compare-ours::before { content: 'Ours: '; color: var(--sl-color-text-accent); }
+  }
+  .stats { display: grid; gap: 1rem; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .stat {
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    gap: 0.5rem;
+    padding: 1.25rem;
+    border-radius: 1rem;
+    border: 1px solid var(--sl-color-gray-5);
+    background: var(--sl-color-gray-6);
+    color: var(--sl-color-gray-2);
+  }
+  .stat:hover { border-color: var(--sl-color-accent); }
+  .stat-value { font-size: clamp(1.9rem, 1.2rem + 1.6vw, 2.6rem); font-weight: 800; line-height: 1.1; color: var(--sl-color-text-accent); letter-spacing: -0.02em; }
+  .stat-text { font-size: var(--sl-text-sm); line-height: 1.5; }
+  .stat-source { font-size: var(--sl-text-xs); font-weight: 600; color: var(--sl-color-gray-3); }
+  .stat:hover .stat-source { color: var(--sl-color-text-accent); }
+
+  /* How it works: the path from the browser to the servos */
+  .flow { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr) 7.5rem minmax(0, 1fr) 7.5rem minmax(0, 1fr); align-items: center; }
+  .node {
+    display: grid;
+    gap: 0.2rem;
+    padding: 1.1rem 1.2rem;
+    border-radius: 1rem;
+    border: 1px solid var(--sl-color-gray-5);
+    background: var(--sl-color-gray-6);
+    color: var(--sl-color-gray-2);
+    font-size: var(--sl-text-sm);
+    text-align: center;
+  }
+  :root[data-theme='light'] .node { background: var(--sl-color-gray-7, #f6f6f6); }
+  .node.accent { border-color: var(--sl-color-accent); background: var(--sl-color-accent-low); }
+  .node-title { font-size: var(--sl-text-lg); font-weight: 700; color: var(--sl-color-white); }
+  .chips { display: flex; justify-content: center; gap: 0.3rem; margin-block: 0.2rem; }
+  .chips span {
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.15rem 0.35rem;
+    border-radius: 0.35rem;
+    border: 1px solid var(--sl-color-gray-4);
+    color: var(--sl-color-white);
+  }
+  .link { display: grid; justify-items: center; gap: 0.15rem; font-size: var(--sl-text-xs); color: var(--sl-color-gray-3); position: relative; }
+  .link::before {
+    content: '';
+    order: 1;
+    width: 100%;
+    border-top: 2px dashed var(--sl-color-gray-3);
+  }
+  .link.bus::before { border-top: 3px solid var(--sl-color-accent); }
+  .link span:last-child { order: 2; }
+  .flow-extra { margin: 1rem 0 0; font-size: var(--sl-text-sm); color: var(--sl-color-gray-3); text-align: center; }
+  .flow-extra strong { color: var(--sl-color-gray-2); }
+  .how-steps { margin: 2rem 0 0; padding: 0; list-style: none; display: grid; gap: 1.25rem 2rem; grid-template-columns: repeat(3, minmax(0, 1fr)); counter-reset: how; }
+  .how-steps li {
+    counter-increment: how;
+    position: relative;
+    padding-inline-start: 2.6rem;
+    line-height: 1.55;
+    color: var(--sl-color-gray-2);
+  }
+  .how-steps li::before {
+    content: counter(how);
+    position: absolute;
+    inset-inline-start: 0;
+    top: 0.05rem;
+    width: 1.75rem;
+    height: 1.75rem;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--sl-color-text-accent);
+    color: var(--sl-color-black);
+    font-weight: 700;
+    font-size: 0.9rem;
+  }
+  .how-steps strong { color: var(--sl-color-white); }
+  .how-more { margin: 1rem 0 0; font-size: var(--sl-text-sm); color: var(--sl-color-gray-3); }
+  .how-more a { color: var(--sl-color-text-accent); }
+
+  /* Safety and status */
+  .notes { display: grid; gap: 1rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .note {
+    padding: 1.4rem;
+    border-radius: 1rem;
+    border: 1px solid var(--sl-color-gray-5);
+    background: var(--sl-color-gray-6);
+    color: var(--sl-color-gray-2);
+  }
+  .note h2 { font-size: var(--sl-text-xl); margin-bottom: 0.6rem; }
+  .note p { margin: 0 0 0.9rem; line-height: 1.55; }
+  .note a { font-weight: 600; color: var(--sl-color-text-accent); }
+  .note.safety { border-inline-start: 4px solid #fab219; }
+
+  @media (max-width: 72rem) {
+    .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 50rem) {
+    .paths, .notes, .how-steps { grid-template-columns: minmax(0, 1fr); }
+    .home { gap: 2.5rem; }
+    /* The path runs top to bottom; the links become short vertical lines with their labels beside them. */
+    .flow { grid-template-columns: minmax(0, 1fr); justify-items: stretch; }
+    .link { grid-template-columns: 1fr auto 1fr; align-items: center; justify-items: stretch; padding-block: 0.4rem; }
+    .link span:first-child { text-align: end; padding-inline-end: 0.8rem; }
+    .link span:last-child { text-align: start; padding-inline-start: 0.8rem; }
+    .link::before { width: 0; height: 2.2rem; border-top: none; border-inline-start: 2px dashed var(--sl-color-gray-3); }
+    .link.bus::before { border-top: none; border-inline-start: 3px solid var(--sl-color-accent); }
+  }
+  @media (max-width: 30rem) {
+    .stat { padding: 1rem; }
+    .stat-value { font-size: 1.7rem; }
+  }
+</style>

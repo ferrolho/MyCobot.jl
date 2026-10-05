@@ -1,38 +1,26 @@
 ---
 title: myCobot 280 Lab
-description: High-rate control of the myCobot 280 (for Arduino), from the servo bus up.
+description: Fast, measured control of the myCobot 280 (for Arduino). Install our custom firmware on the ATOM from the browser, then move the arm from any computer on the same network.
 template: splash
+tableOfContents: false
+lastUpdated: false
+editUrl: false
 hero:
-  tagline: From 50 Hz through the stock firmware to a 500 Hz loop on the arm itself, with the servo bus, the firmware and every measurement documented.
+  tagline: Fast, measured control of the myCobot 280 (for Arduino). Install our custom firmware on the ATOM from the browser. Then move the arm from any computer on the same network.
+  image:
+    html: '<div id="hero-arm" class="hero-arm" data-urdf="/mycobot-280-lab/robot/mycobot_280_arduino.urdf" role="img" aria-label="3D model of the myCobot 280. The arm moves between poses; a see-through arm shows the next goal."></div>'
   actions:
-    - text: Start here
-      link: /mycobot-280-lab/start/overview/
+    - text: Set up the robot
+      link: /mycobot-280-lab/setup/
       icon: right-arrow
-    - text: Quick start
-      link: /mycobot-280-lab/start/quick-start/
+    - text: Open Control
+      link: /mycobot-280-lab/control/
+      variant: secondary
+    - text: Read the docs
+      link: /mycobot-280-lab/start/overview/
       variant: minimal
 ---
 
-import { Card, CardGrid } from '@astrojs/starlight/components';
-import SystemDiagram from '../../components/SystemDiagram.astro';
+import Home from '../../components/Home.astro';
 
-<SystemDiagram />
-
-<CardGrid>
-  <Card title="20 ms → 1.3 ms" icon="rocket">
-    The stock `get_angles` took 20 ms. Most of that was the USB adapter's latency
-    timer. A direct read of all six servos now takes 1.26 ms on the ATOM.
-  </Card>
-  <Card title="500 Hz onboard" icon="setting">
-    Custom firmware on the ATOM plays plans at a fixed 500 Hz with ±15 µs jitter
-    and streams joint state and IMU data over WiFi.
-  </Card>
-  <Card title="0.8 mm on a 100 mm circle" icon="approve-check">
-    Lag compensation and three runs of iterative learning control reduce the
-    tracking error from 12.5 mm to 0.8–1.0 mm RMS.
-  </Card>
-  <Card title="Source of truth" icon="open-book">
-    This site describes the system as it is. When the code changes, this site
-    changes in the same commit.
-  </Card>
-</CardGrid>
+<Home />
