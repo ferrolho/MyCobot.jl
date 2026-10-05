@@ -22,9 +22,8 @@ export class ArmView {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     el.append(this.renderer.domElement);
 
-    this.camera.position.set(0.55, 0.42, 0.55);
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-    this.controls.target.set(0, 0.22, 0);
+    this.resetView();
     this.controls.enableDamping = true;
     this.controls.addEventListener('change', () => (this.needsRender = true));
 
@@ -63,6 +62,13 @@ export class ArmView {
 
     Promise.all([load(false), load(true)])
       .then(([robot, ghost]) => {
+        // A joint axis that does not parse (for example a leading space in <axis xyz=" 0 0 1">,
+        // which urdf-loader does not trim) makes the joint's transform NaN at its first nonzero
+        // angle, and every link after it disappears. Fail loudly instead.
+        for (const [name, j] of Object.entries(robot.joints)) {
+          const a = (j as unknown as { axis?: THREE.Vector3 }).axis;
+          if (a && ![a.x, a.y, a.z].every(Number.isFinite)) throw new Error(`joint ${name}: invalid axis`);
+        }
         for (const r of [robot, ghost]) {
           r.rotation.x = -Math.PI / 2; // URDF is z-up; three.js is y-up
           this.scene.add(r);
@@ -89,6 +95,14 @@ export class ArmView {
       }
     };
     loop();
+  }
+
+  /** The default camera: front-right, a little above, the whole arm in view. */
+  resetView() {
+    this.camera.position.set(0.5, 0.38, 0.5);
+    this.controls.target.set(0, 0.2, 0);
+    this.controls.update();
+    this.needsRender = true;
   }
 
   private resize() {

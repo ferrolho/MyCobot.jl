@@ -24,14 +24,14 @@
         <!--- 0.0 0 -0.04  1.5708 3.14159 -->
         <mesh filename="joint1.glb" scale="0.001 0.001 0.001" />
       </geometry>
-      <origin xyz="0.0 0 0 " rpy=" 0 0 -3.14159" />
+      <origin xyz="0.0 0 0" rpy="0 0 -3.14159" />
     </visual>
     <collision>
       <geometry>
         <!--- 0.0 0 -0.04  1.5708 3.14159 -->
         <mesh filename="joint1.glb" scale="0.001 0.001 0.001" />
       </geometry>
-      <origin xyz="0.0 0 0 " rpy=" 0 0 -3.14159" />
+      <origin xyz="0.0 0 0" rpy="0 0 -3.14159" />
     </collision>
   </link>
 
@@ -40,13 +40,13 @@
       <geometry>
         <mesh filename="joint2.glb" />
       </geometry>
-      <origin xyz="0.0 0 -0.06096 " rpy=" 0 0 -1.5708" />
+      <origin xyz="0.0 0 -0.06096" rpy="0 0 -1.5708" />
     </visual>
     <collision>
       <geometry>
         <mesh filename="joint2.glb" />
       </geometry>
-      <origin xyz="0.0 0 -0.06096 " rpy=" 0 0 -1.5708" />
+      <origin xyz="0.0 0 -0.06096" rpy="0 0 -1.5708" />
     </collision>
   </link>
 
@@ -55,13 +55,13 @@
       <geometry>
         <mesh filename="joint3.glb" />
       </geometry>
-      <origin xyz="0.0 0 0.03256 " rpy=" 0 -1.5708 0" />
+      <origin xyz="0.0 0 0.03256" rpy="0 -1.5708 0" />
     </visual>
     <collision>
       <geometry>
         <mesh filename="joint3.glb" />
       </geometry>
-      <origin xyz="0.0 0 0.03256 " rpy=" 0 -1.5708 0" />
+      <origin xyz="0.0 0 0.03256" rpy="0 -1.5708 0" />
     </collision>
   </link>
 
@@ -71,14 +71,14 @@
         <!--- 0.0 0 -0.04 -->
         <mesh filename="joint4.glb" />
       </geometry>
-      <origin xyz="0.0 0 0.03056 " rpy=" 0 -1.5708 0" />
+      <origin xyz="0.0 0 0.03056" rpy="0 -1.5708 0" />
     </visual>
     <collision>
       <geometry>
         <!--- 0.0 0 -0.04 -->
         <mesh filename="joint4.glb" />
       </geometry>
-      <origin xyz="0.0 0 0.03056 " rpy=" 0 -1.5708 0" />
+      <origin xyz="0.0 0 0.03056" rpy="0 -1.5708 0" />
     </collision>
   </link>
 
@@ -88,14 +88,14 @@
         <!--- 0.0 0 -0.04 -->
         <mesh filename="joint5.glb" />
       </geometry>
-      <origin xyz="0.0 0 -0.03356 " rpy=" -1.5708 0 0" />
+      <origin xyz="0.0 0 -0.03356" rpy="-1.5708 0 0" />
     </visual>
     <collision>
       <geometry>
         <!--- 0.0 0 -0.04 -->
         <mesh filename="joint5.glb" />
       </geometry>
-      <origin xyz="0.0 0 -0.03356 " rpy=" -1.5708 0 0" />
+      <origin xyz="0.0 0 -0.03356" rpy="-1.5708 0 0" />
     </collision>
   </link>
 
@@ -105,14 +105,14 @@
         <!--- 0.0 0 -0.04 -->
         <mesh filename="joint6.glb" />
       </geometry>
-      <origin xyz="0 0.00 -0.038 " rpy=" 0 0 0" />
+      <origin xyz="0 0.00 -0.038" rpy="0 0 0" />
     </visual>
     <collision>
       <geometry>
         <!--- 0.0 0 -0.04 -->
         <mesh filename="joint6.glb" />
       </geometry>
-      <origin xyz="0 0.00 -0.038 " rpy=" 0 0 0" />
+      <origin xyz="0 0.00 -0.038" rpy="0 0 0" />
     </collision>
   </link>
 
@@ -122,14 +122,14 @@
         <!--- 0.0 0 -0.04 -->
         <mesh filename="joint7.glb" />
       </geometry>
-      <origin xyz="0.0 0 -0.012 " rpy=" 0 0 0" />
+      <origin xyz="0.0 0 -0.012" rpy="0 0 0" />
     </visual>
     <collision>
       <geometry>
         <!--- 0.0 0 -0.04 -->
         <mesh filename="joint7.glb" />
       </geometry>
-      <origin xyz="0.0 0 -0.012 " rpy=" 0 0 0" />
+      <origin xyz="0.0 0 -0.012" rpy="0 0 0" />
     </collision>
   </link>
 
@@ -156,19 +156,19 @@
     <limit effort="1.0" lower="-2.4435" upper="2.4435" velocity="2.6" />
     <parent link="joint2" />
     <child link="joint3" />
-    <origin xyz="0 0  0" rpy="0 1.5708 -1.5708" />
+    <origin xyz="0 0 0" rpy="0 1.5708 -1.5708" />
   </joint>
 
   <joint name="joint4_to_joint3" type="revolute">
-    <axis xyz=" 0 0 1" />
+    <axis xyz="0 0 1" />
     <limit effort="1.0" lower="-2.6180" upper="2.6180" velocity="2.6" />
     <parent link="joint3" />
     <child link="joint4" />
-    <origin xyz="  -0.1104 0 0   " rpy="0 0 0" />
+    <origin xyz="-0.1104 0 0" rpy="0 0 0" />
   </joint>
 
   <joint name="joint5_to_joint4" type="revolute">
-    <axis xyz=" 0 0 1" />
+    <axis xyz="0 0 1" />
     <limit effort="1.0" lower="-2.6180" upper="2.6180" velocity="2.6" />
     <parent link="joint4" />
     <child link="joint5" />
