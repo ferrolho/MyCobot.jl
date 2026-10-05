@@ -15,7 +15,7 @@
 // Control ends on release, when its WebSocket closes, or 2 s after its last message (not during its run).
 // HOLD and STOP work for every client (during a run they stop it).
 //   0x0D CONTROL u8 action (0 release, 1 take, 2 take over) -> ACK 0 / -2 another client / -1 robot moving
-//   0x0E MOVE_TO i16 goal[6] (0.01°), u16 duration_ms (0 = shortest) -> ACK, TELEM, DONE; state 6 moving
+//   0x0E MOVE_TO i16 goal[6] (0.01°), u16 duration_ms (0 = shortest) -> ACK, TELEM (UDP only, 4.3.1+), DONE; state 6 moving
 //   0x0F JOG u8 frame (0 = joints), i16 velocity[6] (0.1°/s); ACK only if refused; 200 ms deadman; state 7
 //   STREAM (4.2+) has one more byte at offset 73: control 0 nobody, 1 you, 2 another client (74 bytes).
 // Full API: website/src/content/docs/comms/websocket-api.md.
@@ -105,7 +105,7 @@
 // History: docs (firmware/changelog). FW_GIT is set by the build (git describe).
 #define FW_MAJOR 4
 #define FW_MINOR 3
-#define FW_PATCH 0
+#define FW_PATCH 1
 #define FW_VERSION FW_MAJOR
 #ifndef FW_GIT
 #define FW_GIT "unknown"
@@ -137,6 +137,7 @@ WebSocketsServer wss(80);   // ws://<ATOM>/ws (4.2+), network task only
 Addr cmd_from;   // sender of the packet that the network task is handling
 Addr req_from;   // sender of the request handed to the control loop
 Addr play_to;    // client of the running PLAY / PLAY_SIGNAL
+volatile bool telem_on = true;   // send TELEM to play_to (not for MOVE_TO over WebSocket, 4.3.1+)
 
 // ---- Plan storage ------------------------------------------------------------------------------
 struct PlanSample { uint16_t cmd[N_SERVOS]; uint16_t ref[N_SERVOS]; };
@@ -360,6 +361,7 @@ void handle_command(const uint8_t* b, int n) {
         play_params = {500, 2000, 227, 34};   // 500 Hz, speed cap, abort at 20° tracking error
         stop_requested = false;
         req_from = play_to = cmd_from;
+        telem_on = cmd_from.ws == 0xFF;   // UDP: TELEM as before; WebSocket: the STREAM only (see the network task)
         request = REQ_MOVE;
         break;
     }
@@ -372,7 +374,7 @@ void handle_command(const uint8_t* b, int n) {
         } else if ((state == HOLDING || state == READY) && request == REQ_NONE) {
             portENTER_CRITICAL(&jog_mux); memcpy(jog_target, v, sizeof(v)); jog_ms = millis(); portEXIT_CRITICAL(&jog_mux);
             stop_requested = false;
-            req_from = play_to = cmd_from;
+            req_from = play_to = cmd_from; telem_on = true;
             request = REQ_JOG;
         } else ack(0x0F, -1);
         break;
@@ -428,7 +430,7 @@ void handle_command(const uint8_t* b, int n) {
         if (!plan_valid || state == PLAYING || n < 9) { ack(0x07, -1); break; }
         memcpy(&play_params, b + 1, 8);
         stop_requested = false;
-        req_from = play_to = cmd_from;
+        req_from = play_to = cmd_from; telem_on = true;
         request = REQ_PLAY;
         break;
     }
@@ -441,7 +443,7 @@ void handle_command(const uint8_t* b, int n) {
         memcpy(&play_params, b + 1, 8);
         signal_params = p;
         stop_requested = false;
-        req_from = play_to = cmd_from;
+        req_from = play_to = cmd_from; telem_on = true;
         request = REQ_SIGNAL;
         break;
     }
@@ -655,7 +657,10 @@ void net_task(void*) {
         static uint32_t last_led = 0;
         if (millis() - last_led >= 100) { last_led = millis(); update_led(); }
 
-        // Telemetry: batches of up to 20 samples
+        // Telemetry: batches of up to 18 samples. Over a WebSocket (TCP) every send waits for the
+        // client: 500 Hz telemetry (28 packets/s) blocked this task during MOVE_TO, so the STREAM paused
+        // for 0.1-0.5 s and replies came late (2026-10-05). A WebSocket MOVE_TO sends no TELEM.
+        if (!telem_on) { __sync_synchronize(); ring_tail = ring_head; }
         while (ring_tail != ring_head) {
             __sync_synchronize();
             uint32_t avail = ring_head - ring_tail;

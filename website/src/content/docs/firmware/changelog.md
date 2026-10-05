@@ -14,6 +14,15 @@ UDP port 5005 shows it with the git commit of the build, for example
 `atom_controller v4.0.0 (bff4529)`. Each version has a git tag
 `atom-controller-vX.Y.Z` (local until the repository is pushed).
 
+## 4.3.1 — 2026-10-05
+
+- **Fix:** a MOVE_TO from a WebSocket client sends no TELEM. Over TCP, the 500 Hz
+  telemetry (about 28 packets/s) blocked the network task: the STREAM paused for
+  0.1–0.5 s many times per move (17–30 packets/s instead of 50), and replies came
+  0.3–0.7 s late. Found with the Control page's session log on 2026-10-05. The
+  STREAM shows the motion; DONE still ends the move. UDP clients and PLAY and
+  PLAY_SIGNAL keep the telemetry.
+
 ## 4.3.0 — 2026-10-05
 
 Set up the robot from the browser: see [Set up the robot](/mycobot-280-lab/start/setup/).

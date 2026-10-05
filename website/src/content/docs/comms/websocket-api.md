@@ -75,7 +75,7 @@ converts them to servo steps.
 
 | Code | Command | Data | Reply |
 | --- | --- | --- | --- |
-| `0x0E` | MOVE_TO | i16 goal[6] (0.01°), u16 duration (ms; 0 = the ATOM chooses it from the speed limit) | ACK: 0 started, −1 busy, −2 no control, −10−j goal of joint j outside the limits. Then DONE (`0x85`) when the move ends. |
+| `0x0E` | MOVE_TO | i16 goal[6] (0.01°), u16 duration (ms; 0 = the ATOM chooses it from the speed limit) | ACK: 0 started, −1 busy, −2 no control, −10−j goal of joint j outside the limits. Then DONE (`0x85`) when the move ends. No TELEM over WebSocket (4.3.1+): watch the STREAM. |
 | `0x0F` | JOG | u8 frame (0 = joints), i16 velocity[6] (0.1 °/s) | ACK only if refused: −1 busy, −2 no control |
 
 ### MOVE_TO
