@@ -5,11 +5,11 @@ description: Open work, grouped by topic. Done items move to the results and his
 
 ## Control page and website (handed over 2026-10-04)
 
-- [ ] Confirm moving the real arm from the Control page (JOG, MOVE_TO). Only read-only use is tested so far.
+- [x] Confirm moving the real arm from the Control page (2026-10-05: GitHub Pages in Chrome on a laptop, `mycobot.local`).
 - [ ] Away from home: a TCP forward on the Pi (Tailscale :8282 → ATOM :80), so the page reaches the ATOM over Tailscale.
 - [ ] Browser flasher (ESP Web Tools: full image with bootloader and partitions) with Improv WiFi setup (returns the IP), and a Search button (mDNS or address sweep).
 - [ ] End-effector jog (the page has joint jog only).
-- [ ] Test Chrome's local-network prompt for real users on GitHub Pages (the Pi tests grant it).
+- [x] Test Chrome's local-network prompt for real users on GitHub Pages (2026-10-05: works from the public page; the laptop webcam works too).
 - [ ] The page assumes the real robot until the first status-log line arrives (the simulator's starts with "atom-sim").
 
 ## Tracking accuracy

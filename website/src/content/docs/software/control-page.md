@@ -8,9 +8,9 @@ The browser connects straight to the ATOM over WiFi with the
 [WebSocket API](/mycobot-280-lab/comms/websocket-api/). You need only the arm and a
 browser.
 
-The page needs controller firmware **4.2.0** or later on the ATOM. On 2026-10-04 it
-showed the real robot's state and the camera; jog and moves were tested on the robot
-with the firmware test script. Without the robot, use the
+The page needs controller firmware **4.2.0** or later on the ATOM. On 2026-10-05 the
+page on GitHub Pages, opened in Chrome on a laptop, connected to `mycobot.local`,
+controlled the real robot and showed the laptop's webcam. Without the robot, use the
 [simulated ATOM](#develop-without-the-robot).
 
 ## Where to open it
