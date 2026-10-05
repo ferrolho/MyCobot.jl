@@ -60,9 +60,14 @@
 //
 // LED matrix: blue = starting, green = holding, yellow = plan ready, cyan + progress = playing,
 //   red = error (press the button to clear and hold again), magenta = OTA update.
+//   Blinks white (4.3+): no WiFi network saved; set it up on the Setup page.
 // The button only acknowledges (clear error + hold). It is NOT an emergency stop.
 //
-// Build: see firmware/README.md (needs ~/.config/mycobot/wifi_secrets.h).
+// WiFi (4.3+): Improv WiFi over the USB serial port (improv.h; the Setup page's browser installer
+// sends the network and password). The network is saved in NVS ("wifi" namespace) and used at
+// power-up; without one, a lab build uses the network compiled in from wifi_secrets.h.
+// Builds (docs: firmware/build-flash): lab = with ~/.config/mycobot/wifi_secrets.h (WiFi fallback, OTA
+// with password); public = -DPUBLIC_BUILD (no secrets, no OTA; the Setup page installs and updates it).
 
 #include <ArduinoOTA.h>
 #include <WiFi.h>
@@ -75,18 +80,39 @@
 #include "imu.h"
 #include "test_signal.h"
 #include "motion.h"
-#include "wifi_secrets.h"
+#include "improv.h"
+#include <Preferences.h>
+#if !defined(PUBLIC_BUILD) && __has_include("wifi_secrets.h")
+#include "wifi_secrets.h"   // lab build: compiled-in WiFi network and OTA password
+#endif
+#ifdef PUBLIC_BUILD
+#define FW_VARIANT "public"
+#else
+#define FW_VARIANT "lab"
+#define HAS_OTA 1           // public builds have no OTA: without a password anyone on the network could flash them
+#endif
+#ifndef WIFI_SSID
+#define WIFI_SSID ""
+#define WIFI_PASSWORD ""
+#endif
+// After WiFi setup, the browser installer offers this page with the robot's address (Improv "next URL").
+#ifndef SETUP_NEXT_URL
+#define SETUP_NEXT_URL "https://ferrolho.github.io/mycobot-280-lab/control/?atom="
+#endif
 
 // Semantic version: MAJOR for protocol changes that break old clients, MINOR for added commands,
 // PATCH for fixes. PING reports MAJOR as its u16 version, then MINOR and PATCH (3.1+).
 // History: docs (firmware/changelog). FW_GIT is set by the build (git describe).
 #define FW_MAJOR 4
-#define FW_MINOR 2
+#define FW_MINOR 3
 #define FW_PATCH 0
 #define FW_VERSION FW_MAJOR
 #ifndef FW_GIT
 #define FW_GIT "unknown"
 #endif
+#define STR_(x) #x
+#define STR(x) STR_(x)
+#define FW_VERSION_STR STR(FW_MAJOR) "." STR(FW_MINOR) "." STR(FW_PATCH)
 #define LED_PIN    27
 #define BTN_PIN    39
 #define CMD_PORT   5006
@@ -442,6 +468,123 @@ void handle_command(const uint8_t* b, int n) {
     }
 }
 
+// ---- WiFi and Improv (4.3+, network task) ----------------------------------------------------------
+volatile bool wifi_has_network = false;   // a network is saved or compiled in (else the LED blinks white)
+improv::Parser improv_rx;
+bool improv_provisioning = false;         // WIFI_SETTINGS received: connecting to the new network
+uint32_t improv_deadline = 0;
+improv::WifiSettings improv_new;
+
+void wifi_join_saved() {
+    Preferences prefs;
+    char ssid[improv::MAX_SSID + 1] = "", pass[improv::MAX_PASSWORD + 1] = "";
+    if (prefs.begin("wifi", true)) {
+        prefs.getString("ssid", ssid, sizeof(ssid));
+        prefs.getString("pass", pass, sizeof(pass));
+        prefs.end();
+    }
+    switch (improv::wifi_source(ssid, WIFI_SSID)) {
+    case improv::SAVED:    WiFi.begin(ssid, pass); wifi_has_network = true; break;
+    case improv::COMPILED: WiFi.begin(WIFI_SSID, WIFI_PASSWORD); wifi_has_network = true; break;
+    default:               wifi_has_network = false; break;   // wait for Improv
+    }
+}
+
+void improv_write(const uint8_t* p, size_t n) { if (n) Serial.write(p, n); }
+
+void improv_send_state(uint8_t st) { uint8_t out[improv::MAX_PACKET]; improv_write(out, improv::build_state(st, out)); }
+void improv_send_error(uint8_t e) { uint8_t out[improv::MAX_PACKET]; improv_write(out, improv::build_error(e, out)); }
+
+void improv_send_url(uint8_t command) {   // RPC result: the Control page with this robot's address
+    String url = String(SETUP_NEXT_URL) + WiFi.localIP().toString();
+    const char* strs[] = {url.c_str()};
+    uint8_t out[improv::MAX_PACKET];
+    improv_write(out, improv::build_result(command, strs, 1, out));
+}
+
+void improv_send_current_state() {
+    if (improv_provisioning) { improv_send_state(improv::PROVISIONING); return; }
+    if (WiFi.status() == WL_CONNECTED) { improv_send_state(improv::PROVISIONED); improv_send_url(improv::GET_STATE); }
+    else improv_send_state(improv::READY);
+}
+
+bool robot_busy() { return state == PLAYING || state == MOVING || state == JOGGING || state == OTA; }
+
+void improv_handle(const uint8_t* d, size_t len) {
+    int command = improv::rpc_command(d, len);
+    if (command < 0) { improv_send_error(improv::INVALID_RPC); return; }
+    switch (command) {
+    case improv::GET_STATE:
+        improv_send_error(improv::NO_ERROR);
+        improv_send_current_state();
+        break;
+    case improv::GET_INFO: {
+        const char* info[] = {"myCobot 280 controller", FW_VERSION_STR, "ESP32", "mycobot"};
+        uint8_t out[improv::MAX_PACKET];
+        improv_write(out, improv::build_result(improv::GET_INFO, info, 4, out));
+        break;
+    }
+    case improv::GET_NETWORKS: {
+        if (robot_busy() || improv_provisioning) { improv_send_error(improv::UNKNOWN); break; }
+        int n = WiFi.scanNetworks();   // blocks for about 2-4 s
+        uint8_t out[improv::MAX_PACKET];
+        for (int i = 0; i < n; i++) {
+            String ssid = WiFi.SSID(i);
+            if (ssid.length() == 0) continue;   // hidden network
+            char rssi[8]; snprintf(rssi, sizeof(rssi), "%d", (int)WiFi.RSSI(i));
+            const char* strs[] = {ssid.c_str(), rssi, WiFi.encryptionType(i) == WIFI_AUTH_OPEN ? "NO" : "YES"};
+            improv_write(out, improv::build_result(improv::GET_NETWORKS, strs, 3, out));
+        }
+        WiFi.scanDelete();
+        improv_write(out, improv::build_result(improv::GET_NETWORKS, nullptr, 0, out));   // end of the list
+        break;
+    }
+    case improv::WIFI_SETTINGS:
+        if (robot_busy()) { improv_send_error(improv::UNKNOWN); break; }
+        if (!improv::parse_wifi_settings(d, len, improv_new)) { improv_send_error(improv::INVALID_RPC); break; }
+        improv_send_error(improv::NO_ERROR);
+        improv_provisioning = true;
+        improv_deadline = millis() + 20000;
+        improv_send_state(improv::PROVISIONING);
+        WiFi.disconnect();
+        WiFi.begin(improv_new.ssid, improv_new.password);
+        break;
+    default:
+        improv_send_error(improv::UNKNOWN_RPC);
+        break;
+    }
+}
+
+void improv_poll() {
+    while (Serial.available()) {
+        auto r = improv_rx.feed((uint8_t)Serial.read());
+        if (r == improv::Parser::BAD_CHECKSUM) improv_send_error(improv::INVALID_RPC);
+        else if (r == improv::Parser::PACKET && improv_rx.type == improv::RPC) improv_handle(improv_rx.data, improv_rx.len);
+    }
+    if (improv_provisioning) {
+        if (WiFi.status() == WL_CONNECTED) {
+            Preferences prefs;   // save only a network that works
+            if (prefs.begin("wifi", false)) {
+                prefs.putString("ssid", improv_new.ssid);
+                prefs.putString("pass", improv_new.password);
+                prefs.end();
+            }
+            memset(&improv_new, 0, sizeof(improv_new));
+            improv_provisioning = false;
+            wifi_has_network = true;
+            improv_send_state(improv::PROVISIONED);
+            improv_send_url(improv::WIFI_SETTINGS);
+        } else if ((int32_t)(millis() - improv_deadline) > 0) {
+            memset(&improv_new, 0, sizeof(improv_new));
+            improv_provisioning = false;
+            improv_send_error(improv::UNABLE_TO_CONNECT);
+            improv_send_state(improv::READY);
+            WiFi.disconnect();
+            wifi_join_saved();   // back to the previous network, if any
+        }
+    }
+}
+
 // ---- LED matrix -------------------------------------------------------------------------------------
 void show(uint8_t r, uint8_t g, uint8_t b, int progress_permille = -1) {
     for (int i = 0; i < 25; i++) matrix.setPixelColor(i, matrix.Color(r, g, b));
@@ -453,6 +596,8 @@ void show(uint8_t r, uint8_t g, uint8_t b, int progress_permille = -1) {
 }
 
 void update_led() {
+    // No WiFi network saved (4.3+): blink white over the state colour, 1 s period.
+    if (!wifi_has_network && !improv_provisioning && (millis() / 500) % 2) { show(30, 30, 30); return; }
     switch (state) {
     case BOOTING: show(0, 0, 40); break;
     case HOLDING: show(0, 40, 0); break;
@@ -483,7 +628,10 @@ void net_task(void*) {
     uint8_t buf[1500];
     uint32_t last_log = 0;
     for (;;) {
+#ifdef HAS_OTA
         if (state != PLAYING) ArduinoOTA.handle();
+#endif
+        improv_poll();
 
         int n = cmd_udp.parsePacket();
         if (n > 0) {
@@ -529,8 +677,8 @@ void net_task(void*) {
         if (now - last_log >= 1000) {
             last_log = now;
             char line[256];
-            snprintf(line, sizeof(line), "atom_controller v%d.%d.%d (%s) ip=%s rssi=%d state=%d plan=%lu@%uHz valid=%d imu=%d write_retries=%lu heap=%lu up=%lus",
-                     FW_MAJOR, FW_MINOR, FW_PATCH, FW_GIT, WiFi.localIP().toString().c_str(), WiFi.RSSI(), state, (unsigned long)plan_n, plan_rate,
+            snprintf(line, sizeof(line), "atom_controller v%d.%d.%d (%s, %s) ip=%s rssi=%d state=%d plan=%lu@%uHz valid=%d imu=%d write_retries=%lu heap=%lu up=%lus",
+                     FW_MAJOR, FW_MINOR, FW_PATCH, FW_GIT, FW_VARIANT, WiFi.localIP().toString().c_str(), WiFi.RSSI(), state, (unsigned long)plan_n, plan_rate,
                      plan_valid, imu_ok, (unsigned long)write_retries, (unsigned long)ESP.getFreeHeap(), (unsigned long)(now / 1000));
             wss.broadcastTXT(line);
             if (WiFi.status() == WL_CONNECTED) {
@@ -688,16 +836,19 @@ void setup() {
     bus_begin();
     imu_ok = imu_init();
 
+    WiFi.persistent(false);                        // the saved network is in our own NVS namespace
     WiFi.mode(WIFI_STA);
     WiFi.setHostname("mycobot-atom");
     WiFi.setSleep(false);                          // lower, steadier latency
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    wifi_join_saved();                             // saved over Improv, else compiled in, else none
+#ifdef HAS_OTA
     ArduinoOTA.setHostname("mycobot-atom");
 #ifdef OTA_PASSWORD
     ArduinoOTA.setPassword(OTA_PASSWORD);
 #endif
     ArduinoOTA.onStart([]() { state = OTA; show(40, 0, 40); Bus.end(); });
     ArduinoOTA.begin();
+#endif
     cmd_udp.begin(CMD_PORT);
     wss.begin();
     wss.onEvent(ws_event);

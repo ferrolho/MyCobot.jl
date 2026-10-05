@@ -9,6 +9,7 @@ tools/python/recordings/*_path.csv
 website/node_modules/
 website/dist/
 website/.astro/
+website/public/installer/
 
 
 # === Global/macOS.gitignore
