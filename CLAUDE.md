@@ -94,7 +94,7 @@ The package supports real-time robot visualization:
 
 ## Where things run
 
-- The Raspberry Pi 5 next to the robot (`ssh raspberrypi5`) hosts the lab service (site, camera, session logs) and runs scripts that use the robot: repository `~/myCobot/MyCobot.jl`, Julia `~/.juliaup/bin/julia` (not on `PATH` for non-interactive SSH), Python `~/venvs/mycobot/bin/python`, `~/bin/arduino-cli`. Recordings stay on the Pi.
+- The Raspberry Pi 5 next to the robot (`ssh raspberrypi5`) hosts the lab service (site, camera, session logs) and runs scripts that use the robot: repository `~/myCobot/mycobot-280-lab`, Julia `~/.juliaup/bin/julia` (not on `PATH` for non-interactive SSH), Python `~/venvs/mycobot/bin/python`, `~/bin/arduino-cli`. Recordings stay on the Pi.
 - The Pi's USB-C supply gives only 3 A (`/proc/device-tree/chosen/power/max_current` = 3000): heavy jobs (Chromium/Playwright, big `npm` builds, dev servers) crashed it on 2026-10-05. Until it has a 5 A supply, keep its load light.
 - Browser and site work run on the laptop: a temporary dev server and `tools/atom_sim.py` on `127.0.0.1` only, stopped afterwards (the laptop does not keep serving the docs). Build the site on the laptop and copy `website/dist/` to `raspberrypi5:myCobot/lab-services/website/dist/` to update the lab site.
 - The laptop can build and flash the ATOM over USB (`arduino-cli`, `esptool`; see firmware/build-flash.md). OTA updates work from either machine.

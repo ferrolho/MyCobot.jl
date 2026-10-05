@@ -12,7 +12,7 @@ connected to it, so the arm can be controlled and watched remotely.
 | System | Raspberry Pi 5, 16 GB, Debian 12 (bookworm), aarch64 |
 | FT232R | `/dev/serial/by-id/usb-FTDI_FT232R_USB_UART_B00033ZX-if00-port0` (`/dev/ttyUSB0`) |
 | Webcam | Logitech C505, `/dev/video0` |
-| Repository | `~/myCobot/MyCobot.jl` (working copy) and `~/git/mycobot-280-lab.git` (hub) |
+| Repository | `~/myCobot/mycobot-280-lab` (working copy) and `~/git/mycobot-280-lab.git` (hub) |
 | Julia | 1.11 with juliaup: `~/.juliaup/bin/julia` (only login shells have it on `PATH`) |
 | Kernel | `kernel8.img`, **4 KB memory pages** (since 2026-10-04) |
 | Tools | Python `~/venvs/mycobot`, `~/bin/arduino-cli` (ESP32 core 3.3.10), Node `~/.local/opt/node` |
@@ -49,7 +49,7 @@ tools/sync-pi.sh push        # laptop → hub (current branch)
 tools/sync-pi.sh pull        # hub → laptop (fetch; then merge yourself)
 ```
 
-On the Pi, use plain `git pull` and `git push` in `~/myCobot/MyCobot.jl`. LFS works
+On the Pi, use plain `git pull` and `git push` in `~/myCobot/mycobot-280-lab`. LFS works
 there, because the hub is a local path.
 
 ## FT232R latency timer
@@ -80,7 +80,7 @@ Or watch it from the laptop over SSH (no open port; needs `ffplay` from
 `brew install ffmpeg`, and the lab service must not be streaming):
 
 ```bash
-ssh raspberrypi5 '~/myCobot/MyCobot.jl/tools/pi/camera.sh stdout' | ffplay -loglevel error -fflags nobuffer -f mjpeg -i -
+ssh raspberrypi5 '~/myCobot/mycobot-280-lab/tools/pi/camera.sh stdout' | ffplay -loglevel error -fflags nobuffer -f mjpeg -i -
 ```
 
 Take one picture on the Pi: `tools/pi/camera.sh snapshot /tmp/arm.jpg`. It asks the lab

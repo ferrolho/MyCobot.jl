@@ -6,7 +6,7 @@
 #   tools/pi/camera.sh stdout            # on the Pi: MJPEG stream to stdout
 #
 # Watch it from the laptop (over SSH, no open port; needs ffplay from `brew install ffmpeg`):
-#   ssh raspberrypi5 '~/myCobot/MyCobot.jl/tools/pi/camera.sh stdout' | ffplay -loglevel error -fflags nobuffer -f mjpeg -i -
+#   ssh raspberrypi5 '~/myCobot/mycobot-280-lab/tools/pi/camera.sh stdout' | ffplay -loglevel error -fflags nobuffer -f mjpeg -i -
 #
 # 1280x960 (4:3) is the sensor's full field of view; 1280x720 crops the top and bottom.
 set -euo pipefail
