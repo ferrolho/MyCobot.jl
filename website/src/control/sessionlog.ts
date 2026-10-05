@@ -2,7 +2,7 @@
 // /log.json), the page sends what happens to the Pi, which appends it to one JSONL file per session
 // (~/myCobot/lab-logs/). The GitHub Pages site has no lab service, so nothing is logged there.
 //
-// Events: the user's clicks and input changes, every command sent (JOG only when its speeds change;
+// Events: the user's clicks and input changes, every command sent (JOG and TRACK only when they change;
 // no SUBSCRIBE or CONTROL lease renewals), every reply, the ATOM's status lines, the link status, the
 // stream state at 10 Hz, every stream gap over 100 ms (with the ATOM's own time gap, to tell "the ATOM
 // did not send" from "the network held the packets"), the stream statistics once a second (packets/s,
@@ -71,6 +71,7 @@ export async function startSessionLog(link: AtomLink) {
   // Commands sent to the ATOM.
   const send = link.send.bind(link);
   let lastJog = '';
+  let lastTrack = '';
   let renewing = false;
   link.send = (bytes: P.Bytes) => {
     const v = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -81,6 +82,12 @@ export async function startSessionLog(link: AtomLink) {
       const key = vel.join(',');
       if (key !== lastJog) log('tx', { cmd: name, vel });
       lastJog = key;
+    } else if (code === P.Code.TRACK) {
+      const goal = Array.from({ length: 6 }, (_, j) => v.getInt16(1 + 2 * j, true) / 100);
+      const vmax = v.getUint16(13, true) / 10;
+      const key = `${goal.join(',')}@${vmax}`;
+      if (key !== lastTrack) log('tx', { cmd: name, goal, vmax });
+      lastTrack = key;
     } else if (code === P.Code.MOVE_TO) {
       log('tx', { cmd: name, goal: Array.from({ length: 6 }, (_, j) => v.getInt16(1 + 2 * j, true) / 100) });
     } else if (code === P.Code.CONTROL && v.getUint8(1) === 1 && link.inControl) {

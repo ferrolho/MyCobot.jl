@@ -9,13 +9,14 @@ export interface AtomEvents {
   pong: P.Pong;
   stream: P.Stream;
   ack: P.Ack;
-  done: { result: number };
+  done: ReturnType<typeof P.decodeDone>;
   log: string;
 }
 
 const STREAM_RATE_HZ = 50;
 const RENEW_MS = 1000; // SUBSCRIBE and CONTROL renewals
 const JOG_PERIOD_MS = 50; // the deadman fires after 200 ms
+const TRACK_MIN_GAP_MS = 20; // a fader drag sends TRACK at most at 50 Hz
 const RETRY_MS = [1000, 2000, 5000];
 
 export class AtomLink {
@@ -27,6 +28,10 @@ export class AtomLink {
   private retries = 0;
   private wanted = false; // the user wants to be connected
   private jogVel = [0, 0, 0, 0, 0, 0];
+  private trackTimer = 0;
+  private trackGoal = [0, 0, 0, 0, 0, 0];
+  private trackVmax = 0;
+  private trackSent = 0;
   address = '';
   status: LinkStatus = 'disconnected';
   version = '';
@@ -59,6 +64,7 @@ export class AtomLink {
     this.wanted = false;
     clearTimeout(this.retryTimer);
     this.stopJog();
+    this.stopTrack();
     if (this.ws) {
       if (this.inControl) this.send(P.control(0));
       this.ws.onclose = null;
@@ -102,6 +108,7 @@ export class AtomLink {
       this.ws = null;
       this.cleanup();
       this.stopJog(false);
+      this.stopTrack(false);
       if (!this.wanted) return this.setStatus('disconnected');
       const wait = RETRY_MS[Math.min(this.retries++, RETRY_MS.length - 1)];
       this.setStatus('connecting', e.code === 1006 ? `no answer from ${url}, retry in ${wait / 1000} s` : `closed (${e.code}), retry`);
@@ -133,6 +140,7 @@ export class AtomLink {
         if (a.code === P.Code.CONTROL) this.inControl = a.status === 0 && this.pendingControl !== 0;
         if (a.status === -2 && a.code !== P.Code.CONTROL) this.inControl = false;
         if (a.code === P.Code.JOG && a.status !== 0) this.stopJog(false);
+        if (a.code === P.Code.TRACK && a.status !== 0) this.stopTrack(false);
         this.emit('ack', a);
         break;
       }
@@ -157,11 +165,13 @@ export class AtomLink {
 
   stopRobot() {
     this.stopJog(false);
+    this.stopTrack(false);
     this.send(P.stop());
   }
 
   holdPose() {
     this.stopJog(false);
+    this.stopTrack(false);
     this.send(P.hold());
   }
 
@@ -182,17 +192,28 @@ export class AtomLink {
     }
   }
 
-  /** Jog all joints at once (°/s each; all zero stops). Live mode sets the whole vector at 20 Hz. */
-  setJogVector(vel: number[]) {
-    vel.forEach((v, j) => (this.jogVel[j] = Math.max(-P.JOG_VMAX, Math.min(P.JOG_VMAX, v))));
-    if (this.jogVel.some((x) => x)) {
-      if (!this.jogTimer) {
-        this.send(P.jog(this.jogVel));
-        this.jogTimer = window.setInterval(() => this.send(P.jog(this.jogVel)), JOG_PERIOD_MS);
-      }
-    } else {
-      this.stopJog();
-    }
+  /** Live mode (firmware 4.4+): the ATOM moves the joints to `goalDeg` at up to `vmaxDegS` and its
+   * acceleration limits, and stops on the goal. Sent at once (at most every 20 ms) and every 50 ms while
+   * tracking: the ATOM brakes and holds 200 ms after the last TRACK (deadman). */
+  setTrack(goalDeg: number[], vmaxDegS: number) {
+    this.trackGoal = goalDeg.slice();
+    this.trackVmax = vmaxDegS;
+    const now = performance.now();
+    if (now - this.trackSent >= TRACK_MIN_GAP_MS) this.sendTrack();
+    if (!this.trackTimer) this.trackTimer = window.setInterval(() => this.sendTrack(), JOG_PERIOD_MS);
+  }
+
+  private sendTrack() {
+    this.trackSent = performance.now();
+    this.send(P.track(this.trackGoal, this.trackVmax));
+  }
+
+  /** Stop Live mode. With `send`, HOLD at once (the arm brakes now, not after the 200 ms deadman). */
+  stopTrack(send = true) {
+    const was = !!this.trackTimer;
+    clearInterval(this.trackTimer);
+    this.trackTimer = 0;
+    if (send && was) this.send(P.hold());
   }
 
   /** Stop every jog. With `send`, also tell the ATOM (all velocities zero). */

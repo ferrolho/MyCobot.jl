@@ -184,11 +184,11 @@ class Plot {
 
 // --- Page ----------------------------------------------------------------------------------------
 
-// Live mode: each joint jogs toward its goal at KP × error (°/s), up to the jog speed. Within the
-// deadband it stops. The page sends at 20 Hz; the ATOM's deadman stops the arm 200 ms after the last JOG.
-const LIVE_PERIOD_MS = 50;
-const LIVE_KP = 2.5; // 1/s
-const LIVE_DEADBAND = 0.3; // °
+// "4.4.0" ≥ 4.4? Live mode needs controller firmware 4.4 (TRACK).
+const versionAtLeast = (v: string, major: number, minor: number) => {
+  const [a, b] = v.split('.').map(Number);
+  return a > major || (a === major && b >= minor);
+};
 
 export function start() {
   const link = new AtomLink();
@@ -365,13 +365,16 @@ export function start() {
   }
 
   link.on('ack', (a) => {
-    if (a.status !== 0) toast(`${P.CODE_NAMES[a.code] ?? a.code}: ${P.ackText(a.code, a.status)}`, 'warning');
+    if (a.status !== 0 && a.code === P.Code.TRACK) setLive(false, `the robot refused it (${P.ackText(a.code, a.status)})`);
+    else if (a.status !== 0) toast(`${P.CODE_NAMES[a.code] ?? a.code}: ${P.ackText(a.code, a.status)}`, 'warning');
     updateControls();
   });
 
   link.on('done', (d) => {
     const r = P.DONE_RESULTS[d.result] ?? `result ${d.result}`;
-    toast(`Move ended: ${r}`, d.result === 0 ? 'info' : 'warning');
+    const detail = d.result === 1 && d.joint ? ` (J${d.joint} was ${d.errorDeg.toFixed(0)}° from its goal)` : '';
+    if (live) setLive(false, `the robot stopped: ${r}${detail}`);
+    else toast(`Move ended: ${r}${detail}`, d.result === 0 ? 'info' : 'warning');
   });
 
   link.on('stream', (s: Stream) => {
@@ -388,6 +391,7 @@ export function start() {
     hist.acc.push(t, s.acc);
     hist.gyro.push(t, s.gyro);
     if (!link.inControl && live) setLive(false, 'control was released');
+    if (live && s.state === P.STATE_ERROR) setLive(false, 'the robot reported an error');
     dirty = true;
   });
 
@@ -463,7 +467,10 @@ export function start() {
     faders.forEach((i) => (i.disabled = !mine));
     goalNums.forEach((i) => (i.disabled = !mine));
     speed.disabled = !mine;
-    liveBox.disabled = !mine || busy;
+    liveBox.disabled = !mine || busy || !liveSupported();
+    liveBox.parentElement!.title = connected && !liveSupported()
+      ? 'Live mode needs controller firmware 4.4 or later. Update it on the Setup page.'
+      : 'Live: the arm follows the goals at once (up to the speed setting). Off: set the goals, then Move.';
     liveBox.checked = live;
     $<HTMLButtonElement>('#goal-current').disabled = !mine;
   }
@@ -483,13 +490,34 @@ export function start() {
     setLive(false, '');
     link.holdPose();
   });
-  $('#zero-btn').addEventListener('click', () => link.moveTo([0, 0, 0, 0, 0, 0]));
+  // Move and Go to zero use the Speed setting too. A minimum-jerk move peaks at 1.875 × distance / T, so
+  // T = 1.875 × (largest joint distance) / speed. The ATOM refuses a T below its own minimum (speed and
+  // acceleration limits, as motion::move_min_duration); then the page asks for the shortest move (0).
+  function moveDuration(target: number[]): number {
+    const s = link.last;
+    if (!s) return 0;
+    const v = Number(speed.value);
+    let tSpeed = 0;
+    let tMin = 0.2;
+    target.forEach((g, j) => {
+      const d = Math.abs(g - s.q[j]);
+      tSpeed = Math.max(tSpeed, (1.875 * d) / v);
+      tMin = Math.max(tMin, (1.875 * d) / P.MOVE_VMAX, Math.sqrt((5.77 * d) / P.AMAX[j]));
+    });
+    return tSpeed > tMin * 1.02 ? Math.min(tSpeed, 65) : 0; // u16 ms on the wire
+  }
+  const moveToGoal = (target: number[]) => link.moveTo(target, moveDuration(target));
+  $('#zero-btn').addEventListener('click', () => moveToGoal([0, 0, 0, 0, 0, 0]));
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && link.status === 'connected') stopAll();
   });
 
   // Jog: press and hold. The page sends JOG every 50 ms; the ATOM stops 200 ms after the last one.
-  speed.addEventListener('input', () => ($('#jog-speed-value').textContent = `${speed.value} °/s`));
+  // The Speed setting is for Move, Go to zero and Live mode (up to 90 °/s); the jog buttons use at most 30 °/s.
+  speed.addEventListener('input', () => {
+    $('#jog-speed-value').textContent = `${speed.value} °/s`;
+    sendLive();
+  });
   strips.querySelectorAll<HTMLButtonElement>('.jog').forEach((b) => {
     const j = Number((b.closest('.strip') as HTMLElement).dataset.joint);
     const dir = Number(b.dataset.dir);
@@ -497,7 +525,7 @@ export function start() {
     b.addEventListener('pointerdown', (e) => {
       if (b.disabled) return;
       b.setPointerCapture(e.pointerId);
-      link.setJog(j, dir * Number(speed.value));
+      link.setJog(j, dir * Math.min(P.JOG_VMAX, Number(speed.value))); // the jog buttons: at most 30 °/s
     });
     b.addEventListener('pointerup', end);
     b.addEventListener('pointercancel', end);
@@ -532,7 +560,7 @@ export function start() {
     goal[j] = clampGoal(j, deg);
     faders[j].value = String(goal[j]);
     updateGoals();
-    if (live) liveTick();
+    sendLive();
   };
   faders.forEach((f, j) => f.addEventListener('input', () => setGoal(j, Number(f.value))));
   goalNums.forEach((num, j) => {
@@ -556,43 +584,39 @@ export function start() {
   const setGoals = (q: number[]) => q.forEach((x, j) => setGoal(j, x));
   updateGoals();
   $('#goal-current').addEventListener('click', () => link.last && setGoals(link.last.q));
-  $('#goal-move').addEventListener('click', () => link.moveTo(goal.slice()));
+  $('#goal-move').addEventListener('click', () => moveToGoal(goal.slice()));
 
-  // --- Live mode: the joints follow the goals at once, with JOG only (never MOVE_TO). ---
+  // --- Live mode (firmware 4.4+): the ATOM moves the joints to the goals at once (TRACK), at up to the
+  // speed setting and the joints' acceleration limits, and stops on them. Never MOVE_TO. ---
   let live = false;
-  let liveTimer = 0;
+  const liveSupported = () => versionAtLeast(link.version, 4, 4);
   function setLive(on: boolean, why: string) {
     if (on === live) return;
     if (on) {
-      if (!link.inControl || !link.last) return;
+      if (!link.inControl || !link.last || !liveSupported()) return updateControls();
       setGoals(link.last.q); // start from where the arm is: no jump to an old goal
       live = true;
-      liveTimer = window.setInterval(liveTick, LIVE_PERIOD_MS);
+      sendLive();
       toast('Live: the arm follows the faders and the typed goals. Esc stops.', 'warning');
     } else {
       live = false;
-      clearInterval(liveTimer);
-      liveTimer = 0;
-      link.stopJog();
+      link.stopTrack(); // HOLD: the arm brakes at once
       if (why) toast(`Live off: ${why}.`, 'info');
     }
     updateControls();
   }
-  function liveTick() {
-    const s = link.last;
-    if (!live || !s || !link.inControl) return setLive(false, 'control was lost');
-    const vmax = Number(speed.value);
-    const vel = goal.map((g, j) => {
-      const e = g - s.q[j];
-      return Math.abs(e) <= LIVE_DEADBAND ? 0 : Math.max(-vmax, Math.min(vmax, LIVE_KP * e));
-    });
-    // All joints at their goals: stop sending. The ATOM ramps down and holds the pose.
-    link.setJogVector(vel);
+  function sendLive() {
+    if (live) link.setTrack(goal, Number(speed.value));
   }
   liveBox.addEventListener('change', () => setLive(liveBox.checked, 'you switched it off'));
 
   // Toasts for refused commands and finished moves.
+  // The same message again within 3 s shows once.
+  const recentToasts = new Map<string, number>();
   function toast(text: string, kind: 'info' | 'warning') {
+    const now = performance.now();
+    if (now - (recentToasts.get(text) ?? -Infinity) < 3000) return;
+    recentToasts.set(text, now);
     const el = document.createElement('div');
     el.className = 'toast';
     el.dataset.kind = kind;

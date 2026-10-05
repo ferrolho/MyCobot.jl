@@ -90,10 +90,10 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
         </template>
         <footer class="joints-foot">
           <div class="field">
-            <label class="live-switch" title="Live: the arm follows the goals at once, with JOG commands. Off: set the goals, then Move."><input id="live" type="checkbox" /> Live</label>
-            <label for="jog-speed">Jog speed</label>
-            <input id="jog-speed" type="range" min="2" max="30" step="1" value="10" />
-            <output id="jog-speed-value" for="jog-speed" class="num">10 °/s</output>
+            <label class="live-switch"><input id="live" type="checkbox" /> Live</label>
+            <label for="jog-speed" title="Move, Go to zero and Live mode: up to this speed. The jog buttons: up to 30 °/s.">Speed</label>
+            <input id="jog-speed" type="range" min="5" max="90" step="5" value="45" />
+            <output id="jog-speed-value" for="jog-speed" class="num">45 °/s</output>
           </div>
           <div class="btn-row">
             <button id="goal-current" type="button" class="btn" title="Set the goal faders to the measured pose">Use current pose</button>

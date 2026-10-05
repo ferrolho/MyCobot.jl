@@ -6,8 +6,11 @@ export const STEPS_PER_DEG = 4096 / 360;
 export const LIMITS = [165, 140, 150, 150, 160, 180] as const; // degrees, from the URDF
 export const JOG_MARGIN = 2; // JOG stops this far inside the limits (°)
 export const JOG_VMAX = 30; // °/s
+export const TRACK_VMAX = 90; // °/s, Live mode (TRACK, firmware 4.4+): as MOVE_TO
+export const MOVE_VMAX = 90; // °/s, MOVE_TO (firmware motion_limits.h)
+export const AMAX = [400, 400, 400, 2000, 2000, 2000]; // °/s², per joint (firmware motion_limits.h)
 
-export const STATES = ['booting', 'holding', 'ready', 'playing', 'error', 'OTA update', 'moving', 'jogging'];
+export const STATES = ['booting', 'holding', 'ready', 'playing', 'error', 'OTA update', 'moving', 'jogging', 'tracking'];
 export const STATE_PLAYING = 3;
 export const STATE_ERROR = 4;
 export const STATE_MOVING = 6;
@@ -24,6 +27,7 @@ export const enum Code {
   CONTROL = 0x0d,
   MOVE_TO = 0x0e,
   JOG = 0x0f,
+  TRACK = 0x10,
   PONG = 0x81,
   ACK = 0x83,
   TELEM = 0x84,
@@ -34,14 +38,14 @@ export const enum Code {
 export const CODE_NAMES: Record<number, string> = {
   0x01: 'PING', 0x02: 'STATE', 0x03: 'HOLD', 0x04: 'PLAN_BEGIN', 0x05: 'PLAN_DATA', 0x06: 'PLAN_END',
   0x07: 'PLAY', 0x08: 'STOP', 0x09: 'REG_READ', 0x0a: 'REG_WRITE', 0x0b: 'PLAY_SIGNAL', 0x0c: 'SUBSCRIBE',
-  0x0d: 'CONTROL', 0x0e: 'MOVE_TO', 0x0f: 'JOG',
+  0x0d: 'CONTROL', 0x0e: 'MOVE_TO', 0x0f: 'JOG', 0x10: 'TRACK',
 };
 
 export function ackText(code: number, status: number): string {
   if (status === 0) return 'OK';
   if (status === -1) return code === Code.CONTROL ? 'the robot moves' : 'busy';
   if (status === -2) return code === Code.CONTROL ? 'another client has control' : 'you do not have control';
-  if (code === Code.MOVE_TO && status <= -11 && status >= -16) return `goal of J${-10 - status} is outside the limits`;
+  if ((code === Code.MOVE_TO || code === Code.TRACK) && status <= -11 && status >= -16) return `goal of J${-10 - status} is outside the limits`;
   return `status ${status}`;
 }
 
@@ -115,7 +119,12 @@ export interface Ack {
 
 export const decodeAck = (v: DataView): Ack => ({ code: v.getUint8(1), status: v.getInt8(2), value: v.byteLength >= 7 ? v.getUint32(3, true) : 0 });
 
-export const decodeDone = (v: DataView) => ({ result: v.getUint8(1) });
+/** DONE: the result; for a tracking error (result 1) also the joint (1-6) and how far it was from its goal. */
+export const decodeDone = (v: DataView) => ({
+  result: v.getUint8(1),
+  joint: v.byteLength >= 21 ? v.getUint8(18) : 0,
+  errorDeg: v.byteLength >= 21 ? Math.abs(v.getInt16(19, true)) / STEPS_PER_DEG : 0,
+});
 
 // --- Encoding ----------------------------------------------------------------------------------
 
@@ -141,6 +150,15 @@ export function moveTo(goalDeg: number[], durationS = 0): Bytes {
   b.setUint8(0, Code.MOVE_TO);
   goalDeg.forEach((g, j) => b.setInt16(1 + 2 * j, Math.round(g * 100), true));
   b.setUint16(13, Math.round(durationS * 1000), true);
+  return new Uint8Array(b.buffer);
+}
+
+/** Live mode (firmware 4.4+): the goal pose (°) and a speed cap (°/s, ≤ TRACK_VMAX). */
+export function track(goalDeg: number[], vmaxDegS: number): Bytes {
+  const b = new DataView(new ArrayBuffer(15));
+  b.setUint8(0, Code.TRACK);
+  goalDeg.forEach((g, j) => b.setInt16(1 + 2 * j, Math.round(g * 100), true));
+  b.setUint16(13, Math.round(Math.max(0, Math.min(TRACK_VMAX, vmaxDegS)) * 10), true);
   return new Uint8Array(b.buffer);
 }
 

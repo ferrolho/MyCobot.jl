@@ -11,7 +11,7 @@ description: Open work, grouped by topic. Done items move to the results and his
 - [ ] Test the CI firmware build (it runs on the first push to GitHub) and an update over 4.3.0 that keeps the WiFi network.
 - [ ] An address sweep when `mycobot.local` does not resolve.
 - [ ] End-effector jog (the page has joint jog only).
-- [ ] Check Live mode (faders follow with JOG at 20 Hz) on the real arm: does it settle without hunting? Used on the real arm on 2026-10-05 (session logs); typed goals and Move work.
+- [ ] Live mode with TRACK (firmware 4.4): used on the real arm on 2026-10-05, up to 90 °/s; a blocked joint stops the arm with a following error. Still to check: the joints settle on the goal without hunting.
 - [x] Test Chrome's local-network prompt for real users on GitHub Pages (2026-10-05: works from the public page; the laptop webcam works too).
 - [ ] The page assumes the real robot until the first status-log line arrives (the simulator's starts with "atom-sim").
 

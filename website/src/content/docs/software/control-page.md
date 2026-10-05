@@ -32,7 +32,7 @@ On a screen of 1440 × 900 pixels or more, the page fits in one screen:
 | Top bar | Robot address and **Connect**; connection, real robot or simulator, robot state; the control lease; **Hold** and **Stop**. A green edge: connected to the real robot. |
 | Camera (left) | The Pi camera or a camera on this computer (see [Camera](#camera)) |
 | 3D view (middle) | The measured pose (solid) and the goal pose (see-through blue). **Reset view** restores the camera. |
-| Joints (right) | One strip per joint: the angle, a vertical fader, the typed goal, jog buttons, the temperature and the voltage. Below: **Live**, the jog speed, **Use current pose**, **Go to zero**, **Move**. |
+| Joints (right) | One strip per joint: the angle, a vertical fader, the typed goal, jog buttons, the temperature and the voltage. Below: **Live**, the **Speed** setting, **Use current pose**, **Go to zero**, **Move**. |
 | Plots | The last 20 s: angle, speed, load, temperature (one line per joint), and the IMU acceleration and angular rate (x, y, z) |
 
 On a narrower screen, the areas are stacked and the page scrolls.
@@ -49,7 +49,7 @@ On a narrower screen, the areas are stacked and the page scrolls.
    controls are dimmed, and the banner shows **Watching only**. The angles and the
    measured lines stay up to date.
 5. Move the robot:
-   - **▼ / ▲** under a joint: press and hold to jog that joint at the jog speed.
+   - **▼ / ▲** under a joint: press and hold to jog that joint at the **Speed** setting (at most 30 °/s).
    - **Fader**: the track runs from the lower limit (bottom) to the upper limit (top).
      The white (dark in the light theme) line is the measured angle; the coloured bar
      goes from 0° to it. Drag the blue marker to set the goal of that joint. The
@@ -59,26 +59,33 @@ On a narrower screen, the areas are stacked and the page scrolls.
      The field is blue while the goal differs from the angle.
    - **Use current pose**: set all goals to the measured pose.
    - **Go to zero**: move all joints to 0°.
+   - **Speed** (5–90 °/s): the top speed of **Move**, **Go to zero** and Live mode.
+     A move is smooth (minimum jerk): the joint that moves farthest reaches this
+     speed in the middle of the move. If the acceleration limits do not allow it,
+     the move takes the shortest time that they allow. The jog buttons use at most
+     30 °/s.
 6. Click **Release control** when you stop.
 
 ### Live mode
 
 With **Live** on, the arm follows the goals at once: drag a fader, or type a goal and
-press **Enter**. There is no **Move**.
+press **Enter**. There is no **Move**. Live mode needs controller firmware **4.4** or
+later.
 
-- The page sends JOG commands at 20 Hz. Each joint moves toward its goal at
-  2.5 × (goal − angle) °/s, at most the **jog speed** (at most 30 °/s). Within 0.3° of
-  the goal, the joint stops. When all joints are at their goals, the page stops
-  sending, and the ATOM holds the pose.
+- The page sends the goal pose to the ATOM (TRACK): at once when a goal changes, and
+  every 50 ms. The ATOM moves each joint to its goal at up to the **Speed** setting
+  (5–90 °/s, as fast as a Move) and the joint's acceleration limit, and brakes to stop
+  exactly on it. See [TRACK](/mycobot-280-lab/comms/websocket-api/#track-live-mode).
 - Live mode never sends MOVE_TO. **Move**, **Go to zero** and the jog buttons are off.
 - When you switch Live on, the goals become the measured pose: the arm does not move
   to an old goal.
 - Live switches off when you release control, when you lose control, when the
   connection closes, when you click **Stop** or **Hold** or press **Esc**, and when the
-  page is hidden or loses focus.
-- If the page stops sending (a frozen tab, a WiFi drop), the deadman in the firmware
-  stops the arm 0.2 s after the last JOG.
+  page is hidden or loses focus. Then the page sends HOLD: the arm brakes at once.
+- If the page stops sending (a frozen tab, a WiFi drop), the ATOM brakes and holds
+  0.2 s after the last TRACK.
 - The joints panel has an amber frame while Live is on.
+- The jog buttons (▼/▲) use the **Speed** setting, at most 30 °/s.
 
 :::danger
 **Stop** and the **Esc** key stop the robot through the software. They are not an
