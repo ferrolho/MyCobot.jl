@@ -25,18 +25,36 @@ Add `?atom=<address>` to the URL to connect at once, for example
 
 ## Use it
 
+On a screen of 1440 × 900 pixels or more, the page fits in one screen:
+
+| Area | Content |
+| --- | --- |
+| Top bar | Robot address and **Connect**; connection, real robot or simulator, robot state; the control lease; **Hold** and **Stop**. A green edge: connected to the real robot. |
+| 3D view | The measured pose (solid) and the goal pose (see-through blue). **Reset view** restores the camera. |
+| Joints | One strip per joint: the angle, a vertical fader, the goal, jog buttons, the temperature and the voltage |
+| Camera | The Pi camera or a camera on this computer (see [Camera](#camera)) |
+| Plots | The last 20 s: angle, speed, load, temperature (one line per joint), and the IMU acceleration and angular rate (x, y, z) |
+
+On a narrower screen, the areas are stacked and the page scrolls.
+
 1. Type the address of the ATOM: an IP address (`192.168.1.107`) or `mycobot.local`.
 2. Click **Connect**. If Chrome asks for access to devices on the local network,
    allow it. The page remembers the addresses that you used.
-3. Watch the joints: the angle, the position between the limits, a 20 s plot
-   (angle, speed, load or temperature), the temperature and the voltage.
+3. Watch the state. Each joint has a colour: the same colour marks the joint in its
+   strip and in the plots. Each plot shows the values as text above it: the latest
+   values, or the values under the pointer. One pointer line goes through all plots.
+   A pause in the data shows as a gap.
 4. Click **Take control** to move the robot. Only one client has control. The others
    can only watch.
 5. Move the robot:
-   - **− / +** beside a joint: press and hold to jog that joint at the jog speed.
+   - **▼ / ▲** under a joint: press and hold to jog that joint at the jog speed.
+   - **Fader**: the track runs from the lower limit (bottom) to the upper limit (top).
+     The white (dark in the light theme) line is the measured angle; the coloured bar
+     goes from 0° to it. Drag the blue marker to set the goal of that joint. The goal
+     turns blue below the fader, and a see-through blue arm in the 3D view shows the
+     goal pose. Then click **Move**.
+   - **Use current pose**: set all goals to the measured pose.
    - **Go to zero**: move all joints to 0°.
-   - **Move to a pose**: set the sliders. A see-through blue arm in the 3D view shows
-     the goal. Then click **Move**.
 6. Click **Release control** when you stop.
 
 :::danger
@@ -112,7 +130,7 @@ The code is in `website/src/pages/control.astro` and `website/src/control/`:
 | --- | --- |
 | `protocol.ts` | Message codes, encoders, decoders and units |
 | `connection.ts` | The WebSocket: reconnect, SUBSCRIBE and CONTROL renewals, jog timer |
-| `app.ts` | The page: joints, plots (uPlot), controls |
+| `app.ts` | The page: joint strips and faders, the six plots (uPlot), controls |
 | `viewer3d.ts` | The 3D view (three.js, urdf-loader) |
 | `camera.ts` | The camera panel |
 
@@ -124,8 +142,15 @@ writes a copy of the URDF to `website/public/robot/`. Run it again when the URDF
 the meshes change:
 
 ```bash
-~/venvs/control/bin/python tools/web_meshes.py   # needs trimesh, pycollada, pillow and Node
+~/venvs/control/bin/python tools/web_meshes.py              # needs trimesh, pycollada, pillow and Node
+~/venvs/control/bin/python tools/web_meshes.py --urdf-only  # only the URDF, when only the URDF changed
 ```
+
+The script removes extra spaces from the `xyz` and `rpy` number lists of the web URDF.
+urdf-loader does not trim `<axis xyz="...">`: before 2026-10-05, the axes of J3 and J4
+(`xyz=" 0 0 1"`) became NaN, and the links after them disappeared from the 3D view
+when J3 or J4 moved from 0°. The page now refuses a URDF with an invalid joint axis
+("The 3D model did not load").
 
 The URDF uses the same joint angles as the ATOM (degrees, 0° = the zero pose), so the
 page sets the joints directly.

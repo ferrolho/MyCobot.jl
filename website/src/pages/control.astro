@@ -1,5 +1,7 @@
 ---
 // The Control page: the browser talks straight to the ATOM over a WebSocket (docs: comms/websocket-api).
+// Layout (wide screens): a bar with the connection, the control lease and STOP; then the 3D view,
+// the joint faders and the camera; then six plots. It fits one screen from 1440×900 up.
 import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
 const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 ---
@@ -18,131 +20,114 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
   }}
 >
   <div class="ctl not-content" id="ctl" data-control="none">
-    <section class="card connect" aria-labelledby="connect-title">
-      <h2 id="connect-title" class="sr-only">Connection</h2>
+    <section class="bar" aria-label="Connection and control">
       <form id="connect-form" class="connect-form">
-        <label for="addr">Robot address</label>
-        <input id="addr" list="addr-history" placeholder="192.168.1.107 or mycobot.local" autocomplete="off" spellcheck="false" />
+        <label for="addr" class="sr-only">Robot address</label>
+        <input id="addr" list="addr-history" placeholder="Robot: 192.168.1.107 or mycobot.local" autocomplete="off" spellcheck="false" />
         <datalist id="addr-history"></datalist>
         <button id="connect" type="submit" class="btn primary">Connect</button>
       </form>
-      <div class="status-row">
+      <div class="status">
         <span id="link-status" class="pill" data-status="disconnected"><span class="dot" aria-hidden="true"></span><span class="label">Disconnected</span></span>
         <span id="target" class="target" data-target="" role="status"></span>
         <span id="robot-state" class="pill quiet"></span>
-        <span id="fw" class="muted"></span>
       </div>
-      <p id="hint" class="hint" hidden></p>
-      <p id="log" class="log muted" aria-live="off"></p>
-      <p class="muted small">
-        The robot needs our controller firmware 4.2 or later. See the <a href={`${base}/comms/websocket-api/`}>WebSocket API</a> and <a href={`${base}/start/safety/`}>Safety</a>.
-      </p>
+      <div class="lease" role="group" aria-label="Control lease">
+        <p id="control-text" class="control-text"></p>
+        <button id="control-btn" type="button" class="btn">Take control</button>
+        <button id="takeover-btn" type="button" class="btn" hidden>Take over</button>
+      </div>
+      <div class="safety">
+        <button id="hold-btn" type="button" class="btn">Hold</button>
+        <button id="stop-btn" type="button" class="btn danger stop" title="Stop the robot (Esc)">Stop <kbd>Esc</kbd></button>
+      </div>
     </section>
+    <p id="hint" class="hint" hidden></p>
 
-    <div class="layout">
+    <div class="grid">
+      <section class="card arm" aria-labelledby="arm-title">
+        <header class="card-head">
+          <h2 id="arm-title">3D view</h2>
+          <button id="arm-reset" type="button" class="btn small-btn">Reset view</button>
+        </header>
+        <div id="arm-view" class="arm-view" data-urdf={`${base}/robot/mycobot_280_arduino.urdf`} role="img" aria-label="3D model of the arm in the measured pose. A see-through arm shows the goal pose."></div>
+        <p class="muted small">Solid: measured pose. See-through blue: goal. Drag to turn, scroll to zoom.</p>
+      </section>
+
       <section class="card joints" aria-labelledby="joints-title">
         <header class="card-head">
           <h2 id="joints-title">Joints</h2>
-          <div class="segmented" role="group" aria-label="Quantity to plot">
-            <button type="button" data-quantity="q" aria-pressed="true">Angle</button>
-            <button type="button" data-quantity="dq" aria-pressed="false">Speed</button>
-            <button type="button" data-quantity="load" aria-pressed="false">Load</button>
-            <button type="button" data-quantity="temp" aria-pressed="false">Temperature</button>
-          </div>
+          <p class="muted small">Hold ▼ or ▲ to jog. Drag the blue goal marker, then <strong>Move</strong>. White line: measured angle.</p>
         </header>
-        <p id="plot-title" class="muted small">Angle (°), last 20 s</p>
-        <div id="joint-rows" class="joint-rows"></div>
-        <template id="joint-row">
-          <div class="joint">
-            <div class="j-head">
-              <span class="j-name"></span>
-              <span class="j-angle num"></span>
+        <div id="strips" class="strips"></div>
+        <template id="strip">
+          <div class="strip">
+            <div class="s-head"><i class="key" aria-hidden="true"></i><span class="j-name"></span></div>
+            <div class="j-angle num"></div>
+            <div class="fader">
+              <div class="f-track" aria-hidden="true">
+                <span class="f-lim f-top num"></span>
+                <span class="f-zero"></span>
+                <span class="f-fill"></span>
+                <span class="f-pos"></span>
+                <span class="f-lim f-bot num"></span>
+              </div>
+              <input type="range" class="goal-input" step="1" />
             </div>
-            <div class="j-range" aria-hidden="true">
-              <div class="j-track"><span class="j-zero"></span><span class="j-marker"></span></div>
-              <span class="j-limits muted small"></span>
+            <output class="goal-out num"></output>
+            <div class="jogs">
+              <button type="button" class="btn jog needs-control" data-dir="-1">▼</button>
+              <button type="button" class="btn jog needs-control" data-dir="1">▲</button>
             </div>
-            <div class="j-plot"></div>
-            <div class="j-meta muted small num">
-              <span class="j-value"></span>
-              <span class="j-temp"></span>
-              <span class="j-volt"></span>
-            </div>
-            <div class="j-jog">
-              <button type="button" class="btn jog needs-control" data-dir="-1" aria-label="Jog negative">−</button>
-              <button type="button" class="btn jog needs-control" data-dir="1" aria-label="Jog positive">+</button>
-            </div>
+            <div class="j-meta muted num"><span class="j-temp"></span><span class="j-volt"></span></div>
           </div>
         </template>
-      </section>
-
-      <div class="side">
-        <section id="camera-card" class="card camera" aria-labelledby="camera-title" hidden data-running="false">
-          <header class="card-head">
-            <h2 id="camera-title">Camera</h2>
-            <div class="btn-row">
-              <label class="sr-only" for="camera-source">Camera source</label>
-              <select id="camera-source"></select>
-              <button id="camera-start" type="button" class="btn">Start</button>
-            </div>
-          </header>
-          <div class="camera-view">
-            <img id="camera-img" alt="Camera image of the robot" hidden />
-            <video id="camera-video" autoplay muted playsinline hidden></video>
-          </div>
-          <p id="camera-note" class="muted small"></p>
-        </section>
-        <section class="card arm" aria-labelledby="arm-title">
-          <header class="card-head"><h2 id="arm-title">3D view</h2><span class="muted small">Drag to turn, scroll to zoom</span></header>
-          <div id="arm-view" class="arm-view" data-urdf={`${base}/robot/mycobot_280_arduino.urdf`} role="img" aria-label="3D model of the arm in the measured pose. A see-through arm shows the goal pose."></div>
-          <p class="muted small">Solid: the measured pose. See-through blue: the goal pose of <em>Move to a pose</em>.</p>
-        </section>
-        <section class="card controls" aria-labelledby="controls-title">
-          <header class="card-head"><h2 id="controls-title">Control</h2></header>
-          <p id="control-text" class="control-text"></p>
-          <div class="btn-row">
-            <button id="control-btn" type="button" class="btn">Take control</button>
-            <button id="takeover-btn" type="button" class="btn" hidden>Take over</button>
-          </div>
-          <div class="btn-row">
-            <button id="stop-btn" type="button" class="btn danger" title="Esc">Stop</button>
-            <button id="hold-btn" type="button" class="btn">Hold the pose</button>
-            <button id="zero-btn" type="button" class="btn needs-control">Go to zero</button>
-          </div>
+        <footer class="joints-foot">
           <div class="field">
             <label for="jog-speed">Jog speed</label>
             <input id="jog-speed" type="range" min="2" max="30" step="1" value="10" />
             <output id="jog-speed-value" for="jog-speed" class="num">10 °/s</output>
           </div>
-          <p class="muted small">Press and hold − or + beside a joint to jog it. The robot stops 0.2 s after you release the button or lose the connection.</p>
-        </section>
-
-        <section class="card goal-card" aria-labelledby="goal-title">
-          <header class="card-head"><h2 id="goal-title">Move to a pose</h2></header>
-          <div id="goals" class="goals"></div>
-          <template id="goal-row">
-            <label class="goal"><span class="g-name"></span><input type="range" step="1" /><output class="num">0°</output></label>
-          </template>
           <div class="btn-row">
-            <button id="goal-current" type="button" class="btn">Use the current pose</button>
+            <button id="goal-current" type="button" class="btn" title="Set the goal faders to the measured pose">Use current pose</button>
+            <button id="zero-btn" type="button" class="btn needs-control">Go to zero</button>
             <button id="goal-move" type="button" class="btn primary needs-control">Move</button>
           </div>
-        </section>
+        </footer>
+      </section>
 
-        <section class="card imu" aria-labelledby="imu-title">
-          <header class="card-head"><h2 id="imu-title">IMU (in the ATOM)</h2></header>
-          <p class="muted small">Acceleration (g), last 20 s</p>
-          <div class="legend small" aria-hidden="true">
-            <span><i style="background: var(--series-1)"></i>x</span>
-            <span><i style="background: var(--series-2)"></i>y</span>
-            <span><i style="background: var(--series-3)"></i>z</span>
+      <section id="camera-card" class="card camera" aria-labelledby="camera-title" hidden data-running="false">
+        <header class="card-head">
+          <h2 id="camera-title">Camera</h2>
+          <div class="btn-row">
+            <label class="sr-only" for="camera-source">Camera source</label>
+            <select id="camera-source"></select>
+            <button id="camera-start" type="button" class="btn small-btn">Start</button>
           </div>
-          <div id="imu-plot" class="imu-plot"></div>
-          <p class="small num">Acceleration (g): <span id="acc-values">–</span></p>
-          <p class="small num">Angular rate (°/s): <span id="gyro-values">–</span></p>
-        </section>
-      </div>
+        </header>
+        <div class="camera-view">
+          <img id="camera-img" alt="Camera image of the robot" hidden />
+          <video id="camera-video" autoplay muted playsinline hidden></video>
+        </div>
+        <p id="camera-note" class="muted small"></p>
+      </section>
+
+      <section class="card plots" aria-labelledby="plots-title">
+        <h2 id="plots-title" class="sr-only">Plots, last 20 s</h2>
+        <div id="plot-grid" class="plot-grid"></div>
+        <template id="plot">
+          <figure class="plot">
+            <figcaption><span class="p-title"></span><span class="p-legend num"></span></figcaption>
+            <div class="p-area"></div>
+          </figure>
+        </template>
+      </section>
     </div>
+
+    <footer class="foot muted small">
+      <span class="foot-left"><span id="fw"></span><span id="log" class="log" aria-live="off"></span></span>
+      <span class="foot-note">Needs our controller firmware 4.2 or later. See the <a href={`${base}/comms/websocket-api/`}>WebSocket API</a>, <a href={`${base}/software/control-page/`}>how to use this page</a> and <a href={`${base}/start/safety/`}>Safety</a>.</span>
+    </footer>
     <div id="toasts" class="toasts" aria-live="polite"></div>
   </div>
 </StarlightPage>
@@ -155,162 +140,279 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 </script>
 
 <style is:global>
-  /* Chart colours (validated categorical palette, slots 1-3) and chrome, per theme. Starlight's
-     default theme is dark; data-theme="light" switches. */
+  /* Joint colours: the validated categorical palette, slots 1-6 (J1-J6), the same in the faders
+     and the plots. The IMU plots use slots 1-3 for x, y, z. Starlight's default theme is dark;
+     data-theme="light" switches. */
   .ctl {
     --series-1: #3987e5;
     --series-2: #d95926;
     --series-3: #199e70;
+    --series-4: #c98500;
+    --series-5: #d55181;
+    --series-6: #008300;
     --grid: #2c2c2a;
-    --muted: #898781;
+    --axis: #898781;
     --good: #0ca30c;
     --warning: #fab219;
     --critical: #d03b3b;
     --card: var(--sl-color-gray-6);
+    --well: var(--sl-color-black);
     --line: var(--sl-color-gray-5);
+    --goal: #3987e5;
   }
   :root[data-theme='light'] .ctl {
     --series-1: #2a78d6;
     --series-2: #eb6834;
     --series-3: #1baf7a;
+    --series-4: #eda100;
+    --series-5: #e87ba4;
+    --series-6: #008300;
     --grid: #e1e0d9;
-    --card: var(--sl-color-gray-7, #f6f6f6);
+    /* Starlight's light theme swaps the scale: --sl-color-black is the page (white), --sl-color-white the text. */
+    --card: var(--sl-color-black);
+    --well: var(--sl-color-gray-7);
+    --line: var(--sl-color-gray-5);
+    --goal: #2a78d6;
   }
 
-  /* The site keeps a narrow text column; this page uses a wider one. */
-  :root:has(#ctl) { --sl-content-width: 90rem; }
-  .ctl {
-    max-width: 84rem;
-    margin-inline: auto;
-    display: grid;
-    gap: 1rem;
-  }
+  /* This page is an application: no page title block, a full-width frame, little padding. */
+  :root:has(#ctl) { --sl-content-width: 200rem; }
+  :root:has(#ctl) main > .content-panel:first-child { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); padding: 0; border: 0; }
+  :root:has(#ctl) main > .content-panel { padding: 0.75rem clamp(0.75rem, 1.5vw, 1.25rem); border: 0; }
+  :root:has(#ctl) main > .content-panel .sl-container { max-width: none; }
+  :root:has(#ctl) main { padding-bottom: 0; }
+  :root:has(#ctl) main .sl-container > footer { display: none; }
+
+  .ctl { display: flex; flex-direction: column; gap: 0.6rem; }
   .ctl [hidden] { display: none !important; }
-  .ctl h2 { font-size: 1.05rem; margin: 0; }
+  .ctl h2 { font-size: 0.95rem; margin: 0; letter-spacing: 0.01em; }
   .ctl p { margin: 0; }
   .ctl .muted { color: var(--sl-color-gray-3); }
-  .ctl .small { font-size: 0.85rem; }
+  .ctl .small { font-size: 0.8rem; }
   .ctl .num { font-variant-numeric: tabular-nums; }
+  .ctl .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .ctl .card {
     background: var(--card);
     border: 1px solid var(--line);
-    border-radius: 0.75rem;
-    padding: 1rem;
-    display: grid;
-    gap: 0.75rem;
-    align-content: start;
+    border-radius: 0.6rem;
+    padding: 0.6rem 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
     min-width: 0;
+    min-height: 0;
   }
-  .ctl .card-head { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; align-items: center; justify-content: space-between; }
+  .ctl .card-head { display: flex; flex-wrap: wrap; gap: 0.25rem 0.75rem; align-items: center; justify-content: space-between; }
 
-  .ctl .connect-form { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
-  .ctl .connect-form label { font-weight: 600; }
+  /* --- Bar: connection | status | control lease | STOP --- */
+  .ctl .bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 1rem;
+    padding: 0.5rem 0.6rem;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 0.6rem;
+  }
+  .ctl[data-target='real'] .bar { border-color: var(--good); box-shadow: inset 4px 0 0 var(--good); }
+  .ctl .connect-form { display: flex; gap: 0.4rem; align-items: center; flex: 0 1 21rem; min-width: 14rem; }
   .ctl input:not([type]),
   .ctl input[type='text'] {
-    flex: 1 1 16rem;
+    flex: 1 1 12rem;
     min-width: 0;
     font: inherit;
-    padding: 0.45rem 0.6rem;
-    border-radius: 0.5rem;
+    padding: 0.4rem 0.6rem;
+    border-radius: 0.45rem;
     border: 1px solid var(--sl-color-gray-4);
-    background: var(--sl-color-black);
+    background: var(--well);
     color: var(--sl-color-white);
   }
-  .ctl .status-row { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; align-items: center; }
-  .ctl .pill { display: inline-flex; align-items: center; gap: 0.4rem; font-weight: 600; }
+  .ctl .status { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem 0.9rem; flex: 1 1 auto; min-width: 0; }
+  .ctl .pill { display: inline-flex; align-items: center; gap: 0.4rem; font-weight: 600; white-space: nowrap; }
   .ctl .pill.quiet { font-weight: 400; }
-  .ctl .target:empty { display: none; }
-  .ctl .target { font-weight: 700; padding: 0.15rem 0.6rem; border-radius: 999px; border: 2px solid; }
-  .ctl .target[data-target='real'] { color: var(--critical); border-color: var(--critical); }
+  .ctl .pill.quiet:empty, .ctl .target:empty { display: none; }
+  .ctl .target { font-weight: 700; padding: 0.1rem 0.6rem; border-radius: 999px; border: 2px solid; white-space: nowrap; font-size: 0.9rem; }
+  .ctl .target[data-target='real'] { color: var(--good); border-color: var(--good); }
   .ctl .target[data-target='sim'] { color: var(--sl-color-gray-2); border-color: var(--sl-color-gray-4); border-style: dashed; }
-  .ctl[data-target='real'] .connect { border-color: var(--critical); }
-  .ctl .pill.quiet:empty { display: none; }
-  .ctl .dot { width: 0.65rem; height: 0.65rem; border-radius: 50%; background: var(--muted); }
+  .ctl .dot { width: 0.65rem; height: 0.65rem; border-radius: 50%; background: var(--axis); }
   .ctl [data-status='connected'] .dot { background: var(--good); }
   .ctl [data-status='connecting'] .dot { background: var(--warning); }
   .ctl #robot-state[data-state='4'] { color: var(--critical); font-weight: 600; }
-  .ctl .hint { padding: 0.5rem 0.75rem; border-radius: 0.5rem; border-inline-start: 4px solid var(--sl-color-accent); background: var(--sl-color-gray-5); }
-  .ctl .hint[data-kind='warning'] { border-color: var(--warning); }
-  .ctl .log { font-family: var(--sl-font-mono); font-size: 0.8rem; overflow-wrap: anywhere; min-height: 1.2em; }
 
-  .ctl .layout { display: grid; gap: 1rem; grid-template-columns: minmax(0, 3fr) minmax(18rem, 2fr); align-items: start; }
-  .ctl .side { display: grid; gap: 1rem; min-width: 0; }
-  @media (max-width: 60rem) {
-    .ctl .layout { grid-template-columns: minmax(0, 1fr); }
+  .ctl .lease {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.2rem 0.25rem 0.2rem 0.75rem;
+    border-radius: 0.5rem;
+    border: 1px solid var(--line);
+    background: var(--well);
   }
+  .ctl .control-text { font-weight: 600; font-size: 0.85rem; max-width: 14rem; line-height: 1.25; }
+  .ctl[data-control='mine'] .lease { border-color: var(--good); box-shadow: inset 4px 0 0 var(--good); }
+  .ctl[data-control='other'] .lease { border-color: var(--warning); box-shadow: inset 4px 0 0 var(--warning); }
+  .ctl .safety { display: flex; gap: 0.5rem; align-items: center; margin-inline-start: auto; }
+  .ctl .btn.stop { font-size: 1.05rem; padding: 0.5rem 1.1rem; min-width: 7.5rem; letter-spacing: 0.02em; }
+  .ctl .btn.stop kbd { font: 600 0.7rem var(--sl-font-mono); padding: 0.05rem 0.3rem; margin-inline-start: 0.35rem; border-radius: 0.25rem; border: 1px solid rgb(255 255 255 / 0.6); vertical-align: 0.1rem; }
 
+  .ctl .hint { padding: 0.45rem 0.75rem; border-radius: 0.5rem; border-inline-start: 4px solid var(--sl-color-accent); background: var(--card); font-size: 0.9rem; }
+  .ctl .hint[data-kind='warning'] { border-color: var(--warning); }
+
+  /* --- Buttons and inputs --- */
   .ctl .btn {
     font: inherit;
     font-weight: 600;
-    padding: 0.45rem 0.9rem;
-    border-radius: 0.5rem;
+    padding: 0.4rem 0.85rem;
+    border-radius: 0.45rem;
     border: 1px solid var(--sl-color-gray-4);
     background: var(--sl-color-gray-5);
     color: var(--sl-color-white);
     cursor: pointer;
     touch-action: none;
     user-select: none;
+    white-space: nowrap;
   }
+  :root[data-theme='light'] .ctl .btn:not(.primary):not(.danger) { background: var(--sl-color-gray-7, #f6f6f6); }
   .ctl .btn:hover:not(:disabled) { border-color: var(--sl-color-accent); }
-  .ctl .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  .ctl .btn:focus-visible { outline: 2px solid var(--sl-color-accent); outline-offset: 2px; }
+  .ctl .btn:disabled { opacity: 0.4; cursor: not-allowed; }
   .ctl .btn.primary { background: var(--sl-color-accent); border-color: var(--sl-color-accent); color: var(--sl-color-black); }
-  .ctl .btn.danger { background: var(--critical); border-color: var(--critical); color: #fff; min-width: 6rem; }
-  .ctl .btn-row { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  .ctl .btn.danger { background: var(--critical); border-color: var(--critical); color: #fff; }
+  .ctl .btn.small-btn { font-size: 0.8rem; padding: 0.2rem 0.6rem; }
+  .ctl .btn-row { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+  .ctl select { font: inherit; font-size: 0.8rem; padding: 0.2rem 0.4rem; border-radius: 0.45rem; border: 1px solid var(--sl-color-gray-4); background: var(--well); color: var(--sl-color-white); max-width: 13rem; }
+  .ctl input[type='range'] { accent-color: var(--sl-color-accent); }
 
-  .ctl .segmented { display: inline-flex; border: 1px solid var(--sl-color-gray-4); border-radius: 0.5rem; overflow: hidden; }
-  .ctl .segmented button { font: inherit; font-size: 0.85rem; padding: 0.3rem 0.65rem; border: 0; background: transparent; color: var(--sl-color-gray-2); cursor: pointer; }
-  .ctl .segmented button[aria-pressed='true'] { background: var(--sl-color-accent-low); color: var(--sl-color-white); font-weight: 600; }
-
-  .ctl .joint-rows { display: grid; gap: 0.25rem; }
-  .ctl .joint {
+  /* --- Main grid. Wide screens: one screen, no page scroll. --- */
+  .ctl .grid {
     display: grid;
-    grid-template-columns: 4.5rem 6.5rem minmax(6rem, 1fr) 4.5rem auto;
-    gap: 0.75rem;
-    align-items: center;
-    padding: 0.35rem 0;
-    border-top: 1px solid var(--line);
+    gap: 0.6rem;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.55fr) minmax(0, 1.05fr);
+    grid-template-rows: minmax(0, 1.5fr) minmax(0, 1fr);
+    grid-template-areas: 'arm joints camera' 'plots plots plots';
   }
-  .ctl .joint:first-child { border-top: 0; }
-  .ctl .j-head { display: grid; }
-  .ctl .j-name { font-weight: 700; }
-  .ctl .j-angle { font-size: 1.15rem; font-variant-numeric: tabular-nums; }
-  .ctl .j-range { display: grid; gap: 0.15rem; }
-  .ctl .j-track { position: relative; height: 0.5rem; border-radius: 0.25rem; background: var(--sl-color-gray-5); }
-  .ctl .j-zero { position: absolute; left: 50%; top: -0.15rem; bottom: -0.15rem; width: 1px; background: var(--muted); }
-  .ctl .j-marker { position: absolute; left: 50%; top: -0.2rem; width: 0.9rem; height: 0.9rem; margin-left: -0.45rem; border-radius: 50%; background: var(--series-1); border: 2px solid var(--card); }
-  .ctl .j-plot { min-width: 0; }
-  .ctl .j-meta { display: grid; }
-  .ctl .j-jog { display: flex; gap: 0.35rem; }
-  .ctl .jog { width: 2.6rem; height: 2.6rem; padding: 0; font-size: 1.3rem; }
-  .ctl .joint.servo-fault .j-name::after { content: ' ⚠ fault'; color: var(--critical); font-size: 0.8rem; }
-  @media (max-width: 40rem) {
-    .ctl .joint { grid-template-columns: 5.5rem minmax(0, 1fr) auto; }
-    .ctl .j-plot { grid-column: 1 / -1; grid-row: 2; }
-    .ctl .j-meta { display: none; }
+  .ctl .grid:has(#camera-card[hidden]) { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.6fr); grid-template-areas: 'arm joints' 'plots plots'; }
+  .ctl .arm { grid-area: arm; }
+  .ctl .joints { grid-area: joints; }
+  .ctl .camera { grid-area: camera; }
+  .ctl .plots { grid-area: plots; }
+  @media (min-width: 75rem) and (min-height: 40rem) {
+    .ctl { height: calc(100dvh - var(--sl-nav-height, 4rem) - 1.5rem); }
+    .ctl .grid { flex: 1 1 auto; min-height: 0; }
   }
-
-  .ctl .field { display: grid; grid-template-columns: auto 1fr 4.5rem; gap: 0.75rem; align-items: center; }
-  .ctl .goals { display: grid; gap: 0.35rem; }
-  .ctl .goal { display: grid; grid-template-columns: 2rem 1fr 3.5rem; gap: 0.75rem; align-items: center; font-weight: 600; }
-  .ctl .goal output { text-align: end; font-weight: 400; }
-  .ctl input[type='range'] { width: 100%; accent-color: var(--sl-color-accent); }
-  .ctl .control-text { font-weight: 600; }
-  .ctl[data-control='mine'] .controls { border-color: var(--good); }
-
-  .ctl .legend { display: flex; gap: 1rem; }
-  .ctl .legend i { display: inline-block; width: 0.8rem; height: 0.25rem; border-radius: 2px; margin-inline-end: 0.35rem; vertical-align: middle; }
-  .ctl .imu-plot { min-width: 0; }
-  .ctl .camera-view { aspect-ratio: 4 / 3; border-radius: 0.5rem; background: var(--sl-color-black); overflow: hidden; display: grid; place-items: center; }
-  .ctl .camera[data-running='false'] .camera-view::after { content: 'Camera off'; color: var(--sl-color-gray-3); }
-  .ctl .camera-view img, .ctl .camera-view video { width: 100%; height: 100%; object-fit: contain; }
-  .ctl select { font: inherit; font-size: 0.9rem; padding: 0.35rem 0.5rem; border-radius: 0.5rem; border: 1px solid var(--sl-color-gray-4); background: var(--sl-color-black); color: var(--sl-color-white); max-width: 14rem; }
-  .ctl .arm-view { height: 18rem; border-radius: 0.5rem; background: var(--sl-color-black); overflow: hidden; position: relative; touch-action: none; }
+  /* --- 3D view and camera --- */
+  .ctl .arm-view { flex: 1 1 auto; min-height: 10rem; border-radius: 0.45rem; background: var(--well); overflow: hidden; position: relative; touch-action: none; }
   .ctl .arm-view:not([data-loaded])::after { content: 'Loading the 3D model…'; position: absolute; inset: 0; display: grid; place-items: center; color: var(--sl-color-gray-3); }
   .ctl .arm-view[data-loaded='error']::after { content: 'The 3D model did not load.'; position: absolute; inset: 0; display: grid; place-items: center; color: var(--sl-color-gray-3); }
+  .ctl .camera-view { flex: 1 1 auto; min-height: 8rem; border-radius: 0.45rem; background: #000; overflow: hidden; display: grid; place-items: center; position: relative; }
+  .ctl .camera[data-running='false'] .camera-view::after { content: 'Camera off'; color: var(--sl-color-gray-3); }
+  .ctl .camera-view img, .ctl .camera-view video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+
+  /* --- Joint strips: one vertical fader per joint --- */
+  .ctl .strips { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 0.4rem; }
+  .ctl .strip {
+    display: grid;
+    grid-template-rows: auto auto minmax(4rem, 1fr) auto auto auto;
+    justify-items: center;
+    gap: 0.25rem;
+    min-height: 0;
+    padding: 0.4rem 0.25rem 0.35rem;
+    border-radius: 0.45rem;
+    background: var(--well);
+    border: 1px solid transparent;
+  }
+  .ctl .strip.servo-fault { border-color: var(--critical); }
+  .ctl .strip.servo-fault .j-name::after { content: ' ⚠'; color: var(--critical); }
+  .ctl .s-head { display: flex; align-items: center; gap: 0.35rem; font-weight: 700; }
+  .ctl .key { display: inline-block; width: 0.9rem; height: 0.2rem; border-radius: 2px; background: var(--key); }
+  .ctl .j-angle { font-size: clamp(0.95rem, 1.2vw, 1.25rem); font-weight: 600; }
+  .ctl .jogs { display: flex; gap: 0.25rem; width: 100%; max-width: 6rem; }
+  .ctl .jog { flex: 1; min-width: 0; height: 1.9rem; padding: 0; font-size: 0.85rem; line-height: 1; }
+  .ctl .fader { position: relative; width: 100%; max-width: 4.5rem; min-height: 0; height: 100%; }
+  .ctl .f-track { position: absolute; inset: 0.6rem 0; margin-inline: auto; width: 0.5rem; border-radius: 0.25rem; background: var(--sl-color-gray-5); }
+  .ctl .f-zero { position: absolute; left: -0.45rem; right: -0.45rem; top: 50%; height: 1px; background: var(--axis); }
+  .ctl .f-fill { position: absolute; left: 0; right: 0; border-radius: 0.25rem; background: var(--key); opacity: 0.85; top: 50%; height: 0; }
+  .ctl .f-pos { position: absolute; left: -0.6rem; right: -0.6rem; height: 3px; margin-top: -1.5px; top: 50%; border-radius: 2px; background: var(--sl-color-white); box-shadow: 0 0 0 1px var(--well); }
+  .ctl .f-lim { position: absolute; left: 0.85rem; font-size: 0.65rem; color: var(--sl-color-gray-3); white-space: nowrap; }
+  .ctl .f-top { top: -0.55rem; }
+  .ctl .f-bot { bottom: -0.55rem; }
+  /* The goal slider sits over the track: transparent track, a ring thumb. Vertical: min at the bottom. */
+  .ctl .goal-input {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    writing-mode: vertical-lr;
+    direction: rtl;
+    appearance: none;
+    -webkit-appearance: none;
+    background: transparent;
+    cursor: ns-resize;
+  }
+  .ctl .goal-input:disabled { cursor: default; }
+  .ctl .goal-input::-webkit-slider-runnable-track { background: transparent; }
+  .ctl .goal-input::-moz-range-track { background: transparent; }
+  .ctl .goal-input::-webkit-slider-thumb { -webkit-appearance: none; width: 1.6rem; height: 0.95rem; border-radius: 0.3rem; background: color-mix(in srgb, var(--goal) 25%, transparent); border: 2.5px solid var(--goal); box-shadow: 0 0 0 1px var(--well); }
+  .ctl .goal-input::-moz-range-thumb { width: 1.6rem; height: 0.95rem; border-radius: 0.3rem; background: color-mix(in srgb, var(--goal) 25%, transparent); border: 2.5px solid var(--goal); box-shadow: 0 0 0 1px var(--well); }
+  .ctl .goal-input:disabled::-webkit-slider-thumb { border-color: var(--sl-color-gray-4); }
+  .ctl .goal-input:disabled::-moz-range-thumb { border-color: var(--sl-color-gray-4); }
+  .ctl .goal-input:focus-visible { outline: none; }
+  .ctl .goal-input:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px var(--sl-color-accent-low); }
+  .ctl .goal-out { font-size: 0.75rem; color: var(--goal); font-weight: 600; }
+  .ctl .goal-out[data-same] { color: var(--sl-color-gray-3); font-weight: 400; }
+  .ctl .j-meta { display: flex; gap: 0.5rem; font-size: 0.7rem; }
+
+  .ctl .joints-foot { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.4rem 0.9rem; align-items: center; }
+  .ctl .joints-foot .btn { font-size: 0.85rem; padding: 0.35rem 0.7rem; }
+  .ctl .field { display: flex; gap: 0.5rem; align-items: center; font-size: 0.85rem; min-width: 0; white-space: nowrap; }
+  .ctl .field input { flex: 1 1 auto; min-width: 4rem; }
+  .ctl .field output { min-width: 3.2rem; text-align: end; }
+
+  /* --- Plots: six small multiples, 20 s, one shared crosshair --- */
+  .ctl .plots { padding: 0.5rem 0.6rem; }
+  .ctl .plot-grid { flex: 1 1 auto; min-height: 0; display: grid; gap: 0.4rem 0.9rem; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-rows: minmax(0, 1fr); }
+  .ctl .plot { margin: 0; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+  .ctl .plot figcaption { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 0.75rem; font-size: 0.75rem; line-height: 1.3; }
+  .ctl .p-title { font-weight: 700; font-size: 0.8rem; }
+  .ctl .p-legend { display: flex; flex-wrap: wrap; gap: 0 0.6rem; color: var(--sl-color-gray-2); }
+  .ctl .p-legend span { white-space: nowrap; }
+  .ctl .p-legend i { display: inline-block; width: 0.7rem; height: 2px; border-radius: 1px; margin-inline-end: 0.25rem; vertical-align: 0.2rem; }
+  .ctl .p-legend b { font-weight: 600; color: var(--sl-color-white); }
+  .ctl .p-area { flex: 1 1 auto; min-height: 3rem; position: relative; }
+  .ctl .p-area > .uplot { position: absolute; inset: 0; }
+
+  .ctl .foot { display: flex; flex-wrap: wrap; gap: 0.25rem 1.5rem; justify-content: space-between; font-size: 0.75rem; }
+  .ctl .foot-left { display: flex; gap: 1rem; min-width: 0; flex: 1 1 20rem; }
+  .ctl .foot-left #fw:empty { display: none; }
+  .ctl .log { font-family: var(--sl-font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 
   .ctl .toasts { position: fixed; inset-inline-end: 1rem; bottom: 1rem; display: grid; gap: 0.5rem; z-index: 10; }
-  .ctl .toast { padding: 0.6rem 0.9rem; border-radius: 0.5rem; background: var(--sl-color-gray-6); border: 1px solid var(--sl-color-gray-4); border-inline-start: 4px solid var(--sl-color-accent); box-shadow: var(--sl-shadow-md); max-width: 22rem; }
+  .ctl .toast { padding: 0.6rem 0.9rem; border-radius: 0.5rem; background: var(--card); border: 1px solid var(--sl-color-gray-4); border-inline-start: 4px solid var(--sl-color-accent); box-shadow: var(--sl-shadow-md); max-width: 22rem; }
   .ctl .toast[data-kind='warning'] { border-inline-start-color: var(--warning); }
 
   .ctl .u-cursor-pt { border-color: var(--series-1) !important; }
+
+  /* --- Narrower screens: the page scrolls (last, so that these rules win) --- */
+  @media (max-width: 74.99rem), (max-height: 39.99rem) {
+    .ctl .grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto; grid-template-areas: 'joints joints' 'arm camera' 'plots plots'; }
+    .ctl .grid:has(#camera-card[hidden]) { grid-template-areas: 'joints joints' 'arm arm' 'plots plots'; }
+    .ctl .arm-view { height: 22rem; flex: none; }
+    .ctl .strips { height: 22rem; flex: none; }
+    .ctl .plot-grid { grid-auto-rows: 12rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .ctl .camera-view { aspect-ratio: 4 / 3; flex: none; }
+  }
+  @media (max-width: 40rem) {
+    .ctl .grid { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'joints' 'arm' 'camera' 'plots'; }
+    .ctl .grid:has(#camera-card[hidden]) { grid-template-areas: 'joints' 'arm' 'plots'; }
+    .ctl .strips { grid-template-columns: repeat(3, minmax(0, 1fr)); height: auto; }
+    .ctl .strip { height: 17rem; }
+    .ctl .plot-grid { grid-template-columns: minmax(0, 1fr); grid-auto-rows: 11rem; }
+    .ctl .joints-foot { grid-template-columns: minmax(0, 1fr); }
+    .ctl .lease { flex: 1 1 100%; }
+    .ctl .safety { flex: 1 1 100%; justify-content: stretch; }
+    .ctl .safety .btn { flex: 1; }
+  }
+
 </style>
