@@ -12,7 +12,7 @@ connected to it, so the arm can be controlled and watched remotely.
 | System | Raspberry Pi 5, 16 GB, Debian 12 (bookworm), aarch64 |
 | FT232R | `/dev/serial/by-id/usb-FTDI_FT232R_USB_UART_B00033ZX-if00-port0` (`/dev/ttyUSB0`) |
 | Webcam | Logitech C505, `/dev/video0` |
-| Repository | `~/myCobot/MyCobot.jl` (working copy) and `~/git/MyCobot.jl.git` (hub) |
+| Repository | `~/myCobot/MyCobot.jl` (working copy) and `~/git/mycobot-280-lab.git` (hub) |
 | Julia | 1.11 with juliaup: `~/.juliaup/bin/julia` (only login shells have it on `PATH`) |
 | Kernel | `kernel8.img`, **4 KB memory pages** (since 2026-10-04) |
 | Tools | Python `~/venvs/mycobot`, `~/bin/arduino-cli` (ESP32 core 3.3.10), Node `~/.local/opt/node` |
@@ -38,7 +38,7 @@ The Pi has a bare hub repository. The laptop has it as remote `pi`, and the Pi's
 working copy clones it. Nothing goes to GitHub this way.
 
 ```text
-laptop  ──push/pull──▶  raspberrypi5:git/MyCobot.jl.git  ◀──push/pull──  Pi working copy
+laptop  ──push/pull──▶  raspberrypi5:git/mycobot-280-lab.git  ◀──push/pull──  Pi working copy
 ```
 
 Use the script on the laptop. It also copies the Git LFS files (meshes, images),

@@ -4,14 +4,14 @@
 #   tools/sync-pi.sh push [BRANCH]   # laptop -> Pi hub (default: current branch)
 #   tools/sync-pi.sh pull            # Pi hub -> laptop (fetch only; merge yourself)
 #
-# The hub is a bare repository on the Pi (raspberrypi5:git/MyCobot.jl.git), remote "pi". The
+# The hub is a bare repository on the Pi (raspberrypi5:git/mycobot-280-lab.git), remote "pi". The
 # Pi's working copy (~/myCobot/MyCobot.jl) clones it and pushes and pulls it like any remote.
 # A plain SSH remote has no Git LFS server, so this script copies the LFS objects with rsync
 # and skips the LFS pre-push hook (--no-verify). It never pushes to GitHub.
 set -euo pipefail
 
 HOST=raspberrypi5
-HUB=git/MyCobot.jl.git
+HUB=git/mycobot-280-lab.git
 cd "$(git rev-parse --show-toplevel)"
 LFS="$(git rev-parse --git-common-dir)/lfs/objects"   # also right in a git worktree
 

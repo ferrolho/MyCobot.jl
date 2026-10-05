@@ -98,7 +98,7 @@ The package supports real-time robot visualization:
 - The Pi's USB-C supply gives only 3 A (`/proc/device-tree/chosen/power/max_current` = 3000): heavy jobs (Chromium/Playwright, big `npm` builds, dev servers) crashed it on 2026-10-05. Until it has a 5 A supply, keep its load light.
 - Browser and site work run on the laptop: a temporary dev server and `tools/atom_sim.py` on `127.0.0.1` only, stopped afterwards (the laptop does not keep serving the docs). Build the site on the laptop and copy `website/dist/` to `raspberrypi5:myCobot/lab-services/website/dist/` to update the lab site.
 - The laptop can build and flash the ATOM over USB (`arduino-cli`, `esptool`; see firmware/build-flash.md). OTA updates work from either machine.
-- The Pi hub (`raspberrypi5:git/MyCobot.jl.git`, remote `pi`) is git storage; push branches there. Push to GitHub (`origin`) only when the user says so.
+- The Pi hub (`raspberrypi5:git/mycobot-280-lab.git`, remote `pi`) is git storage; push branches there. Push to GitHub (`origin`) only when the user says so.
 - Control page sessions served by the lab service are logged on the Pi in `~/myCobot/lab-logs/*.jsonl` (software/control-page.md, "Session log"). Read them to see what the user did and what the robot did.
 - The ATOM (controller firmware, UDP protocol: website/src/content/docs/comms/atom-link.md) is the bus master. The FT232R on the Pi is for occasional register access and debugging only.
 
