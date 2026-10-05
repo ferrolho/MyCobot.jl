@@ -1,7 +1,7 @@
 ---
 // The Control page: the browser talks straight to the ATOM over a WebSocket (docs: comms/websocket-api).
-// Layout (wide screens): a bar with the connection, the control lease and STOP; then the 3D view,
-// the joint faders and the camera; then six plots. It fits one screen from 1440×900 up.
+// Layout (wide screens): a bar with the connection, the control lease and STOP; then the camera,
+// the 3D view and the joint faders; then six plots. It fits one screen from 1440×900 up.
 import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
 const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 ---
@@ -57,7 +57,13 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
       <section class="card joints" aria-labelledby="joints-title">
         <header class="card-head">
           <h2 id="joints-title">Joints</h2>
-          <p class="muted small">Hold ▼ or ▲ to jog. Drag the blue goal marker, then <strong>Move</strong>. White line: measured angle.</p>
+          <!-- One message line: the hint, or why the controls are off, or that Live mode is on. -->
+          <p class="joints-hint muted small">Drag a blue goal marker or type a goal, then <strong>Move</strong>. Hold ▼ or ▲ to jog. White line: measured angle.</p>
+          <div id="watch-banner" class="watch-banner" role="status">
+            <span id="watch-text">Not connected.</span>
+            <button id="watch-btn" type="button" class="btn small-btn primary" hidden>Take control</button>
+          </div>
+          <p id="live-banner" class="live-banner" role="status"><strong>Live</strong>: the arm follows the goals at once. <kbd>Esc</kbd> stops.</p>
         </header>
         <div id="strips" class="strips"></div>
         <template id="strip">
@@ -72,26 +78,27 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
                 <span class="f-pos"></span>
                 <span class="f-lim f-bot num"></span>
               </div>
-              <input type="range" class="goal-input" step="1" />
+              <input type="range" class="goal-input" step="0.1" />
             </div>
-            <output class="goal-out num"></output>
+            <label class="goal-field"><span class="sr-only">Goal (°)</span><input type="number" class="goal-num num" step="0.1" inputmode="decimal" /></label>
             <div class="jogs">
-              <button type="button" class="btn jog needs-control" data-dir="-1">▼</button>
-              <button type="button" class="btn jog needs-control" data-dir="1">▲</button>
+              <button type="button" class="btn jog needs-control not-live" data-dir="-1">▼</button>
+              <button type="button" class="btn jog needs-control not-live" data-dir="1">▲</button>
             </div>
             <div class="j-meta muted num"><span class="j-temp"></span><span class="j-volt"></span></div>
           </div>
         </template>
         <footer class="joints-foot">
           <div class="field">
+            <label class="live-switch" title="Live: the arm follows the goals at once, with JOG commands. Off: set the goals, then Move."><input id="live" type="checkbox" /> Live</label>
             <label for="jog-speed">Jog speed</label>
             <input id="jog-speed" type="range" min="2" max="30" step="1" value="10" />
             <output id="jog-speed-value" for="jog-speed" class="num">10 °/s</output>
           </div>
           <div class="btn-row">
             <button id="goal-current" type="button" class="btn" title="Set the goal faders to the measured pose">Use current pose</button>
-            <button id="zero-btn" type="button" class="btn needs-control">Go to zero</button>
-            <button id="goal-move" type="button" class="btn primary needs-control">Move</button>
+            <button id="zero-btn" type="button" class="btn needs-control not-live">Go to zero</button>
+            <button id="goal-move" type="button" class="btn primary needs-control not-live">Move</button>
           </div>
         </footer>
       </section>
@@ -126,7 +133,7 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 
     <footer class="foot muted small">
       <span class="foot-left"><span id="fw"></span><span id="log" class="log" aria-live="off"></span></span>
-      <span class="foot-note">Needs our controller firmware 4.2 or later. See the <a href={`${base}/comms/websocket-api/`}>WebSocket API</a>, <a href={`${base}/software/control-page/`}>how to use this page</a> and <a href={`${base}/start/safety/`}>Safety</a>.</span>
+      <span class="foot-note" title="Needs our controller firmware 4.2 or later."><a href={`${base}/software/control-page/`}>Help</a> · <a href={`${base}/comms/websocket-api/`}>WebSocket API</a> · <a href={`${base}/start/safety/`}>Safety</a></span>
     </footer>
     <div id="toasts" class="toasts" aria-live="polite"></div>
   </div>
@@ -288,9 +295,9 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
   .ctl .grid {
     display: grid;
     gap: 0.6rem;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.55fr) minmax(0, 1.05fr);
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr) minmax(0, 1.55fr);
     grid-template-rows: minmax(0, 1.5fr) minmax(0, 1fr);
-    grid-template-areas: 'arm joints camera' 'plots plots plots';
+    grid-template-areas: 'camera arm joints' 'plots plots plots';
   }
   .ctl .grid:has(#camera-card[hidden]) { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.6fr); grid-template-areas: 'arm joints' 'plots plots'; }
   .ctl .arm { grid-area: arm; }
@@ -360,14 +367,55 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
   .ctl .goal-input:disabled::-moz-range-thumb { border-color: var(--sl-color-gray-4); }
   .ctl .goal-input:focus-visible { outline: none; }
   .ctl .goal-input:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px var(--sl-color-accent-low); }
-  .ctl .goal-out { font-size: 0.75rem; color: var(--goal); font-weight: 600; }
-  .ctl .goal-out[data-same] { color: var(--sl-color-gray-3); font-weight: 400; }
+  /* Typed goal: a small number field under the fader. Blue while the goal differs from the angle. */
+  .ctl .goal-field { width: 100%; max-width: 5.2rem; }
+  .ctl .goal-num {
+    width: 100%;
+    font: inherit;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-align: center;
+    padding: 0.15rem 0.2rem;
+    border-radius: 0.35rem;
+    border: 1px solid var(--goal);
+    background: var(--card);
+    color: var(--goal);
+    -moz-appearance: textfield;
+  }
+  .ctl .goal-num::-webkit-inner-spin-button, .ctl .goal-num::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+  .ctl .goal-num[data-same] { color: var(--sl-color-gray-2); border-color: var(--sl-color-gray-4); font-weight: 400; }
+  .ctl .goal-num:focus-visible { outline: 2px solid var(--sl-color-accent); outline-offset: 1px; }
+  .ctl .goal-num:disabled { opacity: 0.45; }
+
+  /* Without control: the controls dim (they are disabled); the readouts stay sharp. A banner says why. */
+  .ctl .joints .card-head { flex-wrap: nowrap; min-height: 1.9rem; }
+  .ctl .joints .card-head > :not(h2) { margin-inline-start: auto; min-width: 0; }
+  .ctl .joints-hint { text-align: end; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ctl .watch-banner {
+    display: flex; align-items: center; gap: 0.75rem;
+    padding: 0.15rem 0.2rem 0.15rem 0.65rem; border-radius: 0.45rem; font-size: 0.85rem; font-weight: 600;
+    background: var(--well); border: 1px solid var(--line); border-inline-start: 4px solid var(--axis); white-space: nowrap;
+  }
+  .ctl:not([data-control='mine']) .joints-hint, .ctl[data-live='on'] .joints-hint { display: none; }
+  .ctl[data-control='other'] .watch-banner { border-inline-start-color: var(--warning); }
+  .ctl:not([data-control='mine']) .joints :is(.jogs, .goal-field, .joints-foot .field, .joints-foot .btn-row) { opacity: 0.45; }
+  .ctl:not([data-control='mine']) .joints .joints-foot .btn:disabled, .ctl:not([data-control='mine']) .joints .jog:disabled { opacity: 1; }
+
+  /* Live mode: an amber frame and a banner, so the mode is obvious. */
+  .ctl .live-banner { display: none; padding: 0.2rem 0.65rem; border-radius: 0.45rem; font-size: 0.85rem; white-space: nowrap; background: color-mix(in srgb, var(--warning) 16%, var(--well)); border-inline-start: 4px solid var(--warning); }
+  .ctl .live-banner kbd { font: 600 0.7rem var(--sl-font-mono); padding: 0.05rem 0.3rem; border-radius: 0.25rem; border: 1px solid var(--sl-color-gray-3); }
+  .ctl[data-live='on'] .live-banner { display: block !important; }
+  .ctl[data-live='on'] .joints { border-color: var(--warning); box-shadow: inset 0 0 0 1px var(--warning); }
+  .ctl .live-switch { display: inline-flex; align-items: center; gap: 0.3rem; font-weight: 700; padding: 0.15rem 0.5rem; border-radius: 0.4rem; border: 1px solid var(--sl-color-gray-4); cursor: pointer; }
+  .ctl .live-switch input { accent-color: var(--warning); margin: 0; }
+  .ctl[data-live='on'] .live-switch { border-color: var(--warning); color: var(--warning); }
+  .ctl .live-switch:has(input:disabled) { cursor: not-allowed; }
   .ctl .j-meta { display: flex; gap: 0.5rem; font-size: 0.7rem; }
 
   .ctl .joints-foot { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.4rem 0.9rem; align-items: center; }
   .ctl .joints-foot .btn { font-size: 0.85rem; padding: 0.35rem 0.7rem; }
   .ctl .field { display: flex; gap: 0.5rem; align-items: center; font-size: 0.85rem; min-width: 0; white-space: nowrap; }
-  .ctl .field input { flex: 1 1 auto; min-width: 4rem; }
+  .ctl .field input[type='range'] { flex: 1 1 auto; min-width: 4rem; }
   .ctl .field output { min-width: 3.2rem; text-align: end; }
 
   /* --- Plots: six small multiples, 20 s, one shared crosshair --- */
@@ -383,8 +431,9 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
   .ctl .p-area { flex: 1 1 auto; min-height: 3rem; position: relative; }
   .ctl .p-area > .uplot { position: absolute; inset: 0; }
 
-  .ctl .foot { display: flex; flex-wrap: wrap; gap: 0.25rem 1.5rem; justify-content: space-between; font-size: 0.75rem; }
-  .ctl .foot-left { display: flex; gap: 1rem; min-width: 0; flex: 1 1 20rem; }
+  .ctl .foot { display: flex; flex-wrap: nowrap; gap: 0.25rem 1.5rem; justify-content: space-between; font-size: 0.75rem; white-space: nowrap; }
+  .ctl .foot-left { display: flex; gap: 1rem; min-width: 0; flex: 1 1 auto; }
+  .ctl .foot-left #fw, .ctl .foot-note { flex: none; }
   .ctl .foot-left #fw:empty { display: none; }
   .ctl .log { font-family: var(--sl-font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 
@@ -396,7 +445,7 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 
   /* --- Narrower screens: the page scrolls (last, so that these rules win) --- */
   @media (max-width: 74.99rem), (max-height: 39.99rem) {
-    .ctl .grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto; grid-template-areas: 'joints joints' 'arm camera' 'plots plots'; }
+    .ctl .grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto; grid-template-areas: 'joints joints' 'camera arm' 'plots plots'; }
     .ctl .grid:has(#camera-card[hidden]) { grid-template-areas: 'joints joints' 'arm arm' 'plots plots'; }
     .ctl .arm-view { height: 22rem; flex: none; }
     .ctl .strips { height: 22rem; flex: none; }

@@ -94,8 +94,12 @@ The package supports real-time robot visualization:
 
 ## Where things run
 
-- The laptop is only the user's interface. **Run scripts, analysis, builds and firmware flashing on the Raspberry Pi 5** next to the robot: `ssh raspberrypi5`, repository `~/myCobot/MyCobot.jl`, Julia `~/.juliaup/bin/julia` (not on `PATH` for non-interactive SSH), Python `~/venvs/mycobot/bin/python`, `~/bin/arduino-cli`.
-- Make changes in the Pi working copy (`~/myCobot/MyCobot.jl`) and serve the docs there (dev server, diagram checker); the lab service serves the built site. Do not run servers on the laptop. Commit on the Pi and push to the hub (`git push`); the laptop clone (`~/myCobot/mycobot-280-lab`) only pulls. Recordings stay on the Pi.
+- The Raspberry Pi 5 next to the robot (`ssh raspberrypi5`) hosts the lab service (site, camera, session logs) and runs scripts that use the robot: repository `~/myCobot/MyCobot.jl`, Julia `~/.juliaup/bin/julia` (not on `PATH` for non-interactive SSH), Python `~/venvs/mycobot/bin/python`, `~/bin/arduino-cli`. Recordings stay on the Pi.
+- The Pi's USB-C supply gives only 3 A (`/proc/device-tree/chosen/power/max_current` = 3000): heavy jobs (Chromium/Playwright, big `npm` builds, dev servers) crashed it on 2026-10-05. Until it has a 5 A supply, keep its load light.
+- Browser and site work run on the laptop: a temporary dev server and `tools/atom_sim.py` on `127.0.0.1` only, stopped afterwards (the laptop does not keep serving the docs). Build the site on the laptop and copy `website/dist/` to `raspberrypi5:myCobot/lab-services/website/dist/` to update the lab site.
+- The laptop can build and flash the ATOM over USB (`arduino-cli`, `esptool`; see firmware/build-flash.md). OTA updates work from either machine.
+- The Pi hub (`raspberrypi5:git/MyCobot.jl.git`, remote `pi`) is git storage; push branches there. Push to GitHub (`origin`) only when the user says so.
+- Control page sessions served by the lab service are logged on the Pi in `~/myCobot/lab-logs/*.jsonl` (software/control-page.md, "Session log"). Read them to see what the user did and what the robot did.
 - The ATOM (controller firmware, UDP protocol: website/src/content/docs/comms/atom-link.md) is the bus master. The FT232R on the Pi is for occasional register access and debugging only.
 
 ## Documentation site (source of truth)

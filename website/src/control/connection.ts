@@ -182,6 +182,19 @@ export class AtomLink {
     }
   }
 
+  /** Jog all joints at once (°/s each; all zero stops). Live mode sets the whole vector at 20 Hz. */
+  setJogVector(vel: number[]) {
+    vel.forEach((v, j) => (this.jogVel[j] = Math.max(-P.JOG_VMAX, Math.min(P.JOG_VMAX, v))));
+    if (this.jogVel.some((x) => x)) {
+      if (!this.jogTimer) {
+        this.send(P.jog(this.jogVel));
+        this.jogTimer = window.setInterval(() => this.send(P.jog(this.jogVel)), JOG_PERIOD_MS);
+      }
+    } else {
+      this.stopJog();
+    }
+  }
+
   /** Stop every jog. With `send`, also tell the ATOM (all velocities zero). */
   stopJog(send = true) {
     const wasJogging = !!this.jogTimer;

@@ -8,6 +8,8 @@ page) and the webcam next to the robot. It is the only process that opens the ca
     /camera.json           {"camera": true, "running": ..., "clients": ...}: the page shows the Pi camera if this exists
     /camera.mjpg           MJPEG stream (multipart/x-mixed-replace), 1280x960 at 30 fps
     /snapshot.jpg          one recent frame
+    /log.json              {"log": true}: the Control page sends its session log if this exists
+    POST /log?session=ID   JSONL events from the Control page, appended to LOG_DIR/ID.jsonl
 
 The camera runs (tools/pi/camera.sh stdout) only while a client streams, and for IDLE_S after the
 last frame request, so other tools can open /dev/video0 when nobody watches.
@@ -16,12 +18,13 @@ Listen on the Tailscale address only, never on the home network. Standard librar
 import argparse
 import json
 import os
+import re
 import subprocess
 import threading
 import time
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SITE = os.path.join(ROOT, "website", "dist")
@@ -29,6 +32,8 @@ BASE = "/mycobot-280-lab/"
 CAMERA_CMD = [os.path.join(ROOT, "tools", "pi", "camera.sh"), "stdout"]
 IDLE_S = 10.0          # stop the camera this long after the last client
 BOUNDARY = "frame"
+LOG_DIR = os.path.expanduser("~/myCobot/lab-logs")   # Control page session logs, one JSONL file per session
+LOG_MAX_BODY = 1 << 20
 
 
 class Camera:
@@ -143,10 +148,27 @@ class Handler(SimpleHTTPRequestHandler):
             return self.wfile.write(frame)
         if route == "/camera.mjpg":
             return self.stream()
+        if route == "/log.json":
+            return self.json({"log": True})
         if self.path.startswith(BASE):
             self.path = "/" + self.path[len(BASE):]
             return super().do_GET()
         self.send_error(HTTPStatus.NOT_FOUND)
+
+    def do_POST(self):
+        u = urlsplit(self.path)
+        if u.path != "/log":
+            return self.send_error(HTTPStatus.NOT_FOUND)
+        session = (parse_qs(u.query).get("session") or [""])[0]
+        n = int(self.headers.get("Content-Length") or 0)
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", session) or not 0 < n <= LOG_MAX_BODY:
+            return self.send_error(HTTPStatus.BAD_REQUEST)
+        body = self.rfile.read(n)
+        os.makedirs(LOG_DIR, exist_ok=True)
+        with open(os.path.join(LOG_DIR, session + ".jsonl"), "ab") as f:
+            f.write(body if body.endswith(b"\n") else body + b"\n")
+        self.send_response(HTTPStatus.NO_CONTENT)
+        self.end_headers()
 
     def json(self, obj):
         body = json.dumps(obj).encode()

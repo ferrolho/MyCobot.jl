@@ -30,9 +30,9 @@ On a screen of 1440 × 900 pixels or more, the page fits in one screen:
 | Area | Content |
 | --- | --- |
 | Top bar | Robot address and **Connect**; connection, real robot or simulator, robot state; the control lease; **Hold** and **Stop**. A green edge: connected to the real robot. |
-| 3D view | The measured pose (solid) and the goal pose (see-through blue). **Reset view** restores the camera. |
-| Joints | One strip per joint: the angle, a vertical fader, the goal, jog buttons, the temperature and the voltage |
-| Camera | The Pi camera or a camera on this computer (see [Camera](#camera)) |
+| Camera (left) | The Pi camera or a camera on this computer (see [Camera](#camera)) |
+| 3D view (middle) | The measured pose (solid) and the goal pose (see-through blue). **Reset view** restores the camera. |
+| Joints (right) | One strip per joint: the angle, a vertical fader, the typed goal, jog buttons, the temperature and the voltage. Below: **Live**, the jog speed, **Use current pose**, **Go to zero**, **Move**. |
 | Plots | The last 20 s: angle, speed, load, temperature (one line per joint), and the IMU acceleration and angular rate (x, y, z) |
 
 On a narrower screen, the areas are stacked and the page scrolls.
@@ -44,18 +44,41 @@ On a narrower screen, the areas are stacked and the page scrolls.
    strip and in the plots. Each plot shows the values as text above it: the latest
    values, or the values under the pointer. One pointer line goes through all plots.
    A pause in the data shows as a gap.
-4. Click **Take control** to move the robot. Only one client has control. The others
-   can only watch.
+4. Click **Take control** to move the robot (in the top bar, or in the banner above
+   the joints). Only one client has control. The others can only watch: the joint
+   controls are dimmed, and the banner shows **Watching only**. The angles and the
+   measured lines stay up to date.
 5. Move the robot:
    - **▼ / ▲** under a joint: press and hold to jog that joint at the jog speed.
    - **Fader**: the track runs from the lower limit (bottom) to the upper limit (top).
      The white (dark in the light theme) line is the measured angle; the coloured bar
-     goes from 0° to it. Drag the blue marker to set the goal of that joint. The goal
-     turns blue below the fader, and a see-through blue arm in the 3D view shows the
-     goal pose. Then click **Move**.
+     goes from 0° to it. Drag the blue marker to set the goal of that joint. The
+     see-through blue arm in the 3D view shows the goal pose. Then click **Move**.
+   - **Typed goal** (the field under the fader): type an angle in degrees (0.1°
+     steps) and press **Enter**. The page keeps the goal 2° inside the joint limits.
+     The field is blue while the goal differs from the angle.
    - **Use current pose**: set all goals to the measured pose.
    - **Go to zero**: move all joints to 0°.
 6. Click **Release control** when you stop.
+
+### Live mode
+
+With **Live** on, the arm follows the goals at once: drag a fader, or type a goal and
+press **Enter**. There is no **Move**.
+
+- The page sends JOG commands at 20 Hz. Each joint moves toward its goal at
+  2.5 × (goal − angle) °/s, at most the **jog speed** (at most 30 °/s). Within 0.3° of
+  the goal, the joint stops. When all joints are at their goals, the page stops
+  sending, and the ATOM holds the pose.
+- Live mode never sends MOVE_TO. **Move**, **Go to zero** and the jog buttons are off.
+- When you switch Live on, the goals become the measured pose: the arm does not move
+  to an old goal.
+- Live switches off when you release control, when you lose control, when the
+  connection closes, when you click **Stop** or **Hold** or press **Esc**, and when the
+  page is hidden or loses focus.
+- If the page stops sending (a frozen tab, a WiFi drop), the deadman in the firmware
+  stops the arm 0.2 s after the last JOG.
+- The joints panel has an amber frame while Live is on.
 
 :::danger
 **Stop** and the **Esc** key stop the robot through the software. They are not an
@@ -63,8 +86,8 @@ emergency stop. Keep the power switch or a real emergency stop in reach. See
 [Safety](/mycobot-280-lab/start/safety/).
 :::
 
-- The jog stops **0.2 s** after you release the button, close the page, or lose the
-  connection (the deadman in the firmware).
+- The jog (and Live mode) stops **0.2 s** after you release the button, close the
+  page, or lose the connection (the deadman in the firmware).
 - The API has no authentication. Every device on the home network can take control.
 
 ## Camera
@@ -88,6 +111,8 @@ address. It is the only program that opens `/dev/video0`.
 | `/camera.json` | The page shows the Pi camera if this path exists. |
 | `/camera.mjpg` | MJPEG stream, 1280×960 at 30 fps. |
 | `/snapshot.jpg` | One recent frame. From cold it takes about 3.6 s, because the first 10 frames are skipped while the exposure settles. |
+| `/log.json` | The page sends its session log if this path exists. |
+| `POST /log?session=ID` | Session log events (JSONL). The service appends them to `~/myCobot/lab-logs/ID.jsonl`. |
 
 The service opens the camera only while a client streams, and closes it 10 s after
 the last request. `tools/pi/camera.sh snapshot` asks the service first and uses the
@@ -104,6 +129,37 @@ site. It starts at boot (linger is on) and restarts if it stops.
 | Update the site | `cd ~/myCobot/lab-services && git pull --ff-only && cd website && npm ci && npm run build` (the service serves `website/dist`; no restart needed) |
 | After a change to `lab_service.py` | `systemctl --user restart lab-service` |
 | Install the unit | see the comments in `tools/pi/lab-service.service` |
+
+### Session log
+
+When the lab service serves the Control page, the page records the session on the Pi,
+in `~/myCobot/lab-logs/<start time>-<id>.jsonl` (one JSON object per line). Use it to
+find out what happened without copying values from the screen. The page on GitHub
+Pages has no lab service, so it records nothing.
+
+| `type` | Content |
+| --- | --- |
+| `session`, `page` | The start (URL, browser, screen); the page hidden or shown |
+| `click`, `input`, `key` | The user's clicks, input changes (with the value) and Enter/Esc |
+| `tx`, `rx` | Commands sent (JOG only when its speeds change; not the lease renewals) and replies (ACK, DONE, PONG) |
+| `link`, `atom` | The connection status; the ATOM's status lines |
+| `state` | The stream at 10 Hz: ATOM time, state, control, angles, speeds, loads, temperatures |
+| `gap` | Every pause in the stream over 100 ms, with the ATOM's own time step: a large `atomGapMs` means that the ATOM did not send; a normal one (20 ms) means that the network held the packets |
+| `stats`, `error` | Once a second, over the last 5 s: packets per second, the largest gap and the arrival jitter (95th percentile minus the smallest arrival delay); page errors |
+
+Each line has `t` (Unix time, ms) and `pt` (the page's clock, ms).
+
+The stream, measured with the session log on 2026-10-05 (laptop on WiFi, real robot):
+
+| Firmware | During MOVE_TO | Largest gap | CONTROL reply |
+| --- | --- | --- | --- |
+| 4.3.0 | 17–30 packets/s, 60 pauses of 100–525 ms in 7 moves | 525 ms | up to 0.7 s |
+| 4.3.1 | 49.5–50.4 packets/s, 1 pause of 117 ms in 6 moves | 117 ms | 22 ms |
+
+The pauses were the ATOM's own (its `t_ms` jumped as much as the arrival time): the
+MOVE_TO telemetry over the WebSocket blocked its network task (see the
+[changelog](/mycobot-280-lab/firmware/changelog/), 4.3.1). With 4.3.1 the page draws
+the newest packet, and the motion is smooth.
 
 Node is installed for the user in `~/.local/opt/node`. Put `~/.local/opt/node/bin` on
 `PATH` before `npm`.

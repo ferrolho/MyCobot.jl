@@ -5,6 +5,7 @@ import { AtomLink } from './connection';
 import * as P from './protocol';
 import type { Stream } from './protocol';
 import type { ArmView } from './viewer3d';
+import { startSessionLog } from './sessionlog';
 
 const $ = <T extends HTMLElement>(sel: string, root: ParentNode = document) => root.querySelector(sel) as T;
 const fmt = (x: number | null, d = 1) => (x !== null && Number.isFinite(x) ? x.toFixed(d) : '–');
@@ -183,9 +184,16 @@ class Plot {
 
 // --- Page ----------------------------------------------------------------------------------------
 
+// Live mode: each joint jogs toward its goal at KP × error (°/s), up to the jog speed. Within the
+// deadband it stops. The page sends at 20 Hz; the ATOM's deadman stops the arm 200 ms after the last JOG.
+const LIVE_PERIOD_MS = 50;
+const LIVE_KP = 2.5; // 1/s
+const LIVE_DEADBAND = 0.3; // °
+
 export function start() {
   const link = new AtomLink();
   const root = $('#ctl');
+  startSessionLog(link); // only when the lab service on the Pi serves the page
   const hist: Record<PlotKey, History> = {
     q: new History(6),
     dq: new History(6),
@@ -194,7 +202,7 @@ export function start() {
     acc: new History(3),
     gyro: new History(3),
   };
-  let t0 = 0;
+  let t0 = 0; // the ATOM's t_ms at the first sample: plot time 0
   let dirty = false;
 
   // 3D view: loaded after the page, because three.js and the meshes are large.
@@ -206,10 +214,14 @@ export function start() {
   });
   $('#arm-reset').addEventListener('click', () => arm?.resetView());
 
-  // Joint strips: name, angle, jog buttons, the fader (limits, measured position, goal), meta.
+  // Joint strips: name, angle, the fader (limits, measured position, goal), typed goal, jog, meta.
   const stripTpl = $<HTMLTemplateElement>('#strip');
   const strips = $('#strips');
-  const goalInputs: HTMLInputElement[] = [];
+  const faders: HTMLInputElement[] = [];
+  const goalNums: HTMLInputElement[] = [];
+  const goal = [0, 0, 0, 0, 0, 0];
+  const goalMax = (j: number) => P.LIMITS[j] - P.JOG_MARGIN; // MOVE_TO and JOG both stay inside this
+  const clampGoal = (j: number, deg: number) => Math.round(Math.max(-goalMax(j), Math.min(goalMax(j), deg)) * 10) / 10;
   for (let j = 0; j < 6; j++) {
     const s = stripTpl.content.firstElementChild!.cloneNode(true) as HTMLElement;
     const name = JOINT_NAMES[j];
@@ -221,13 +233,19 @@ export function start() {
     s.querySelectorAll<HTMLButtonElement>('.jog').forEach((b) =>
       b.setAttribute('aria-label', `Jog ${name} ${b.dataset.dir === '1' ? 'positive' : 'negative'} (hold)`),
     );
-    const input = $<HTMLInputElement>('.goal-input', s);
-    input.min = String(-P.LIMITS[j] + 1);
-    input.max = String(P.LIMITS[j] - 1);
-    input.value = '0';
-    input.setAttribute('aria-label', `${name} goal angle`);
-    input.setAttribute('orient', 'vertical'); // older Firefox
-    goalInputs.push(input);
+    const fader = $<HTMLInputElement>('.goal-input', s);
+    fader.min = String(-goalMax(j));
+    fader.max = String(goalMax(j));
+    fader.value = '0';
+    fader.setAttribute('aria-label', `${name} goal angle`);
+    fader.setAttribute('orient', 'vertical'); // older Firefox
+    faders.push(fader);
+    const num = $<HTMLInputElement>('.goal-num', s);
+    num.min = fader.min;
+    num.max = fader.max;
+    num.value = '0';
+    num.setAttribute('aria-label', `${name} goal angle, degrees`);
+    goalNums.push(num);
     strips.append(s);
   }
   const stripEls = [...strips.querySelectorAll<HTMLElement>('.strip')];
@@ -253,6 +271,11 @@ export function start() {
     dirty = true;
   }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
+  function clearHistory() {
+    for (const h of Object.values(hist)) h.clear();
+    t0 = 0;
+  }
+
   // --- Connection ---
   const form = $<HTMLFormElement>('#connect-form');
   const addr = $<HTMLInputElement>('#addr');
@@ -270,8 +293,7 @@ export function start() {
       hint(`This page uses HTTPS. The browser can reach a robot only at a private IP address (for example 192.168.1.107) or a .local name.`, 'warning');
     } else hint('');
     saveHistory(a);
-    for (const h of Object.values(hist)) h.clear();
-    t0 = 0;
+    clearHistory();
     link.connect(a);
   });
 
@@ -300,6 +322,7 @@ export function start() {
     } else if (status === 'connected') hint('');
     if (status === 'connected' && !$('#target').dataset.target) setTarget('real');
     if (status !== 'connected') {
+      setLive(false, 'the connection closed');
       setTarget('none');
       $('#fw').textContent = '';
       $('#robot-state').textContent = '';
@@ -314,10 +337,25 @@ export function start() {
   // The simulated ATOM's status log starts with "atom-sim". Until the first line arrives (1 s), the
   // page assumes the real robot: the safe side.
   link.on('log', (line) => {
-    $('#log').textContent = line;
+    $('#log').textContent = statusSummary(line);
     $('#log').title = line;
     setTarget(line.startsWith('atom-sim') ? 'sim' : 'real');
   });
+
+  // The status line is long (firmware, git, IP, RSSI, state, plan, IMU, retries, heap, uptime). The
+  // footer shows the useful part; the tooltip and the session log keep the whole line.
+  function statusSummary(line: string): string {
+    const v = (key: string) => line.match(new RegExp(`\\b${key}=(-?\\d+)`))?.[1];
+    const variant = line.match(/, (lab|public)\)/)?.[1];
+    const up = v('up');
+    const parts = [
+      line.startsWith('atom-sim') ? 'simulator' : variant,
+      v('rssi') && `RSSI ${v('rssi')} dBm`,
+      up && `up ${Number(up) < 120 ? `${up} s` : `${Math.round(Number(up) / 60)} min`}`,
+      v('write_retries') && `write retries ${v('write_retries')}`,
+    ].filter(Boolean);
+    return parts.length ? parts.join(' · ') : line;
+  }
 
   function setTarget(t: 'real' | 'sim' | 'none') {
     const el = $('#target');
@@ -349,6 +387,7 @@ export function start() {
     hist.temp.push(t, s.temp);
     hist.acc.push(t, s.acc);
     hist.gyro.push(t, s.gyro);
+    if (!link.inControl && live) setLive(false, 'control was released');
     dirty = true;
   });
 
@@ -383,7 +422,9 @@ export function start() {
   // --- Controls ---
   const controlBtn = $<HTMLButtonElement>('#control-btn');
   const takeoverBtn = $<HTMLButtonElement>('#takeover-btn');
+  const watchBtn = $<HTMLButtonElement>('#watch-btn');
   const speed = $<HTMLInputElement>('#jog-speed');
+  const liveBox = $<HTMLInputElement>('#live');
 
   function updateControls() {
     const connected = link.status === 'connected';
@@ -392,6 +433,7 @@ export function start() {
     const busy = s ? [P.STATE_PLAYING, P.STATE_MOVING].includes(s.state) : false;
     const mine = connected && link.inControl;
     root.dataset.control = mine ? 'mine' : other ? 'other' : 'none';
+    root.dataset.live = live ? 'on' : '';
     $('#control-text').textContent = !connected
       ? 'Not connected'
       : mine
@@ -404,17 +446,46 @@ export function start() {
     takeoverBtn.hidden = !(connected && other && !mine);
     $<HTMLButtonElement>('#stop-btn').disabled = !connected;
     $<HTMLButtonElement>('#hold-btn').disabled = !connected;
-    root.querySelectorAll<HTMLButtonElement>('.needs-control').forEach((b) => (b.disabled = !mine || busy));
-    goalInputs.forEach((i) => (i.disabled = !mine));
+
+    // The banner over the joint controls when this page cannot move the robot.
+    const banner = $('#watch-banner');
+    banner.hidden = mine;
+    $('#watch-text').textContent = !connected
+      ? 'Not connected. Connect to a robot to see the joints.'
+      : other
+        ? 'Watching only. Another client has control.'
+        : 'Watching only.';
+    watchBtn.hidden = !connected;
+    watchBtn.textContent = other ? 'Take over' : 'Take control';
+
+    // The controls work only with control. Live mode replaces Move, Go to zero and the jog buttons.
+    root.querySelectorAll<HTMLButtonElement>('.needs-control').forEach((b) => (b.disabled = !mine || busy || (live && b.matches('.not-live'))));
+    faders.forEach((i) => (i.disabled = !mine));
+    goalNums.forEach((i) => (i.disabled = !mine));
+    speed.disabled = !mine;
+    liveBox.disabled = !mine || busy;
+    liveBox.checked = live;
+    $<HTMLButtonElement>('#goal-current').disabled = !mine;
   }
 
-  controlBtn.addEventListener('click', () => link.requestControl(link.inControl ? 0 : 1));
+  controlBtn.addEventListener('click', () => {
+    if (link.inControl) setLive(false, 'you released control');
+    link.requestControl(link.inControl ? 0 : 1);
+  });
   takeoverBtn.addEventListener('click', () => link.requestControl(2));
-  $('#stop-btn').addEventListener('click', () => link.stopRobot());
-  $('#hold-btn').addEventListener('click', () => link.holdPose());
+  watchBtn.addEventListener('click', () => link.requestControl(link.last?.control === 2 ? 2 : 1));
+  const stopAll = () => {
+    setLive(false, '');
+    link.stopRobot();
+  };
+  $('#stop-btn').addEventListener('click', stopAll);
+  $('#hold-btn').addEventListener('click', () => {
+    setLive(false, '');
+    link.holdPose();
+  });
   $('#zero-btn').addEventListener('click', () => link.moveTo([0, 0, 0, 0, 0, 0]));
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && link.status === 'connected') link.stopRobot();
+    if (e.key === 'Escape' && link.status === 'connected') stopAll();
   });
 
   // Jog: press and hold. The page sends JOG every 50 ms; the ATOM stops 200 ms after the last one.
@@ -433,32 +504,92 @@ export function start() {
     b.addEventListener('lostpointercapture', end);
     b.addEventListener('contextmenu', (e) => e.preventDefault());
   });
-  window.addEventListener('blur', () => link.stopJog());
-  document.addEventListener('visibilitychange', () => document.hidden && link.stopJog());
+  window.addEventListener('blur', () => {
+    setLive(false, 'the page lost focus');
+    link.stopJog();
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) return;
+    setLive(false, 'the page was hidden');
+    link.stopJog();
+  });
 
-  // Goal pose: the faders, then MOVE_TO. The goal shows as a see-through arm when it differs from
-  // the measured pose, and its value turns blue.
+  // --- Goal pose: the faders and the typed values. The goal shows as a see-through arm when it
+  // differs from the measured pose, and its value turns blue. ---
   function updateGoals() {
     const s = link.last;
-    const goal = goalInputs.map((i) => Number(i.value));
     let differs = false;
     stripEls.forEach((row, j) => {
-      const out = $('output', row);
-      out.textContent = `goal ${goal[j]}°`;
+      const num = goalNums[j];
+      if (document.activeElement !== num) num.value = goal[j].toFixed(1);
       const same = !s || Math.abs(goal[j] - s.q[j]) <= 1;
-      out.toggleAttribute('data-same', same);
+      num.toggleAttribute('data-same', same);
       differs ||= !same;
     });
     arm?.setGoal(s && differs ? goal : null);
   }
-  goalInputs.forEach((i) => i.addEventListener('input', updateGoals));
-  updateGoals();
-  const setGoals = (q: number[]) => {
-    goalInputs.forEach((i, j) => (i.value = String(Math.round(q[j]))));
+  const setGoal = (j: number, deg: number) => {
+    goal[j] = clampGoal(j, deg);
+    faders[j].value = String(goal[j]);
     updateGoals();
+    if (live) liveTick();
   };
+  faders.forEach((f, j) => f.addEventListener('input', () => setGoal(j, Number(f.value))));
+  goalNums.forEach((num, j) => {
+    const commit = () => {
+      const v = Number(num.value.replace(',', '.'));
+      if (num.value.trim() === '' || !Number.isFinite(v)) num.value = goal[j].toFixed(1);
+      else setGoal(j, v);
+      num.value = goal[j].toFixed(1);
+    };
+    num.addEventListener('change', commit);
+    num.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        commit();
+        num.select();
+      } else if (e.key === 'Escape') {
+        num.value = goal[j].toFixed(1);
+        num.blur();
+      }
+    });
+  });
+  const setGoals = (q: number[]) => q.forEach((x, j) => setGoal(j, x));
+  updateGoals();
   $('#goal-current').addEventListener('click', () => link.last && setGoals(link.last.q));
-  $('#goal-move').addEventListener('click', () => link.moveTo(goalInputs.map((i) => Number(i.value))));
+  $('#goal-move').addEventListener('click', () => link.moveTo(goal.slice()));
+
+  // --- Live mode: the joints follow the goals at once, with JOG only (never MOVE_TO). ---
+  let live = false;
+  let liveTimer = 0;
+  function setLive(on: boolean, why: string) {
+    if (on === live) return;
+    if (on) {
+      if (!link.inControl || !link.last) return;
+      setGoals(link.last.q); // start from where the arm is: no jump to an old goal
+      live = true;
+      liveTimer = window.setInterval(liveTick, LIVE_PERIOD_MS);
+      toast('Live: the arm follows the faders and the typed goals. Esc stops.', 'warning');
+    } else {
+      live = false;
+      clearInterval(liveTimer);
+      liveTimer = 0;
+      link.stopJog();
+      if (why) toast(`Live off: ${why}.`, 'info');
+    }
+    updateControls();
+  }
+  function liveTick() {
+    const s = link.last;
+    if (!live || !s || !link.inControl) return setLive(false, 'control was lost');
+    const vmax = Number(speed.value);
+    const vel = goal.map((g, j) => {
+      const e = g - s.q[j];
+      return Math.abs(e) <= LIVE_DEADBAND ? 0 : Math.max(-vmax, Math.min(vmax, LIVE_KP * e));
+    });
+    // All joints at their goals: stop sending. The ATOM ramps down and holds the pose.
+    link.setJogVector(vel);
+  }
+  liveBox.addEventListener('change', () => setLive(liveBox.checked, 'you switched it off'));
 
   // Toasts for refused commands and finished moves.
   function toast(text: string, kind: 'info' | 'warning') {

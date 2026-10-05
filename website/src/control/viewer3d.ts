@@ -36,10 +36,13 @@ export class ArmView {
     (grid.material as THREE.Material).transparent = true;
     this.scene.add(grid);
 
-    const gltf = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
     const load = (ghost: boolean) =>
       new Promise<URDFRobot>((resolve, reject) => {
+        // urdf-loader tracks only the URDF file in its manager, not meshes from loadMeshCb. With the
+        // GLTF loader on the same manager, onLoad waits for every mesh (before, the robot could be
+        // drawn with some meshes missing until the next redraw).
         const manager = new THREE.LoadingManager();
+        const gltf = new GLTFLoader(manager).setMeshoptDecoder(MeshoptDecoder);
         const loader = new URDFLoader(manager);
         loader.loadMeshCb = (path, _manager, _material, done) =>
           gltf.load(
@@ -50,6 +53,7 @@ export class ArmView {
                 if (mesh.isMesh) mesh.material = new THREE.MeshStandardMaterial({ color: 0x3987e5, transparent: true, opacity: 0.28, depthWrite: false });
               });
               done(g.scene);
+              this.needsRender = true; // draw each mesh as it arrives
             },
             undefined,
             (err) => done(null as unknown as THREE.Object3D, err as Error),
