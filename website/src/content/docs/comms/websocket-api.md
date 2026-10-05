@@ -49,7 +49,7 @@ move the robot or write servo registers.
 
 1. **Take** (1) succeeds if no client has control, or if the sender has control already.
 2. **Take over** (2) takes control from another client. The ATOM refuses it while the
-   robot moves (states playing, moving, jogging).
+   robot moves (states playing, moving, jogging, tracking).
 3. **Control ends** when the client releases it, when its WebSocket closes, or **2 s
    after the last message** from that client. A client that wants to keep control
    sends any message at least once a second (CONTROL 1 is enough).
@@ -64,7 +64,7 @@ take control. This is a known limit, accepted for home use.
 :::
 
 These commands need control: PLAN_BEGIN, PLAN_DATA, PLAN_END, PLAY, PLAY_SIGNAL,
-REG_WRITE, MOVE_TO and JOG. If **nobody** has control, such a command takes control
+REG_WRITE, MOVE_TO, JOG and TRACK. If **nobody** has control, such a command takes control
 for its sender first (as CONTROL 1). So older UDP clients that never send CONTROL
 still work. If another client has control, the ATOM replies ACK with status **−2**.
 
@@ -77,6 +77,7 @@ converts them to servo steps.
 | --- | --- | --- | --- |
 | `0x0E` | MOVE_TO | i16 goal[6] (0.01°), u16 duration (ms; 0 = the ATOM chooses it from the speed limit) | ACK: 0 started, −1 busy, −2 no control, −10−j goal of joint j outside the limits. Then DONE (`0x85`) when the move ends. No TELEM over WebSocket (4.3.1+): watch the STREAM. |
 | `0x0F` | JOG | u8 frame (0 = joints), i16 velocity[6] (0.1 °/s) | ACK only if refused: −1 busy, −2 no control |
+| `0x10` | TRACK (4.4+) | i16 goal[6] (0.01°), u16 vmax (0.1 °/s, at most 90 °/s) | ACK only if refused: −1 busy, −2 no control, −10−j goal of joint j outside the limits. See [TRACK](#track-live-mode). |
 
 ### MOVE_TO
 
@@ -108,6 +109,34 @@ JOG sets a joint velocity. The ATOM moves the goal positions at that velocity:
 
 Frame 0 is the joint space. Other frames (end-effector jogging) are for a later version.
 
+### TRACK (Live mode)
+
+TRACK (firmware 4.4+) sets a goal pose. The ATOM moves each joint to its goal at up to
+`vmax` and the joint's acceleration limit (400 °/s² on J1–J3, 2000 °/s² on J4–J6, as
+MOVE_TO), and brakes to stop exactly on it. A new TRACK changes the goal at once. The
+Control page's Live mode sends the fader goals with TRACK.
+
+1. **Deadman:** send TRACK again at least every 200 ms (the page sends it every 50 ms
+   and at once when a goal changes). After 200 ms without TRACK, the joints brake to
+   zero at their acceleration limits and the ATOM holds the pose.
+2. **Limits:** `vmax` is at most 90 °/s (the MOVE_TO limit). Goals must be 2° inside
+   the [joint limits](#joint-limits); a joint never passes that margin, also when its
+   goal jumps back.
+3. **Stop:** STOP, HOLD (from any client) and a lost connection brake the joints to
+   zero.
+4. **Following error:** if a joint's measured position is too far from its goal
+   position, the ATOM holds and goes to state error, and sends DONE (result 1,
+   tracking error, with the joint and its error in steps). The limit is 20°, plus
+   0.15 s × the joint's recent peak speed in TRACK (the peak decays over 0.3 s, so a
+   fast reversal keeps it; about 33° at 90 °/s): at speed the servos lag by about
+   0.11 s, and up to twice that in fast reversals with the integral gain on J1–J3. JOG
+   uses 20° and also sends this DONE (4.4+). On 2026-10-05 a finger that blocked J4
+   stopped the arm with this error (20–34°) after about 0.5 s, five times.
+
+The motion runs on the ATOM at 500 Hz, so WiFi delays do not change the path. Before
+4.4, Live mode sent JOG velocities from the page (at most 30 °/s and 200 °/s², with a
+slow approach to the goal).
+
 ## State in the STREAM packet (4.2 additions)
 
 Firmware 4.2 adds one byte at the end of STREAM (74 bytes). Clients that read only
@@ -129,6 +158,7 @@ The controller state byte gets two new values:
 | 5 | OTA update |
 | 6 | moving (MOVE_TO) — new |
 | 7 | jogging — new |
+| 8 | tracking (TRACK, 4.4+) |
 
 ## Units
 

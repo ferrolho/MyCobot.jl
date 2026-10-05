@@ -14,6 +14,22 @@ UDP port 5005 shows it with the git commit of the build, for example
 `atom_controller v4.0.0 (bff4529)`. Each version has a git tag
 `atom-controller-vX.Y.Z` (local until the repository is pushed).
 
+## 4.4.0 — 2026-10-05
+
+- **TRACK** (`0x10`): the client sends a goal pose and a speed cap (at most 90 °/s).
+  The ATOM moves each joint there at its acceleration limit (400 or 2000 °/s², as
+  MOVE_TO) and brakes to stop exactly on the goal (`motion::track_step`, with C++
+  tests). 200 ms deadman; STOP and HOLD brake the joints. New state 8, **tracking**
+  (LED as jogging).
+- The following-error limit in TRACK grows with the joint's recent peak speed (it
+  decays over 0.3 s): 20° + 0.15 s × speed. With a fixed 20°, fast fader swings at 90 °/s stopped the arm (J1 overshot to
+  105 °/s and lagged by more than 20°). JOG and TRACK report a stop for a following
+  error with DONE (result 1, the joint and its error). See [TRACK](/mycobot-280-lab/comms/websocket-api/#track-live-mode).
+- Why: the Control page's Live mode sent JOG velocities from the browser: at most
+  30 °/s and 200 °/s², with a slow approach (2.5 × the error, about 1.5 s for the last
+  degrees). Live mode now uses TRACK: J1 moves 120° in 1.6 s instead of more than 4 s,
+  and 10° in under 0.4 s (host tests).
+
 ## 4.3.1 — 2026-10-05
 
 - **Fix:** a MOVE_TO from a WebSocket client sends no TELEM. Over TCP, the 500 Hz

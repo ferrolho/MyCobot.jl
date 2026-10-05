@@ -5,7 +5,7 @@ develop the Control page without the robot. Docs: website/src/content/docs/comms
     python3 tools/atom_sim.py [--host 127.0.0.1] [--port 8281] [--recording RECORDING.csv]
 
 The arm is simulated: each joint follows its goal with a 0.12 s lag and a 90 °/s speed limit.
-MOVE_TO, JOG (with the 200 ms deadman), CONTROL, SUBSCRIBE/STREAM, HOLD, STOP, PING, STATE,
+MOVE_TO, JOG and TRACK (with the 200 ms deadman), CONTROL, SUBSCRIBE/STREAM, HOLD, STOP, PING, STATE,
 REG_READ and REG_WRITE work as specified. PLAY and PLAY_SIGNAL play the recording (if given) as
 500 Hz telemetry with tools/atom_replay.py, and the simulated arm follows it.
 Needs: pip install websockets numpy
@@ -25,12 +25,12 @@ from websockets.exceptions import ConnectionClosed
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import atom_replay  # noqa: E402
 
-VERSION = (4, 2, 0)
+VERSION = (4, 4, 0)
 SIGN = (-1, -1, 1, -1, -1, -1)
 STEPS_PER_DEG = 4096 / 360
 LIMITS = (165, 140, 150, 150, 160, 180)   # degrees, from the URDF
-BOOTING, HOLDING, READY, PLAYING, ERROR, OTA, MOVING, JOGGING = range(8)
-STATE_NAMES = ("booting", "holding", "ready", "playing", "error", "ota", "moving", "jogging")
+BOOTING, HOLDING, READY, PLAYING, ERROR, OTA, MOVING, JOGGING, TRACKING = range(9)
+STATE_NAMES = ("booting", "holding", "ready", "playing", "error", "ota", "moving", "jogging", "tracking")
 
 DT = 0.002            # simulation step (500 Hz, as the firmware's control loop)
 TAU = 0.12            # servo lag (s)
@@ -48,6 +48,29 @@ MAX_SUBS = 8
 
 def pos_raw(j, deg):
     return int(min(4095, max(0, round(2048 + SIGN[j] * deg * STEPS_PER_DEG))))
+
+
+def track_step(q, v, goal, vmax, stop):
+    """One TRACK step, as motion::track_step in the firmware (motion.h): to the goal at up to vmax
+    and MOVE_AMAX, braking to stop on it; with stop, brake to zero."""
+    vmax = max(0.0, min(MOVE_VMAX, vmax))
+    for j in range(6):
+        a = MOVE_AMAX[j]
+        dv = a * DT
+        stoppable = lambda d: 0.0 if d <= 0 else dv * (math.sqrt(0.25 + 2 * d / (a * DT * DT)) - 0.5)
+        lim = LIMITS[j] - JOG_MARGIN
+        g = max(-lim, min(lim, goal[j]))
+        e = g - q[j]
+        t = 0.0 if stop else math.copysign(min(vmax, stoppable(abs(e))), e)
+        t = max(-stoppable(lim + q[j]), min(stoppable(lim - q[j]), t))
+        v0 = v[j]
+        v[j] += max(-dv, min(dv, t - v[j]))
+        qn = q[j] + v[j] * DT
+        if not stop and e != 0 and (g - qn) * e <= 0 and abs(v0) <= 1.5 * dv:
+            qn, v[j] = g, 0.0
+        if abs(qn) > lim:
+            v[j], qn = (math.copysign(lim, qn) - q[j]) / DT, math.copysign(lim, qn)
+        q[j] = qn
 
 
 def minjerk(x):
@@ -74,6 +97,8 @@ class Sim:
         self.jog_v = [0.0] * 6        # current jog velocity (ramped)
         self.jog_cmd = [0.0] * 6      # requested jog velocity
         self.jog_last = 0.0
+        self.track_goal = [0.0] * 6   # TRACK (4.4): goal pose and speed cap
+        self.track_vmax = 0.0
         self.state = HOLDING
         self.plan_samples = 0
         self.gains = {j: [32, 4, 16] if j <= 3 else [32, 8, 0] for j in range(1, 8)}
@@ -147,6 +172,11 @@ class Sim:
                 self.goal[j] = g
             if not any(self.jog_cmd) and not any(self.jog_v):
                 self.state = HOLDING
+        if self.state == TRACKING:
+            stop = now - self.jog_last > DEADMAN
+            track_step(self.goal, self.jog_v, self.track_goal, self.track_vmax, stop)
+            if stop and not any(self.jog_v):
+                self.state = HOLDING
         if self.state != PLAYING:
             for j in range(6):
                 v = max(-SERVO_VMAX, min(SERVO_VMAX, (self.goal[j] - self.q[j]) / TAU))
@@ -190,13 +220,13 @@ class Sim:
     # --- Commands ------------------------------------------------------------------------------
 
     def moving(self):
-        return self.state in (PLAYING, MOVING, JOGGING)
+        return self.state in (PLAYING, MOVING, JOGGING, TRACKING)
 
     def handle(self, c, b):
         now = time.monotonic()
         c.last_msg = now
         code = b[0]
-        needs_control = code in (0x04, 0x05, 0x06, 0x07, 0x0A, 0x0B, 0x0E, 0x0F)
+        needs_control = code in (0x04, 0x05, 0x06, 0x07, 0x0A, 0x0B, 0x0E, 0x0F, 0x10)
         if needs_control and self.controller is None:
             self.controller = c       # nobody has control: the command takes it (as CONTROL 1)
         if needs_control and self.controller is not c:
@@ -298,6 +328,19 @@ class Sim:
             if any(self.jog_cmd) and self.state != JOGGING:
                 self.goal = list(self.q)
                 self.state = JOGGING
+        elif code == 0x10 and len(b) >= 15:   # TRACK (4.4): goal pose (0.01°) and speed cap (0.1°/s)
+            goal = [v / 100 for v in struct.unpack_from("<6h", b, 1)]
+            vmax = struct.unpack_from("<H", b, 13)[0] / 10
+            bad = [j for j in range(6) if abs(goal[j]) > LIMITS[j] - JOG_MARGIN]
+            if bad:
+                return self.ack(c, 0x10, -10 - (bad[0] + 1))
+            if self.state not in (HOLDING, READY, TRACKING):
+                return self.ack(c, 0x10, -1)
+            self.track_goal, self.track_vmax, self.jog_last = goal, vmax, now
+            if self.state != TRACKING:
+                self.goal = list(self.q)
+                self.jog_v = [0.0] * 6
+                self.state = TRACKING
 
     async def play(self, c):
         rec, seq, result = self.rec, 0, 0

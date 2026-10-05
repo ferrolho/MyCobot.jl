@@ -57,3 +57,4 @@ Read this page before you write code that talks to the servos.
 | # | Problem | Rule |
 | --- | --- | --- |
 | 28 | A power cycle resets servo goals and speeds, and the arm can sag while the power is off. | Support the arm. Expect a new start pose. |
+| 29 | An OTA update failed once without a reason, and then every retry got "Authentication Failed" with the correct password (2026-10-05). | Do not retry many times. Turn the arm off and on (the ATOM restarts), then update again. The cause is not known. |

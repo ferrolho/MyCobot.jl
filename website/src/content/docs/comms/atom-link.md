@@ -32,6 +32,7 @@ From 4.2 the same messages also go over a WebSocket (`ws://<ATOM>/ws`), and comm
 | `0x0D` | CONTROL (4.2+) | u8 action: 0 release, 1 take, 2 take over | ACK: 0, −2 another client has control, −1 robot moving |
 | `0x0E` | MOVE_TO (4.2+) | i16 goal[6] (0.01°), u16 duration (ms, 0 = shortest) | ACK, TELEM, DONE |
 | `0x0F` | JOG (4.2+) | u8 frame (0 = joints), i16 velocity[6] (0.1°/s); 200 ms deadman | ACK only if refused |
+| `0x10` | TRACK (4.4+) | i16 goal[6] (0.01°), u16 vmax (0.1°/s, ≤ 90 °/s); 200 ms deadman | ACK only if refused |
 | `0x0C` | SUBSCRIBE (4.1+) | u16 rate (Hz, 1–100; 0 = stop), renew at least once a second | `0x88` STREAM packets to the sender; see [Clients](/mycobot-280-lab/comms/clients/#firmware-41) |
 
 REG_READ and REG_WRITE are refused while a plan plays. The ATOM reads every write

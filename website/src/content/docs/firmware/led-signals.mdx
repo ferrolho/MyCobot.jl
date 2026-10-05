@@ -29,7 +29,7 @@ bottom row is a progress bar.
   <LedMatrix fill={AMBER} label="All pixels yellow" caption="READY" />
   <LedMatrix rows={[CYAN, CYAN, CYAN, CYAN, null]} animate={{ type: 'progress', row: 4, color: WHITE }} label="Top four rows cyan; the bottom row fills from left to right with white" caption="PLAYING" />
   <LedMatrix rows={[CYAN, CYAN, CYAN, CYAN, null]} animate={{ type: 'progress', row: 4, color: WHITE }} label="Top four rows cyan; the bottom row fills from left to right with white" caption="MOVING (4.2+)" />
-  <LedMatrix fill={LAVENDER} label="All pixels pale blue" caption="JOGGING (4.2+)" />
+  <LedMatrix fill={LAVENDER} label="All pixels pale blue" caption="JOGGING, TRACKING" />
   <LedMatrix fill={RED} label="All pixels red" caption="ERROR" />
   <LedMatrix fill={MAGENTA} label="All pixels magenta" caption="OTA" />
   <LedMatrix fill={WHITE} animate={{ type: 'blink' }} label="All pixels blink white" caption="NO WIFI (4.3+)" />
@@ -42,7 +42,7 @@ bottom row is a progress bar.
 | Yellow | `READY` | All servos hold the pose. A valid plan is loaded. | Send `PLAY`. |
 | Cyan, white bottom row | `PLAYING` | A plan plays. Each white pixel in the bottom row is one fifth of the run. | Keep clear of the arm. |
 | Cyan, white bottom row | `MOVING` (4.2+) | A MOVE_TO runs. The bottom row shows its progress. | Keep clear of the arm. |
-| Pale blue | `JOGGING` (4.2+) | A client jogs the joints. The arm stops by itself 200 ms after the client stops sending. | Keep clear of the arm. |
+| Pale blue | `JOGGING` (4.2+), `TRACKING` (4.4+) | A client jogs the joints, or moves them in Live mode. The arm stops by itself 200 ms after the client stops sending. | Keep clear of the arm. |
 | Red | `ERROR` | A servo did not reply, or a joint went too far from the plan. The arm holds where it is. | Find the cause. Then press the button to hold and clear the error. |
 | Magenta | `OTA` | A firmware update is in progress. | Do not disconnect the power. |
 | Blinks white (4.3+) | any | No WiFi network is saved. The matrix shows white and the state colour in turn, once a second. | Set up WiFi on the [Setup page](/mycobot-280-lab/start/setup/). |

@@ -1,4 +1,4 @@
-// Property tests for firmware/atom_controller/motion.h (MOVE_TO and JOG, firmware 4.2+).
+// Property tests for firmware/atom_controller/motion.h (MOVE_TO and JOG, firmware 4.2+; TRACK, 4.4+).
 //   c++ -std=c++17 -O1 -I firmware/atom_controller tools/firmware-tests/test_motion_check.cpp -o t && ./t
 #include <stdio.h>
 #include <math.h>
@@ -54,6 +54,53 @@ int main() {
     while (!motion::jog_stopped(d) && n < 1000) { motion::jog_step(d, zero, 0.002f); n++; }
     CHECK(motion::jog_stopped(d) && fabsf(n * 0.002f - lim::JOG_VMAX / lim::JOG_AMAX) < 0.01f, "deadman stop in 0.15 s (%.3f)", n * 0.002f);
     printf("ok deadman: stops in %.3f s\n", n * 0.002f);
+
+    // TRACK: to a fixed goal at full speed: speed and acceleration within the limits, no overshoot,
+    // exact arrival, and faster than JOG. J1-J3 accelerate at 400, J4-J6 at 2000 deg/s².
+    {
+        const float dt = 0.002f;
+        motion::Jog t = {};
+        float g[6] = {120, -60, 90, 140, -100, 170};
+        float vp[6] = {0}, ap[6] = {0}, pv[6] = {0}, over = 0, arrive[6];
+        for (int j = 0; j < 6; j++) arrive[j] = -1;
+        for (int i = 1; i <= 2000; i++) {             // 4 s
+            motion::track_step(t, g, 90, false, dt);
+            for (int j = 0; j < 6; j++) {
+                vp[j] = fmaxf(vp[j], fabsf(t.v[j]));
+                ap[j] = fmaxf(ap[j], fabsf(t.v[j] - pv[j]) / dt); pv[j] = t.v[j];
+                float gl = fmaxf(-(lim::MODEL_LIMIT_DEG[j] - lim::JOG_MARGIN), fminf(lim::MODEL_LIMIT_DEG[j] - lim::JOG_MARGIN, g[j]));
+                over = fmaxf(over, (t.q[j] - gl) * (gl > 0 ? 1 : -1));
+                if (arrive[j] < 0 && t.q[j] == gl && t.v[j] == 0) arrive[j] = i * dt;
+                CHECK(fabsf(t.q[j]) <= lim::MODEL_LIMIT_DEG[j] - lim::JOG_MARGIN + 1e-4f, "track J%d inside its limit", j + 1);
+            }
+        }
+        for (int j = 0; j < 6; j++) {
+            CHECK(vp[j] <= 90 + 1e-3f, "track J%d speed %.1f within 90", j + 1, vp[j]);
+            CHECK(ap[j] <= lim::AMAX_DPS2[j] * 1.5f + 1, "track J%d acceleration %.0f within %.0f (+50 %% for the arrival step)", j + 1, ap[j], lim::AMAX_DPS2[j]);
+            CHECK(arrive[j] > 0, "track J%d arrives exactly and stops", j + 1);
+        }
+        CHECK(over <= 0.01f, "track never passes a fixed goal by more than 0.01 deg, far below one servo step of 0.088 deg (%.4f)", over);
+        printf("ok track: J1 120 deg in %.2f s (JOG at 30 deg/s: >4 s), J6 170 deg in %.2f s, peak %.1f deg/s\n", arrive[0], arrive[5], vp[0]);
+
+        // Arrival without a creep: the last 0.3 deg take a few steps, not a 1.5 s tail.
+        motion::Jog c = {}; float g3[6] = {10, 0, 0, 0, 0, 0}; int steps = 0;
+        while (!(c.q[0] == 10 && c.v[0] == 0) && steps < 5000) { motion::track_step(c, g3, 90, false, dt); steps++; }
+        CHECK(steps * dt < 0.4f, "10 deg on J1 in %.3f s", steps * dt);
+
+        // A goal that reverses at full speed: the joint brakes, comes back, never passes its limit.
+        motion::Jog r = {}; float far[6] = {200, 0, 0, 0, 0, 0}, back[6] = {-200, 0, 0, 0, 0, 0};
+        for (int i = 0; i < 1500; i++) motion::track_step(r, far, 90, false, dt);
+        for (int i = 0; i < 4000; i++) { motion::track_step(r, back, 90, false, dt); CHECK(fabsf(r.q[0]) <= 163 + 1e-4f, "reversal inside the limit"); }
+        CHECK(r.q[0] == -163 && r.v[0] == 0, "reversal ends on the far limit (%.2f)", r.q[0]);
+
+        // Stop (deadman, STOP, HOLD) from 90 deg/s: brakes at AMAX to zero.
+        motion::Jog st = {}; float g4[6] = {150, 0, 0, 150, 0, 0};
+        for (int i = 0; i < 300; i++) motion::track_step(st, g4, 90, false, dt);
+        float v1 = st.v[0], v4 = st.v[3]; int k = 0;
+        while (!motion::jog_stopped(st) && k < 2000) { motion::track_step(st, g4, 90, true, dt); k++; }
+        CHECK(motion::jog_stopped(st) && fabsf(k * dt - v1 / lim::AMAX_DPS2[0]) < 0.01f, "stop J1 from %.0f deg/s in %.3f s", v1, k * dt);
+        printf("ok track stop: J1 from %.0f deg/s and J4 from %.0f deg/s stop in %.3f s; reversal and creep ok\n", v1, v4, k * dt);
+    }
 
     printf(failures ? "%d FAILURES\n" : "all checks passed\n", failures);
     return failures ? 1 : 0;

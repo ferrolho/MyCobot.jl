@@ -17,6 +17,10 @@
 //   0x0D CONTROL u8 action (0 release, 1 take, 2 take over) -> ACK 0 / -2 another client / -1 robot moving
 //   0x0E MOVE_TO i16 goal[6] (0.01°), u16 duration_ms (0 = shortest) -> ACK, TELEM (UDP only, 4.3.1+), DONE; state 6 moving
 //   0x0F JOG u8 frame (0 = joints), i16 velocity[6] (0.1°/s); ACK only if refused; 200 ms deadman; state 7
+//   0x10 TRACK i16 goal[6] (0.01°), u16 vmax (0.1°/s, ≤ 90°/s) (4.4+): the joints go to the goal at up to vmax
+//        and their acceleration limits and stop on it (the Control page's Live mode); send it again at least
+//        every 200 ms (deadman: brake and hold). ACK only if refused (-1 busy, -10-j goal of joint j outside); state 8
+//        JOG and TRACK stopped by a following error (20°; in TRACK 20° + 0.15 s × recent peak speed) -> DONE result 1, joint, error
 //   STREAM (4.2+) has one more byte at offset 73: control 0 nobody, 1 you, 2 another client (74 bytes).
 // Full API: website/src/content/docs/comms/websocket-api.md.
 //
@@ -104,8 +108,8 @@
 // PATCH for fixes. PING reports MAJOR as its u16 version, then MINOR and PATCH (3.1+).
 // History: docs (firmware/changelog). FW_GIT is set by the build (git describe).
 #define FW_MAJOR 4
-#define FW_MINOR 3
-#define FW_PATCH 1
+#define FW_MINOR 4
+#define FW_PATCH 0
 #define FW_VERSION FW_MAJOR
 #ifndef FW_GIT
 #define FW_GIT "unknown"
@@ -119,7 +123,7 @@
 #define REPLY_PORT 5007
 #define LOG_PORT   5005
 
-enum State : uint8_t { BOOTING = 0, HOLDING = 1, READY = 2, PLAYING = 3, ERROR_STATE = 4, OTA = 5, MOVING = 6, JOGGING = 7 };
+enum State : uint8_t { BOOTING = 0, HOLDING = 1, READY = 2, PLAYING = 3, ERROR_STATE = 4, OTA = 5, MOVING = 6, JOGGING = 7, TRACKING = 8 };
 volatile State state = BOOTING;
 
 Adafruit_NeoPixel matrix(25, LED_PIN, NEO_GRB + NEO_KHZ800);
@@ -170,7 +174,7 @@ Sample ring[RING];
 volatile uint32_t ring_head = 0, ring_tail = 0, telem_dropped = 0;
 
 // ---- Requests from the network task to the control loop ---------------------------------------
-enum Request : uint8_t { REQ_NONE, REQ_STATE, REQ_HOLD, REQ_PLAY, REQ_REG, REQ_SIGNAL, REQ_MOVE, REQ_JOG };
+enum Request : uint8_t { REQ_NONE, REQ_STATE, REQ_HOLD, REQ_PLAY, REQ_REG, REQ_SIGNAL, REQ_MOVE, REQ_JOG, REQ_TRACK };
 volatile Request request = REQ_NONE;
 volatile bool stop_requested = false;
 struct PlayParams { uint16_t rate, speed_cap, max_err, start_tol; } play_params;
@@ -282,7 +286,7 @@ void subscribe(const Addr& a, uint16_t rate) {
 // ---- Control (4.2+): one client at a time may move the robot or write registers ---------------------
 Addr ctrl;                 // the client with control (network task only)
 uint32_t ctrl_ms = 0;      // last message from it
-inline bool busy() { return state == PLAYING || state == MOVING || state == JOGGING; }
+inline bool busy() { return state == PLAYING || state == MOVING || state == JOGGING || state == TRACKING; }
 inline bool is_ctrl(const Addr& a) { return same(a, ctrl); }
 void control_tick() {      // control ends 2 s after the holder's last message, but not during its run
     if (valid(ctrl) && !busy() && millis() - ctrl_ms > 2000) ctrl = Addr();
@@ -290,7 +294,8 @@ void control_tick() {      // control ends 2 s after the holder's last message, 
 
 // MOVE_TO and JOG requests (network task -> control loop)
 float move_goal[N_SERVOS]; uint16_t move_dur_ms = 0;
-float jog_target[N_SERVOS]; volatile uint32_t jog_ms = 0;
+float jog_target[N_SERVOS]; volatile uint32_t jog_ms = 0;   // JOG velocities, or TRACK goal (jog_vmax)
+float jog_vmax = 0;                                           // TRACK speed cap (°/s)
 portMUX_TYPE jog_mux = portMUX_INITIALIZER_UNLOCKED;
 
 void serve_stream() {                              // network task
@@ -323,7 +328,7 @@ void serve_stream() {                              // network task
 }
 
 bool needs_control(uint8_t c) {
-    return c == 0x04 || c == 0x05 || c == 0x06 || c == 0x07 || c == 0x0A || c == 0x0B || c == 0x0E || c == 0x0F;
+    return c == 0x04 || c == 0x05 || c == 0x06 || c == 0x07 || c == 0x0A || c == 0x0B || c == 0x0E || c == 0x0F || c == 0x10;
 }
 
 void handle_command(const uint8_t* b, int n) {
@@ -377,6 +382,23 @@ void handle_command(const uint8_t* b, int n) {
             req_from = play_to = cmd_from; telem_on = true;
             request = REQ_JOG;
         } else ack(0x0F, -1);
+        break;
+    }
+    case 0x10: {   // TRACK i16 goal[6] (0.01°), u16 vmax (0.1°/s). ACK only if refused.
+        if (n != 15) { ack(0x10, -1); break; }
+        float g[N_SERVOS];
+        for (int j = 0; j < N_SERVOS; j++) { int16_t x; memcpy(&x, b + 1 + 2 * j, 2); g[j] = x * 0.01f; }
+        uint16_t vm; memcpy(&vm, b + 13, 2);
+        int err = motion::move_validate(g);
+        if (err) { ack(0x10, -10 - err); break; }
+        if (state == TRACKING) {
+            portENTER_CRITICAL(&jog_mux); memcpy(jog_target, g, sizeof(g)); jog_vmax = vm * 0.1f; jog_ms = millis(); portEXIT_CRITICAL(&jog_mux);
+        } else if ((state == HOLDING || state == READY) && request == REQ_NONE) {
+            portENTER_CRITICAL(&jog_mux); memcpy(jog_target, g, sizeof(g)); jog_vmax = vm * 0.1f; jog_ms = millis(); portEXIT_CRITICAL(&jog_mux);
+            stop_requested = false;
+            req_from = play_to = cmd_from; telem_on = true;
+            request = REQ_TRACK;
+        } else ack(0x10, -1);
         break;
     }
     case 0x01: {   // PING
@@ -510,7 +532,7 @@ void improv_send_current_state() {
     else improv_send_state(improv::READY);
 }
 
-bool robot_busy() { return state == PLAYING || state == MOVING || state == JOGGING || state == OTA; }
+bool robot_busy() { return state == PLAYING || state == MOVING || state == JOGGING || state == TRACKING || state == OTA; }
 
 void improv_handle(const uint8_t* d, size_t len) {
     int command = improv::rpc_command(d, len);
@@ -609,6 +631,7 @@ void update_led() {
     case OTA:     show(40, 0, 40); break;
     case MOVING:  show(0, 30, 30, play_progress_permille); break;
     case JOGGING: show(20, 20, 40); break;
+    case TRACKING: show(20, 20, 40); break;
     }
 }
 
@@ -621,7 +644,7 @@ void ws_event(uint8_t num, WStype_t type, uint8_t* payload, size_t len) {   // n
         for (int i = 0; i < MAX_SUBS; i++) if (subs[i].rate && subs[i].a.ws == num) subs[i].rate = 0;
         if (ctrl.ws == num) {
             ctrl = Addr();
-            if (state == JOGGING) { portENTER_CRITICAL(&jog_mux); jog_ms = 0; portEXIT_CRITICAL(&jog_mux); }   // deadman now
+            if (state == JOGGING || state == TRACKING) { portENTER_CRITICAL(&jog_mux); jog_ms = 0; portEXIT_CRITICAL(&jog_mux); }   // deadman now
         }
     }
 }
@@ -874,34 +897,55 @@ void setup() {
 // JOG (4.2+): the client streams joint velocities; the goals integrate them at 500 Hz within the
 // speed, acceleration and joint limits (motion.h). No JOG for 200 ms (deadman), STOP, HOLD or a
 // zero velocity: ramp down at the acceleration limit, then hold. The state stream shows the motion.
-void jog_run() {
+// TRACK (4.4+, track = true): the client streams a goal pose; the joints go there (motion::track_step)
+// and stay there while TRACK keeps coming. Deadman, STOP or HOLD: brake to zero, then hold.
+void jog_run(bool track = false) {
     uint16_t pos[N_SERVOS], spd[N_SERVOS], load[N_SERVOS], cmd[N_SERVOS];
-    if (!read_state(pos, spd, load)) { ack_from_control(0x0F, -4); return; }
+    if (!read_state(pos, spd, load)) { ack_from_control(track ? 0x10 : 0x0F, -4); return; }
     uint16_t caps[N_SERVOS]; for (int j = 0; j < N_SERVOS; j++) caps[j] = 2000;
     if (!sync_write_u16_verified(REG_GOAL_POSITION, pos) || !sync_write_u8_verified(REG_ACCELERATION, 0) ||
         !sync_write_u16_verified(REG_GOAL_SPEED, caps)) { hold_pose(); state = ERROR_STATE; return; }
     motion::Jog js = {};
     for (int j = 0; j < N_SERVOS; j++) js.q[j] = pos_to_deg(j, pos[j]);
-    state = JOGGING;
+    state = track ? TRACKING : JOGGING;
     const float dt = 0.002f;
     const int max_err = 227;   // 20° in steps: abort and hold
     uint32_t next = micros();
     bool fault = false;
+    uint8_t fault_joint = 0; int16_t fault_err = 0;
+    float vpeak[N_SERVOS] = {0};
+    const float vdecay = expf(-dt / 0.3f);
     for (;;) {
-        float target[N_SERVOS];
+        float target[N_SERVOS], vmax;
         portENTER_CRITICAL(&jog_mux);
         memcpy(target, jog_target, sizeof(target));
+        vmax = jog_vmax;
         uint32_t last = jog_ms;
         portEXIT_CRITICAL(&jog_mux);
         bool any = false;
-        if (stop_requested || millis() - last > (uint32_t)(lim::JOG_DEADMAN_S * 1000)) memset(target, 0, sizeof(target));
-        for (int j = 0; j < N_SERVOS; j++) any |= target[j] != 0;
-        motion::jog_step(js, target, dt);
+        const bool stop = stop_requested || millis() - last > (uint32_t)(lim::JOG_DEADMAN_S * 1000);
+        if (track) {
+            motion::track_step(js, target, vmax, stop, dt);
+            any = !stop;
+        } else {
+            if (stop) memset(target, 0, sizeof(target));
+            for (int j = 0; j < N_SERVOS; j++) any |= target[j] != 0;
+            motion::jog_step(js, target, dt);
+        }
         for (int j = 0; j < N_SERVOS; j++) cmd[j] = deg_to_pos(j, js.q[j]);
         sync_write_u16(REG_GOAL_POSITION, cmd);
         bool ok = read_state(pos, spd, load);
         publish_state(ok, pos, spd, load);
-        if (ok) for (int j = 0; j < N_SERVOS; j++) if (abs((int)pos[j] - (int)cmd[j]) > max_err) fault = true;
+        // TRACK at speed: the servos lag their goal by about 0.11 s, and up to twice that with the integral
+        // gain on J1-J3 in fast reversals (2026-10-05: J1 at 90 °/s went past 20°). So in TRACK the allowed
+        // following error grows with the recent peak speed (it decays over 0.3 s, so a reversal through zero
+        // speed keeps it): 20° + 0.15 s × speed, about 33° at 90 °/s. A blocked joint still stops the arm.
+        for (int j = 0; j < N_SERVOS; j++) vpeak[j] = fmaxf(fabsf(js.v[j]), vpeak[j] * vdecay);
+        if (ok) for (int j = 0; j < N_SERVOS; j++) {
+            const int allowed = track ? max_err + (int)(0.15f * vpeak[j] * (4096.0f / 360.0f)) : max_err;
+            const int e = (int)pos[j] - (int)cmd[j];
+            if (abs(e) > allowed && !fault) { fault = true; fault_joint = j + 1; fault_err = e; }
+        }
         if (fault) break;
         if (!any && motion::jog_stopped(js)) break;
         next += 2000;
@@ -911,6 +955,7 @@ void jog_run() {
     hold_pose();
     uint16_t zero[N_SERVOS] = {0};
     sync_write_u16_verified(REG_GOAL_SPEED, zero);
+    if (fault) finish(1, 0, 0, 0, fault_joint, fault_err);   // DONE "tracking error" to the client (4.4+)
     state = fault ? ERROR_STATE : (plan_valid ? READY : HOLDING);
 }
 
@@ -969,6 +1014,8 @@ void loop() {
             play(2);
         } else if (r == REQ_JOG) {
             jog_run();
+        } else if (r == REQ_TRACK) {
+            jog_run(true);
         } else if (r == REQ_REG) {
             uint8_t id = reg_req[1], addr = reg_req[2], len = reg_req[3];
             if (reg_req[0] == 0x09) {
