@@ -40,36 +40,20 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 
     <section class="card step" id="prepare" aria-labelledby="prepare-title">
       <h2 id="prepare-title"><span class="n" aria-hidden="true">1</span>Prepare</h2>
-      <div class="split">
-        <ol class="do">
-          <li><strong>Turn off</strong> the 12 V supply of the arm.</li>
-          <li><strong>Remove the ATOM</strong> (the small square board with the LED matrix) from the top of the arm. Recommended: it can also stay in the arm while the 12 V supply is off.</li>
-          <li>Connect the ATOM to the computer with a <strong>USB-C data cable</strong>. Some cables can only charge.</li>
-        </ol>
-        <svg class="diagram prep" viewBox="0 0 440 210" role="img" aria-labelledby="prep-desc">
-          <desc id="prep-desc">The ATOM is lifted off the top of the arm and connected to a computer with a USB-C cable. The arm's 12 V supply is off.</desc>
-          <rect class="box" x="30" y="168" width="110" height="22" rx="4" />
-          <rect class="box" x="70" y="96" width="30" height="72" rx="4" />
-          <rect class="box" x="62" y="74" width="46" height="22" rx="4" />
-          <text class="small" x="30" y="206">12 V off</text>
-          <rect class="accent" x="66" y="12" width="38" height="38" rx="5" />
-          <text class="small" x="18" y="36">ATOM</text>
-          <path class="line" d="M85 70 V56" />
-          <path class="line" d="M79 62 L85 56 L91 62" />
-          <path class="wifi" d="M104 31 C 200 31, 300 22, 300 60" />
-          <text class="small" x="182" y="20">USB-C</text>
-          <rect class="box" x="250" y="60" width="140" height="92" rx="6" />
-          <rect class="box" x="230" y="152" width="180" height="14" rx="4" />
-          <text x="282" y="112">Computer</text>
-          <text class="small" x="262" y="132">Chrome or Edge</text>
-        </svg>
-      </div>
+      <ol class="do">
+        <li><strong>Turn off</strong> the arm (the 12 V supply). Do this before you connect the USB cable.</li>
+        <li>Connect the ATOM (the small square board with the LED matrix, on top of the arm) to the computer with a <strong>USB-C data cable</strong>. Some cables can only charge.</li>
+      </ol>
+      <p class="small">
+        If the installer does not find the ATOM, or the installation fails: disconnect the cable, remove the ATOM from the
+        arm, and connect it again.
+      </p>
       <details>
-        <summary>Why remove the ATOM, and why turn off the 12 V supply?</summary>
+        <summary>Why turn off the arm first?</summary>
         <p>
-          In the arm, the computer does not see the ATOM if you connect the cable while the 12 V supply is on. With the 12 V
-          supply off, the installation works in the arm (tested on 2026-10-05), but the ATOM's USB port then also supplies
-          the servos (4.4–5.4 V). Out of the arm, nothing else gets power from the computer.
+          If the arm is on when you connect the cable, the computer does not see the ATOM. With the arm off, the ATOM's USB
+          port also supplies the servos (4.4–5.4 V). This is normal (tested on 2026-10-05). Out of the arm, only the ATOM
+          gets power from the computer.
         </p>
       </details>
       <p class="muted small">
@@ -123,7 +107,7 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
     <section class="card step" id="find" aria-labelledby="find-title">
       <h2 id="find-title"><span class="n" aria-hidden="true">4</span>Find the robot</h2>
       <ol class="do">
-        <li>Disconnect the USB cable. Put the ATOM back on the arm.</li>
+        <li>Disconnect the USB cable. If you removed the ATOM, put it back on the arm.</li>
         <li>Turn on the 12 V supply. The LED matrix shows blue, then green: the arm holds its pose.</li>
         <li>Connect this computer to the same WiFi network. Click <strong>Search</strong>.</li>
       </ol>
@@ -224,8 +208,6 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 
   .setup ol.do { margin: 0; padding-inline-start: 1.3rem; display: grid; gap: 0.35rem; }
   .setup ol.do li { margin: 0; }
-  .setup .split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; align-items: center; }
-  .setup .diagram.prep { max-width: 26rem; margin: 0 auto; }
   .setup details summary { cursor: pointer; font-weight: 600; }
   .setup details p { margin-top: 0.4rem; }
 
@@ -262,6 +244,6 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 
   @media (max-width: 50rem) {
     .setup .overview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .setup .split, .setup .pair { grid-template-columns: minmax(0, 1fr); }
+    .setup .pair { grid-template-columns: minmax(0, 1fr); }
   }
 </style>

@@ -59,23 +59,22 @@ arduino-cli compile --fqbn "$FQBN" \
 
 ## First flash (USB)
 
-1. Turn off the 12 V supply of the arm.
-2. Remove the ATOM from the arm (recommended). You can also leave it in the arm;
-   see the table below.
-3. Connect the ATOM to the computer with a USB-C data cable.
-4. Flash:
+1. Turn off the arm (the 12 V supply). Do this before you connect the USB cable.
+2. Connect the ATOM to the computer with a USB-C data cable. The ATOM can stay on
+   the arm. If the upload fails, remove the ATOM from the arm (see the table below).
+3. Flash:
    ```bash
    arduino-cli upload -p /dev/cu.usbserial-A952DE0075 --fqbn "$FQBN" firmware/atom_controller
    ```
-5. Make sure that the output shows `Hash of data verified`.
-6. Disconnect the USB cable. Put the ATOM back in the arm.
+4. Make sure that the output shows `Hash of data verified`.
+5. Disconnect the USB cable. If you removed the ATOM, put it back on the arm.
 
 Use 115 200 baud. Higher speeds corrupt data on the ATOM's USB chip.
 
 | ATOM | USB | Result (checked on 2026-10-05) |
 | --- | --- | --- |
-| Out of the arm | Connected | Works. Nothing else gets power. **Recommended.** |
-| In the arm, 12 V off | Connected | Works, but the USB port also supplies the servos (4.4–5.4 V). |
+| Out of the arm | Connected | Works. Only the ATOM gets power. Use it if the upload fails in the arm. |
+| In the arm, 12 V off | Connected | Works (the usual way). The USB port also supplies the servos (4.4–5.4 V). |
 | In the arm, USB connected first, then 12 V on | Stays connected | Works. |
 | In the arm, 12 V on, then USB connected | No USB device | The computer does not see the ATOM. |
 

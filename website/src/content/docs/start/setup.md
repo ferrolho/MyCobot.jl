@@ -18,15 +18,17 @@ browser. Built on 2026-10-05 with firmware 4.3.0. **Not yet tested on the real A
 
 ## Procedure
 
-1. Turn off the 12 V supply. Remove the ATOM from the top of the arm
-   (recommended; it can also stay in the arm while the 12 V supply is off).
-2. Connect the ATOM to the computer with the USB-C cable.
+1. Turn off the arm (the 12 V supply). Do this before you connect the USB cable.
+2. Connect the ATOM to the computer with the USB-C cable. The ATOM stays on the
+   arm. If the installation fails, remove the ATOM from the arm and connect it
+   again.
 3. On the [Setup page](/mycobot-280-lab/setup/), click **Connect and install**.
    Select the port of the ATOM (FTDI `0403:6001`, for example "FT232R USB UART").
 4. Click **Install**. For the first installation, select **Erase**. Wait about
    2 minutes.
 5. When the installer asks, select the WiFi network and type the password.
-6. Disconnect the cable. Put the ATOM back on the arm. Turn on the 12 V supply.
+6. Disconnect the cable. If you removed the ATOM, put it back on the arm. Turn on
+   the 12 V supply.
    The LED matrix shows blue, then green.
 7. On the Setup page, click **Search**. Then click **Open Control**.
 
@@ -78,7 +80,7 @@ All signals: [LED matrix signals](/mycobot-280-lab/firmware/led-signals/).
 
 | Problem | Possible cause | Remedy |
 | --- | --- | --- |
-| The port is not in the list. | A charge-only cable. The ATOM is in the arm and the 12 V supply is on. | Use a data cable. Turn off the 12 V supply, or remove the ATOM from the arm. |
+| The port is not in the list. | A charge-only cable. The arm was on when you connected the cable. | Use a data cable. Disconnect the cable, turn off the arm, and connect the cable again. If the port is still not in the list, remove the ATOM from the arm. |
 | "Failed to initialize". | Another program uses the port. | Close myStudio, the Arduino IDE and serial monitors. Disconnect the cable, connect it again and try again. |
 | "Unable to connect" to WiFi. | Wrong password. A 5 GHz network. | Use a 2.4 GHz network. Type the password again. |
 | Search does not find `mycobot.local`. | Some Windows and Android versions and some networks do not resolve `.local` names. | Use the IP address from **Visit Device** or from the router. |
