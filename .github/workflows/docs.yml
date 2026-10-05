@@ -5,10 +5,14 @@ on:
     branches: [main]
     paths:
       - 'website/**'
+      - 'firmware/atom_controller/**'
+      - 'tools/build-public-firmware.sh'
       - '.github/workflows/docs.yml'
   pull_request:
     paths:
       - 'website/**'
+      - 'firmware/atom_controller/**'
+      - 'tools/build-public-firmware.sh'
       - '.github/workflows/docs.yml'
   # Redeploy without a new commit.
   workflow_dispatch:
@@ -24,7 +28,7 @@ jobs:
   build:
     name: Build the site
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     concurrency:
       group: docs-build-${{ github.ref }}
       cancel-in-progress: true
@@ -43,6 +47,31 @@ jobs:
       # If `npm ci` refuses the lockfile because npm 10 (Node 22) and npm 11 disagree about
       # optional platform dependencies, reconcile it with `npx npm@10 install` locally.
       - run: npm ci
+
+      # The Setup page installs the public controller firmware (no WiFi secrets, no OTA) from
+      # website/public/installer/. Same core and library versions as on the Raspberry Pi.
+      - uses: arduino/setup-arduino-cli@v2
+
+      - name: Cache the ESP32 core and the libraries
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.arduino15
+            ~/Arduino/libraries
+          key: arduino-esp32-3.3.10-neopixel-1.15.5-websockets-2.7.2
+
+      - name: Install the ESP32 core and the libraries
+        working-directory: .
+        env:
+          ESP32_INDEX: https://espressif.github.io/arduino-esp32/package_esp32_index.json
+        run: |
+          arduino-cli core update-index --additional-urls "$ESP32_INDEX"
+          arduino-cli core install esp32:esp32@3.3.10 --additional-urls "$ESP32_INDEX"
+          arduino-cli lib install "Adafruit NeoPixel@1.15.5" "WebSockets@2.7.2"
+
+      - name: Build the public firmware for the Setup page
+        working-directory: .
+        run: tools/build-public-firmware.sh
 
       # The build fails on broken internal links (starlight-links-validator).
       - name: Build
