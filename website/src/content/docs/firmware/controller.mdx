@@ -20,7 +20,7 @@ sends the telemetry to the laptop over WiFi.
 | Task | Core | Priority | Rate | Function |
 | --- | --- | --- | --- | --- |
 | Arduino `loop` | 1 | 1 | busy loop | Owns the servo bus. Power-up hold, requests, the play loop. |
-| `net_task` | 0 | 1 | every 1 ms | UDP commands, replies, telemetry, status log, OTA, LED matrix. |
+| `net_task` | 0 | 1 | every 1 ms | UDP commands, replies, telemetry, status log, OTA, Improv WiFi over USB (4.3+), LED matrix. |
 | `imu_task` | 0 | 2 | 500 Hz | Reads the MPU6886 and keeps the latest sample. |
 | ESP-IDF WiFi / TCP/IP | 0 | high | — | WiFi stack. WiFi power save is off for steady latency. |
 

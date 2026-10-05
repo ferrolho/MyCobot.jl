@@ -7,7 +7,9 @@ description: Open work, grouped by topic. Done items move to the results and his
 
 - [x] Confirm moving the real arm from the Control page (2026-10-05: GitHub Pages in Chrome on a laptop, `mycobot.local`).
 - [ ] Away from home: a TCP forward on the Pi (Tailscale :8282 → ATOM :80), so the page reaches the ATOM over Tailscale.
-- [ ] Browser flasher (ESP Web Tools: full image with bootloader and partitions) with Improv WiFi setup (returns the IP), and a Search button (mDNS or address sweep).
+- [x] Browser flasher with Improv WiFi setup and a Search button (Setup page, firmware 4.3.0). Tested on the real ATOM on 2026-10-05: install with Erase, WiFi set up over USB, Search found 4.3.0 at `mycobot.local`, and the Control page moved the arm.
+- [ ] Test the CI firmware build (it runs on the first push to GitHub) and an update over 4.3.0 that keeps the WiFi network.
+- [ ] An address sweep when `mycobot.local` does not resolve.
 - [ ] End-effector jog (the page has joint jog only).
 - [x] Test Chrome's local-network prompt for real users on GitHub Pages (2026-10-05: works from the public page; the laptop webcam works too).
 - [ ] The page assumes the real robot until the first status-log line arrives (the simulator's starts with "atom-sim").

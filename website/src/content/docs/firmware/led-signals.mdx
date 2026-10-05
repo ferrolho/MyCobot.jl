@@ -32,6 +32,7 @@ bottom row is a progress bar.
   <LedMatrix fill={LAVENDER} label="All pixels pale blue" caption="JOGGING (4.2+)" />
   <LedMatrix fill={RED} label="All pixels red" caption="ERROR" />
   <LedMatrix fill={MAGENTA} label="All pixels magenta" caption="OTA" />
+  <LedMatrix fill={WHITE} animate={{ type: 'blink' }} label="All pixels blink white" caption="NO WIFI (4.3+)" />
 </div>
 
 | Colour | State | Meaning | What to do |
@@ -44,6 +45,7 @@ bottom row is a progress bar.
 | Pale blue | `JOGGING` (4.2+) | A client jogs the joints. The arm stops by itself 200 ms after the client stops sending. | Keep clear of the arm. |
 | Red | `ERROR` | A servo did not reply, or a joint went too far from the plan. The arm holds where it is. | Find the cause. Then press the button to hold and clear the error. |
 | Magenta | `OTA` | A firmware update is in progress. | Do not disconnect the power. |
+| Blinks white (4.3+) | any | No WiFi network is saved. The matrix shows white and the state colour in turn, once a second. | Set up WiFi on the [Setup page](/mycobot-280-lab/start/setup/). |
 
 ## Bus probe firmware
 

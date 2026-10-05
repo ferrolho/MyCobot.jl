@@ -21,17 +21,22 @@ export default defineConfig({
       social: [{ icon: 'github', label: 'GitHub', href: `https://github.com/ferrolho/${REPO}` }],
       editLink: { baseUrl: `https://github.com/ferrolho/${REPO}/edit/main/website/` },
       customCss: ['./src/styles/custom.css'],
-      // Header: Docs | Control links before the social icons.
+      // Header: Setup | Control | Docs links before the social icons.
       components: { SocialIcons: './src/components/HeaderLinks.astro' },
       // The build fails on broken internal links and anchors: the site is the source of truth.
-      // The Control page is a custom page (src/pages/control.astro), which the validator cannot see.
-      plugins: [starlightLinksValidator({ exclude: [`/${REPO}/control/`, `/${REPO}/control/**`] })],
+      // The Control and Setup pages are custom pages (src/pages/), which the validator cannot see.
+      plugins: [
+        starlightLinksValidator({
+          exclude: [`/${REPO}/control/`, `/${REPO}/control/**`, `/${REPO}/setup/`, `/${REPO}/setup/**`],
+        }),
+      ],
       lastUpdated: true,
       sidebar: [
         {
           label: 'Start here',
           items: [
             { label: 'Overview', slug: 'start/overview' },
+            { label: 'Set up the robot', slug: 'start/setup' },
             { label: 'Quick start', slug: 'start/quick-start' },
             { label: 'Safety', slug: 'start/safety' },
             { label: 'Control the robot', link: '/control/' },

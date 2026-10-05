@@ -2,16 +2,17 @@
 // A picture of the ATOM's 5×5 LED matrix.
 //   fill:    colour of every pixel (or null = off)
 //   rows:    five colours, one per row from the top (overrides fill; null = off)
-//   animate: { type: 'progress' | 'flash' | 'flicker' | 'pulse', row?: number, color?: string }
+//   animate: { type: 'progress' | 'flash' | 'flicker' | 'pulse' | 'blink', row?: number, color?: string }
 //            progress: the row lights left to right (the playing progress bar)
 //            flash:    the row flashes briefly
 //            flicker:  the row flickers (bus activity)
 //            pulse:    the whole matrix pulses
+//            blink:    every lit pixel turns on and off, once a second (the frame stays)
 //   label:   accessible description (also shown as the caption)
 interface Props {
   fill?: string | null;
   rows?: (string | null)[];
-  animate?: { type: 'progress' | 'flash' | 'flicker' | 'pulse'; row?: number; color?: string };
+  animate?: { type: 'progress' | 'flash' | 'flicker' | 'pulse' | 'blink'; row?: number; color?: string };
   label: string;
   caption?: string;
   size?: number;
@@ -21,7 +22,7 @@ const OFF = '#26282c';
 const colorOf = (r: number) => (rows ? rows[r] ?? null : fill);
 const pixels = [...Array(25).keys()].map((i) => {
   const r = Math.floor(i / 5), c = i % 5;
-  const animated = animate && animate.type !== 'pulse' && animate.row === r;
+  const animated = animate && animate.type !== 'pulse' && animate.type !== 'blink' && animate.row === r;
   return { r, c, color: animated ? null : colorOf(r), animated };
 });
 const pitch = 20, radius = 7.2;
@@ -33,7 +34,7 @@ const pitch = 20, radius = 7.2;
       <g>
         <circle cx={15 + p.c * pitch} cy={15 + p.r * pitch} r={radius} fill={OFF} />
         {p.color && (
-          <circle cx={15 + p.c * pitch} cy={15 + p.r * pitch} r={radius} fill={p.color} class="lit" style={`--glow:${p.color}`} />
+          <circle cx={15 + p.c * pitch} cy={15 + p.r * pitch} r={radius} fill={p.color} class={animate?.type === 'blink' ? 'lit anim-blink' : 'lit'} style={`--glow:${p.color}`} />
         )}
         {p.animated && (
           <circle
@@ -71,9 +72,11 @@ const pitch = 20, radius = 7.2;
   .anim-flicker { animation: flicker 0.9s infinite steps(1); }
   @keyframes flicker { 0% { opacity: 1; } 30% { opacity: 0.2; } 45% { opacity: 1; } 70% { opacity: 0.4; } 85% { opacity: 1; } }
   .pulse { animation: pulse 2s infinite ease-in-out; }
+  .anim-blink { animation: blink 1s infinite steps(1); }
+  @keyframes blink { 50% { opacity: 0; } }
   @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
   @media (prefers-reduced-motion: reduce) {
-    .anim-flash, .anim-flicker, .pulse { animation: none; }
+    .anim-flash, .anim-flicker, .pulse, .anim-blink { animation: none; }
     .anim-progress-0, .anim-progress-1, .anim-progress-2 { animation: none; opacity: 1; }
     .anim-progress-3, .anim-progress-4 { animation: none; opacity: 0; }
   }

@@ -14,6 +14,22 @@ UDP port 5005 shows it with the git commit of the build, for example
 `atom_controller v4.0.0 (bff4529)`. Each version has a git tag
 `atom-controller-vX.Y.Z` (local until the repository is pushed).
 
+## 4.3.0 — 2026-10-05
+
+Set up the robot from the browser: see [Set up the robot](/mycobot-280-lab/start/setup/).
+Tested on the real ATOM on 2026-10-05: install from the Setup page, Improv WiFi setup,
+Search, and control from the Control page.
+
+- **Improv WiFi** over the USB serial port (`improv.h`, with C++ tests): the Setup
+  page's installer sends the WiFi network and password. The ATOM saves them in NVS
+  (namespace `wifi`) only after it connects, and uses them at power-up.
+- WiFi at power-up: the saved network first, then the network compiled in from
+  `wifi_secrets.h` (lab builds). Without either, the LED matrix **blinks white**.
+- **Public build** (`-DPUBLIC_BUILD`, `tools/build-public-firmware.sh`): no WiFi
+  secrets and no OTA. GitHub Actions builds it for the Setup page.
+- The status log shows the build: `atom_controller v4.3.0 (<git>, public)` or `lab`.
+- No protocol change: UDP and WebSocket clients of 4.2 work unchanged.
+
 ## 4.2.0 — 2026-10-04
 
 A browser can now see and control the arm directly; see the

@@ -1,0 +1,267 @@
+---
+// The Setup page: install the controller firmware from the browser (ESP Web Tools over Web Serial),
+// set up WiFi (Improv WiFi over the same USB port), then find the robot on the network.
+// Docs: start/setup. The firmware files come from tools/build-public-firmware.sh (built by CI).
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
+import LedMatrix from '../components/LedMatrix.astro';
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+---
+
+<StarlightPage
+  frontmatter={{
+    title: 'Setup',
+    description: 'Install the controller firmware on the ATOM from the browser, connect it to WiFi, and find the robot.',
+    template: 'splash',
+    tableOfContents: false,
+    pagefind: false,
+    editUrl: false,
+    lastUpdated: false,
+    prev: false,
+    next: false,
+  }}
+>
+  <div class="setup not-content" id="setup" data-manifest={`${base}/installer/manifest.json`} data-control={`${base}/control/`}>
+    <p class="lead">
+      Set up your myCobot 280 (for Arduino) in four steps. You need the arm, a USB-C cable and Chrome or Edge on a computer.
+      Nothing to install on the computer.
+    </p>
+
+    <ol class="overview" aria-label="Steps">
+      <li><a href="#prepare"><span class="n">1</span><span>Prepare</span></a></li>
+      <li><a href="#install"><span class="n">2</span><span>Install the firmware</span></a></li>
+      <li><a href="#wifi"><span class="n">3</span><span>Connect to WiFi</span></a></li>
+      <li><a href="#find"><span class="n">4</span><span>Find the robot</span></a></li>
+    </ol>
+
+    <p id="browser-warning" class="hint" data-kind="warning" hidden>
+      This browser cannot use USB serial ports (Web Serial). Use Chrome or Edge on a computer (Windows, macOS, Linux or ChromeOS).
+      Phones and tablets cannot install the firmware. Step 4 works in every browser.
+    </p>
+
+    <section class="card step" id="prepare" aria-labelledby="prepare-title">
+      <h2 id="prepare-title"><span class="n" aria-hidden="true">1</span>Prepare</h2>
+      <div class="split">
+        <ol class="do">
+          <li><strong>Turn off</strong> the 12 V supply of the arm.</li>
+          <li><strong>Remove the ATOM</strong> (the small square board with the LED matrix) from the top of the arm. Recommended: it can also stay in the arm while the 12 V supply is off.</li>
+          <li>Connect the ATOM to the computer with a <strong>USB-C data cable</strong>. Some cables can only charge.</li>
+        </ol>
+        <svg class="diagram prep" viewBox="0 0 440 210" role="img" aria-labelledby="prep-desc">
+          <desc id="prep-desc">The ATOM is lifted off the top of the arm and connected to a computer with a USB-C cable. The arm's 12 V supply is off.</desc>
+          <rect class="box" x="30" y="168" width="110" height="22" rx="4" />
+          <rect class="box" x="70" y="96" width="30" height="72" rx="4" />
+          <rect class="box" x="62" y="74" width="46" height="22" rx="4" />
+          <text class="small" x="30" y="206">12 V off</text>
+          <rect class="accent" x="66" y="12" width="38" height="38" rx="5" />
+          <text class="small" x="18" y="36">ATOM</text>
+          <path class="line" d="M85 70 V56" />
+          <path class="line" d="M79 62 L85 56 L91 62" />
+          <path class="wifi" d="M104 31 C 200 31, 300 22, 300 60" />
+          <text class="small" x="182" y="20">USB-C</text>
+          <rect class="box" x="250" y="60" width="140" height="92" rx="6" />
+          <rect class="box" x="230" y="152" width="180" height="14" rx="4" />
+          <text x="282" y="112">Computer</text>
+          <text class="small" x="262" y="132">Chrome or Edge</text>
+        </svg>
+      </div>
+      <details>
+        <summary>Why remove the ATOM, and why turn off the 12 V supply?</summary>
+        <p>
+          In the arm, the computer does not see the ATOM if you connect the cable while the 12 V supply is on. With the 12 V
+          supply off, the installation works in the arm (tested on 2026-10-05), but the ATOM's USB port then also supplies
+          the servos (4.4–5.4 V). Out of the arm, nothing else gets power from the computer.
+        </p>
+      </details>
+      <p class="muted small">
+        The ATOM's USB chip reports as FTDI <code>0403:6001</code>. Windows 10 and later, macOS and Linux have the driver.
+        Close other programs that use the port (myStudio, Arduino IDE, a serial monitor).
+      </p>
+    </section>
+
+    <section class="card step" id="install" aria-labelledby="install-title">
+      <h2 id="install-title"><span class="n" aria-hidden="true">2</span>Install the firmware</h2>
+      <div class="fw">
+        <div>
+          <p class="fw-name">myCobot 280 controller <span id="fw-version" class="num">…</span></p>
+          <p id="fw-detail" class="muted small">Reading the firmware list…</p>
+        </div>
+        <esp-web-install-button id="installer">
+          <button slot="activate" class="btn primary" type="button">Connect and install</button>
+          <span slot="unsupported" class="hint" data-kind="warning">This browser cannot use USB serial ports. Use Chrome or Edge on a computer.</span>
+          <span slot="not-allowed" class="hint" data-kind="warning">The installer needs a secure page (https or localhost).</span>
+        </esp-web-install-button>
+      </div>
+      <ol class="do">
+        <li>Click <strong>Connect and install</strong>. Select the ATOM's port (for example "FT232R USB UART" or <code>usbserial</code>) and click <strong>Connect</strong>.</li>
+        <li>Click <strong>Install</strong>. For the first installation, select <strong>Erase</strong>: it removes the old firmware and its settings.</li>
+        <li>Wait about 2 minutes. Do not disconnect the cable. The installer writes the firmware at 115 200 baud.</li>
+      </ol>
+      <p class="muted small">
+        Already installed? The same button shows <strong>Update</strong> (it keeps the WiFi settings), <strong>Change Wi-Fi</strong> and <strong>Logs</strong>.
+        If the installer cannot connect, disconnect the cable, connect it again and try again.
+      </p>
+    </section>
+
+    <section class="card step" id="wifi" aria-labelledby="wifi-title">
+      <h2 id="wifi-title"><span class="n" aria-hidden="true">3</span>Connect to WiFi</h2>
+      <ol class="do">
+        <li>After the installation, the installer asks for the WiFi network. Select your network and type the password.</li>
+        <li>Use a <strong>2.4 GHz</strong> network. The ATOM cannot use 5 GHz networks.</li>
+        <li>When the ATOM is connected, the installer shows <strong>Visit Device</strong>. Note the address: you need it if your computer cannot use <code>mycobot.local</code>.</li>
+      </ol>
+      <p class="muted small">
+        The installer sends the password over USB to the ATOM only. The ATOM keeps it in its flash memory. This website does not keep or send it.
+        A firmware update keeps the network. An installation with <strong>Erase</strong> removes it.
+      </p>
+      <div class="leds">
+        <LedMatrix fill="#f0f0f0" animate={{ type: 'blink' }} size={88} label="All pixels blink white" caption="Blinks white: no WiFi network saved" />
+        <LedMatrix fill="#ff3b3b" size={88} label="All pixels red" caption="Red out of the arm: no servos (normal)" />
+        <LedMatrix fill="#2fd15a" size={88} label="All pixels green" caption="Green in the arm: holding the pose" />
+      </div>
+    </section>
+
+    <section class="card step" id="find" aria-labelledby="find-title">
+      <h2 id="find-title"><span class="n" aria-hidden="true">4</span>Find the robot</h2>
+      <ol class="do">
+        <li>Disconnect the USB cable. Put the ATOM back on the arm.</li>
+        <li>Turn on the 12 V supply. The LED matrix shows blue, then green: the arm holds its pose.</li>
+        <li>Connect this computer to the same WiFi network. Click <strong>Search</strong>.</li>
+      </ol>
+      <form id="find-form" class="find-form">
+        <label for="find-addr">Robot address</label>
+        <input id="find-addr" value="mycobot.local" autocomplete="off" spellcheck="false" />
+        <button id="find-btn" class="btn primary" type="submit">Search</button>
+      </form>
+      <div id="find-result" class="result" data-status="idle" role="status" aria-live="polite">
+        <span class="dot" aria-hidden="true"></span>
+        <span id="find-text">Not searched yet.</span>
+        <a id="find-open" class="btn primary" href="#" hidden>Open Control</a>
+      </div>
+      <p class="muted small">
+        If Chrome asks for access to devices on your local network, click <strong>Allow</strong>. If <code>mycobot.local</code> is not found,
+        type the address from step 3 or from your router (for example <code>192.168.1.107</code>).
+      </p>
+    </section>
+
+    <div class="pair">
+      <section class="card safety" aria-labelledby="safety-title">
+        <h2 id="safety-title">Safety</h2>
+        <ul>
+          <li>When the firmware starts in the arm, the servos hold the pose. The Control page can move the arm. Keep clear of the arm when it moves.</li>
+          <li>The ATOM button is <strong>not</strong> an emergency stop. To stop the arm, turn off the 12 V supply.</li>
+        </ul>
+        <p class="small"><a href={`${base}/start/safety/`}>Safety</a> · <a href={`${base}/start/setup/`}>Setup in the docs</a></p>
+      </section>
+      <section class="card" aria-labelledby="stock-title">
+        <h2 id="stock-title">Go back to the stock firmware</h2>
+        <p>
+          Elephant Robotics' firmware is not open source and this site does not provide it. Install it with Elephant's <strong>myStudio</strong>,
+          or write a backup that you made before.
+        </p>
+        <p class="small"><a href={`${base}/firmware/stock-backup/`}>Stock firmware backup and restore</a></p>
+      </section>
+    </div>
+  </div>
+</StarlightPage>
+
+<script>
+  import 'esp-web-tools/dist/web/install-button.js';   // the self-contained bundle (its ESM build imports a file that @material/web 2.5 renamed)
+  import { initSetup } from '../setup/app';
+  initSetup();
+</script>
+
+<style is:global>
+  .setup {
+    --good: #0ca30c;
+    --warning: #fab219;
+    --critical: #d03b3b;
+    --muted: #898781;
+    --card: var(--sl-color-gray-6);
+    --line: var(--sl-color-gray-5);
+    max-width: 60rem;
+    margin-inline: auto;
+    display: grid;
+    gap: 1rem;
+  }
+  :root[data-theme='light'] .setup { --card: var(--sl-color-gray-7, #f6f6f6); }
+  .setup [hidden] { display: none !important; }
+  .setup h2 { font-size: 1.15rem; margin: 0; display: flex; align-items: center; gap: 0.6rem; }
+  .setup p { margin: 0; }
+  .setup .lead { font-size: 1.1rem; color: var(--sl-color-gray-2); }
+  .setup .muted { color: var(--sl-color-gray-3); }
+  .setup .small { font-size: 0.875rem; }
+  .setup .num { font-variant-numeric: tabular-nums; }
+  .setup .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 0.75rem;
+    padding: 1.1rem 1.25rem;
+    display: grid;
+    gap: 0.75rem;
+    min-width: 0;
+    scroll-margin-top: 5rem;
+  }
+  .setup .n {
+    display: inline-grid;
+    place-items: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    border-radius: 50%;
+    background: var(--sl-color-text-accent);   /* as Starlight's primary buttons: readable in both themes */
+    color: var(--sl-color-black);
+    font-weight: 700;
+    font-size: 0.95rem;
+    flex: none;
+  }
+
+  .setup .overview { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.5rem; counter-reset: none; }
+  .setup .overview li { margin: 0; }
+  .setup .overview a {
+    display: flex; align-items: center; gap: 0.5rem; padding: 0.55rem 0.75rem; border-radius: 0.6rem;
+    border: 1px solid var(--line); text-decoration: none; color: var(--sl-color-white); font-weight: 600; font-size: 0.95rem; height: 100%;
+  }
+  .setup .overview a:hover { border-color: var(--sl-color-accent); }
+
+  .setup ol.do { margin: 0; padding-inline-start: 1.3rem; display: grid; gap: 0.35rem; }
+  .setup ol.do li { margin: 0; }
+  .setup .split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; align-items: center; }
+  .setup .diagram.prep { max-width: 26rem; margin: 0 auto; }
+  .setup details summary { cursor: pointer; font-weight: 600; }
+  .setup details p { margin-top: 0.4rem; }
+
+  .setup .fw { display: flex; flex-wrap: wrap; gap: 0.75rem 1.5rem; align-items: center; justify-content: space-between; padding: 0.75rem 1rem; border-radius: 0.6rem; border: 1px solid var(--line); background: var(--sl-color-black); }
+  .setup .fw-name { font-weight: 700; font-size: 1.05rem; }
+  .setup .btn {
+    font: inherit; font-weight: 600; padding: 0.5rem 1rem; border-radius: 0.5rem; cursor: pointer;
+    border: 1px solid var(--sl-color-gray-4); background: transparent; color: var(--sl-color-white); text-decoration: none; display: inline-block;
+  }
+  .setup .btn.primary { background: var(--sl-color-text-accent); border-color: var(--sl-color-text-accent); color: var(--sl-color-black); }
+  .setup .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .setup .btn:hover:not(:disabled) { filter: brightness(1.1); }
+  .setup .hint { display: block; padding: 0.5rem 0.75rem; border-radius: 0.5rem; border-inline-start: 4px solid var(--sl-color-accent); background: var(--sl-color-gray-5); }
+  .setup .hint[data-kind='warning'] { border-color: var(--warning); }
+
+  .setup .leds { display: flex; flex-wrap: wrap; gap: 0 0.5rem; }
+
+  .setup .find-form { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+  .setup .find-form label { font-weight: 600; }
+  .setup .find-form input {
+    font: inherit; padding: 0.45rem 0.7rem; border-radius: 0.5rem; min-width: 14rem; flex: 1 1 14rem; max-width: 22rem;
+    border: 1px solid var(--sl-color-gray-4); background: var(--sl-color-black); color: var(--sl-color-white);
+  }
+  .setup .result { display: flex; flex-wrap: wrap; gap: 0.5rem 0.75rem; align-items: center; min-height: 2.5rem; font-weight: 600; }
+  .setup .result .dot { width: 0.7rem; height: 0.7rem; border-radius: 50%; background: var(--muted); flex: none; }
+  .setup .result[data-status='searching'] .dot { background: var(--warning); }
+  .setup .result[data-status='found'] .dot { background: var(--good); }
+  .setup .result[data-status='error'] .dot { background: var(--critical); }
+  .setup .result[data-status='idle'] { font-weight: 400; color: var(--sl-color-gray-3); }
+
+  .setup .pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; }
+  .setup .safety { border-color: var(--warning); }
+  .setup .safety ul { margin: 0; padding-inline-start: 1.2rem; display: grid; gap: 0.35rem; }
+
+  @media (max-width: 50rem) {
+    .setup .overview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .setup .split, .setup .pair { grid-template-columns: minmax(0, 1fr); }
+  }
+</style>

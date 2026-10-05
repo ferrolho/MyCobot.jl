@@ -44,7 +44,7 @@ Read this page before you write code that talks to the servos.
 | # | Problem | Rule |
 | --- | --- | --- |
 | 20 | With the ATOM in the arm and the 12 V supply off, the ATOM's USB powers the servos. | Flash the ATOM out of the arm. Then use OTA. |
-| 21 | With the 12 V supply on, the ATOM's USB does not connect. | Use OTA updates. |
+| 21 | With the 12 V supply on, the ATOM's USB does not connect (checked again on 2026-10-05: macOS sees no USB device). If the USB cable is connected first and the 12 V supply is turned on after, the connection stays. | Use OTA updates. |
 | 22 | The ATOM's USB corrupts data above 115 200 baud. | Flash and read at 115 200 baud. |
 | 23 | Without firmware that does it, the servos start with torque off (limp arm). | The controller firmware holds the pose at power-up. Park the arm before you change firmware. |
 | 24 | The LED matrix blocks for ~0.75 ms per update. | Update it from core 0, never inside the control loop. |
