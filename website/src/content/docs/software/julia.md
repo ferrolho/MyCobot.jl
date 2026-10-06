@@ -41,7 +41,7 @@ Do not write kinematics by hand. Use RigidBodyDynamics.jl through these function
 | `write_goals(io, q_deg)` | Goal positions of all six servos. |
 | `hold_position(io)` | Goal = present on all servos. |
 | `enable_motion(io; speed_cap)` / `disable_motion(io)` | Hold, then set a speed cap / set goal speed 0. |
-| `angle_to_position`, `position_to_angle` | Degrees ↔ servo steps. |
+| `angle_to_position`, `position_to_angle` | Degrees ↔ servo steps, with this robot's encoder correction (`encoder_error`, `calibration.yaml`). |
 
 All bus I/O goes through `transport_write`, `transport_read` and
 `transport_discard_input`. They have methods for `LibSerialPort.SerialPort`. The

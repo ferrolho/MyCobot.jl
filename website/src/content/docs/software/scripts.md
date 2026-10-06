@@ -13,6 +13,10 @@ Run the scripts from the repository root with `julia --project=. scripts/<name>.
 | `ilc_step.jl <plan.csv> <rec.csv>` | no | One learning step. Writes `<plan>_ilc<k>.csv` with explicit commands. |
 | `attribute_error.jl <rec.csv>` | no | Splits the Cartesian error into one contribution per joint. |
 | `viewer.jl` | no | MeshCat 3D view of the robot. |
+| `static_poses.jl [--n=48] [--dry-run]` | **yes** | Random static poses inside the lab workspace; holds of 6 s with the joint state, the IMU and the servo voltage, temperature and current. |
+| `fit_imu_gravity.jl <samples.csv>` | no | Fits the IMU gravity model (zero offsets, base tilt, IMU calibration) to static poses. |
+| `encoder_sweep.jl [1,2,3,4,5] [--dry-run]` | **yes** | Moves one joint at a time through its safe range, played on the ATOM with gyro telemetry. |
+| `fit_encoder_sweep.jl <J*_sweep.csv …> [--plot=DIR]` | no | Encoder angle against the integrated gyro: encoder error and play per joint. |
 | `example*.jl`, `read_all_servo_data.jl` | some | Older examples for the stock ATOM protocol. |
 
 ## `play_plan.jl` options
@@ -26,6 +30,12 @@ Run the scripts from the repository root with `julia --project=. scripts/<name>.
 
 If the plan has `cmd_1 … cmd_6` columns (from `ilc_step.jl`), the player sends those
 commands as they are.
+
+`static_poses.jl` and `encoder_sweep.jl` choose poses on their own. They keep every
+pose and path inside the lab workspace (`scripts/lab_workspace.jl`): link origins
+from joint4 on at least 120 mm above the table, within the reach used on the Control
+page before 2026-10-06 (per 30° of azimuth, minus 20 mm), and the wrist away from
+the base column.
 
 Recordings go to `tools/python/recordings/` with names like
 `<date>-<time>_<plan>_<lagcomp|nolag|ilc>[_<rate>hz]_<jl|atom>.csv`.

@@ -173,18 +173,45 @@ end
 # --- Joint-level helpers ---------------------------------------------------------
 
 """
+    encoder_error(j, q)
+
+Error (degrees) of the encoder of joint `j` at encoder angle `q` (degrees), from
+`ENCODER_CORRECTION` (this robot's calibration.yaml): true angle = encoder angle − error.
+Zero at `q = 0`. Measured with the gyro (docs: results/imu-encoders).
+"""
+function encoder_error(j::Integer, q::Real)
+    c = ENCODER_CORRECTION[j]
+    e = 0.0
+    for k in eachindex(c.sin)
+        e += c.sin[k] * sind(k * q) + c.cos[k] * (cosd(k * q) - 1)
+    end
+    return e
+end
+
+"""
     angle_to_position(j, deg)
 
-Servo position (0–4095) for joint `j` at `deg` degrees (ATOM angle convention; 0° = 2048).
+Servo position (0–4095) for joint `j` at `deg` degrees (ATOM angle convention; 0° = 2048),
+with the encoder correction (`encoder_error`).
 """
-angle_to_position(j::Integer, deg::Real) = clamp(round(Int, 2048 + JOINT_SIGN[j] * deg * STEPS_PER_DEG), 0, 4095)
+function angle_to_position(j::Integer, deg::Real)
+    q = float(deg)
+    for _ in 1:4                    # encoder angle q with q − error(q) = deg (the error changes < 0.05°/°)
+        q = deg + encoder_error(j, q)
+    end
+    return clamp(round(Int, 2048 + JOINT_SIGN[j] * q * STEPS_PER_DEG), 0, 4095)
+end
 
 """
     position_to_angle(j, pos)
 
-Joint angle in degrees for servo position `pos` of joint `j`.
+Joint angle in degrees for servo position `pos` of joint `j`, with the encoder correction
+(`encoder_error`). Speeds (steps/s) are not corrected: the correction changes them by < 5 %.
 """
-position_to_angle(j::Integer, pos::Integer) = JOINT_SIGN[j] * (pos - 2048) / STEPS_PER_DEG
+function position_to_angle(j::Integer, pos::Integer)
+    q = JOINT_SIGN[j] * (pos - 2048) / STEPS_PER_DEG
+    return q - encoder_error(j, q)
+end
 
 """
     read_state(io)

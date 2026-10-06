@@ -17,11 +17,12 @@ They do not need the robot.
 | Kinematics | Joint limits; forward kinematics against two `get_coords` readings of the stock firmware (< 12 mm); IK recovers a known pose. |
 | Feetech packets | Packets built byte for byte against packets captured on the robot, including the stock firmware's `send_angles` SYNC WRITE. |
 | Parser robustness | Garbage, `FE FE` frames, bad checksums, truncated and repeated packets. |
-| Encodings | Speed and load sign bits; degrees ↔ steps. |
+| Encodings | Speed and load sign bits; degrees ↔ steps, with the encoder correction (zero at 0°, round trip). |
 | Simulated bus | Reads, writes, "goal speed 0 = no motion", `enable_motion`, missing servos. |
 | Player | A plan plays to the end; a stuck joint stops the run and every joint holds; bad plans are refused. |
 | Learning control | On a model plant with delay, lag and sticking, the error goes down in every iteration and halves in five. |
 | Robot description | The generated URDFs and parameter tables are up to date (`uv run tools/gen_robot.py --check`; skipped without `uv`). |
+| IMU calibration | On simulated poses with a known tilt, offset, mounting and accelerometer error, the gravity fit finds them again. |
 
 ## The simulated bus
 

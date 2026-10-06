@@ -38,6 +38,8 @@ description: What was done when, and the decisions on the way.
 ## 2026-10-06
 
 - **One robot description:** the URDF (xacro), `joint_limits.yaml` (ros2_control format) and `servos.yaml` in `mycobot_description/`. `tools/gen_robot.py` writes the copies for the firmware, the Control page, the simulator and Julia. See [Robot description](/mycobot-280-lab/software/robot-description/).
+- **J5 encoder correction** in the Julia package: 3.7° → 0.18° peak to peak (gyro sweeps over ±148°). The IMU fit of the static poses improves from 0.84° to 0.48° RMS with it.
+- **IMU calibration from static poses** and **gyro sweeps**: the pitch zero offsets are good (0.2–0.3°), the table tilts 0.54°, J5's encoder is off by up to 4.4°, and J2–J4 have 1–1.9° of play outside the encoders. See [IMU calibration and encoder errors](/mycobot-280-lab/results/imu-encoders/).
 
 ## Decisions
 

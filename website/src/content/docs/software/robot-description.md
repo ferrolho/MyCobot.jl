@@ -14,6 +14,7 @@ use. Do not edit a generated file: edit the source and run the generator.
 | `urdf/mycobot_280_arduino/mycobot_280_arduino.urdf.xacro` | URDF in [xacro](https://github.com/ros/xacro) | Links, meshes, joint origins and axes |
 | `config/mycobot_280_arduino/joint_limits.yaml` | ros2_control `joint_limits` | Position, speed, acceleration and effort limits |
 | `config/mycobot_280_arduino/servos.yaml` | Our own | Servo IDs, directions, models, gains, acceleration registers, servo model (ωn, ζ) |
+| `config/mycobot_280_arduino/calibration.yaml` | Our own | This robot only: encoder corrections. Only the Julia package uses it (`ENCODER_CORRECTION`). |
 
 The generator `tools/gen_robot.py` writes:
 
@@ -96,7 +97,8 @@ The generated URDF gives the same forward kinematics as the URDF before 2026-10-
 
 ## Next
 
-- `calibration/<robot>.yaml`: the IMU mounting and accelerometer calibration, the
-  encoder corrections and the play of each joint.
+- More in `calibration.yaml`: the IMU mounting and accelerometer calibration, and the
+  play of each joint ([IMU and encoder errors](/mycobot-280-lab/results/imu-encoders/)).
+- Store the calibration on each ATOM, so the firmware and the Control page can use it.
 - `inertials.yaml`: masses and centres of mass from a gravity identification.
 - Effort limits, when the servo models are known.

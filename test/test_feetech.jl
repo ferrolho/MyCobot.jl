@@ -58,6 +58,15 @@ end
     for j in 1:6, deg in (-90.0, -12.3, 0.0, 45.6)
         @test MyCobot.position_to_angle(j, MyCobot.angle_to_position(j, deg)) ≈ deg atol = 360 / 4096
     end
+    # Encoder correction (calibration.yaml): zero at 0°; the servo position moves by the error.
+    for j in 1:6
+        @test MyCobot.encoder_error(j, 0.0) == 0
+        for deg in (-140.0, -60.0, 75.0, 150.0)
+            q_enc = deg + MyCobot.encoder_error(j, deg + MyCobot.encoder_error(j, deg))
+            @test MyCobot.angle_to_position(j, deg) == round(Int, 2048 + MyCobot.JOINT_SIGN[j] * q_enc * MyCobot.STEPS_PER_DEG)
+            @test MyCobot.position_to_angle(j, MyCobot.angle_to_position(j, deg)) ≈ deg atol = 360 / 4096
+        end
+    end
 end
 
 @testset "Simulated bus: requests" begin

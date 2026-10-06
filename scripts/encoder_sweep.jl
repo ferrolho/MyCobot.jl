@@ -1,10 +1,14 @@
 # Encoder sweeps: MOVES THE ROBOT (unless --dry-run).
 #
-#   julia --project=. scripts/encoder_sweep.jl [JOINTS=1,2,3,4,5] [--vel=20] [--atom=IP] [--dry-run]
+#   julia --project=. scripts/encoder_sweep.jl [JOINTS=1,2,3,4,5] [--vel=20] [--base=q1,...,q6] [--amp=A]
+#                                               [--atom=IP] [--dry-run]
 #
-# Moves one joint at a time from the zero pose to −A, to +A and back to zero (minimum-jerk segments,
-# peak --vel °/s), with 2 s holds at 0, −A and +A for the gyro bias. A is the largest amplitude
-# (multiple of 5°) that keeps the sweep inside the lab workspace (scripts/lab_workspace.jl).
+# Moves one joint at a time: from the zero pose to the base pose (--base, default zero), then that
+# joint alone to base −A, to base +A and back to the base pose, then back to zero (minimum-jerk
+# segments, peak --vel °/s), with 2 s holds at the base pose, −A and +A for the gyro bias. A is
+# --amp, or the largest amplitude (multiple of 5°) that keeps the sweep inside the lab workspace
+# (scripts/lab_workspace.jl). For J5 over its full range: --base=0,-10,0,10,0,0 --amp=150 (J5 axis
+# vertical, so gravity does not load J5).
 # Played on the ATOM at 500 Hz: the telemetry has the encoders and the gyro of the same cycle.
 # The gyro measures the true rotation of the IMU link, so the integrated gyro against the encoder
 # shows the encoder error (scripts/fit_encoder_sweep.jl). J6 is not visible: the IMU is before it.
@@ -20,40 +24,52 @@ vel = parse(Float64, opt("vel", "20"))
 atom_ip = opt("atom", "192.168.1.107")
 dry_run = "--dry-run" in ARGS
 vel <= 30 || error("--vel above 30 °/s")
+base = parse.(Float64, split(opt("base", "0,0,0,0,0,0"), ","))
+amp = opt("amp", "")
+length(base) == 6 || error("--base needs 6 angles")
 
 include("lab_workspace.jl")   # pose_ok, path_ok
 
 unit(j) = (e = zeros(6); e[j] = 1.0; e)
 function amplitude(j)
+    path_ok(zeros(6), base) || error("the path from zero to the base pose leaves the lab workspace")
+    if !isempty(amp)
+        A = parse(Float64, amp)
+        path_ok(base, base .+ A * unit(j)) && path_ok(base, base .- A * unit(j)) || error("J$j ±$A° leaves the lab workspace")
+        return A
+    end
     A = 5 * floor(Int, (WS_HI[j] - 12) / 5)
-    while A > 0 && !(path_ok(zeros(6), A * unit(j)) && path_ok(zeros(6), -A * unit(j)))
+    while A > 0 && !(path_ok(base, base .+ A * unit(j)) && path_ok(base, base .- A * unit(j)))
         A -= 5
     end
     return float(A)
 end
 
-"Plan: zero → −A → +A → zero with holds; minimum-jerk segments at peak speed `vel`."
+"Plan: zero → base → base −A → base +A → base → zero with holds; minimum-jerk segments at peak speed `vel`."
 function sweep_plan(j, A; dt=0.01, hold=2.0)
     minjerk(x) = x^3 * (10 - 15x + 6x^2)
-    t = Float64[]; q = Float64[]
+    t = Float64[]; Q = Vector{Vector{Float64}}()
     function seg(a, b, T)
         t0 = isempty(t) ? 0.0 : t[end] + dt
         for s in 0:dt:T
-            push!(t, t0 + s); push!(q, a + (b - a) * (T == 0 ? 1.0 : minjerk(s / T)))
+            push!(t, t0 + s); push!(Q, a .+ (b .- a) .* (T == 0 ? 1.0 : minjerk(s / T)))
         end
     end
-    seg(0.0, 0.0, hold)
-    seg(0.0, -A, 1.875 * A / vel); seg(-A, -A, hold)
-    seg(-A, A, 1.875 * 2A / vel); seg(A, A, hold)
-    seg(A, 0.0, 1.875 * A / vel); seg(0.0, 0.0, hold)
-    Q = zeros(length(t), 6); Q[:, j] = q
-    return t, Q
+    lo, hi = base .- A .* unit(j), base .+ A .* unit(j)
+    d = maximum(abs.(base))
+    d > 0 && seg(zeros(6), base, max(2.0, 1.875 * d / vel))
+    seg(base, base, hold)
+    seg(base, lo, 1.875 * A / vel); seg(lo, lo, hold)
+    seg(lo, hi, 1.875 * 2A / vel); seg(hi, hi, hold)
+    seg(hi, base, 1.875 * A / vel); seg(base, base, hold)
+    d > 0 && seg(base, zeros(6), max(2.0, 1.875 * d / vel))
+    return t, reduce(vcat, permutedims.(Q))
 end
 
 plans = Dict(j => sweep_plan(j, amplitude(j)) for j in joints)
 for j in joints
     t, Q = plans[j]
-    println("J$j: ±$(maximum(Q[:, j]))°, $(round(t[end], digits=1)) s")
+    println("J$j: ±$(maximum(Q[:, j]) - base[j])° about $(base[j])°, base pose $base, $(round(t[end], digits=1)) s")
 end
 dry_run && exit()
 

@@ -46,11 +46,27 @@ description: Open work, grouped by topic. Done items move to the results and his
 
 - [ ] **Better joint velocity estimates.** The servo speed register moves in steps of 50 steps/s (≈ 4.4°/s), and differentiating the position at 500 Hz turns one count (0.088°) into ~44°/s of noise. Estimate the velocity with a filter (e.g. a Kalman filter) that combines position, servo speed, the command and the servo model (`src/servo_model.jl`), and the IMU gyro for the wrist joints. Needed for MPC and learning.
 
+## Accuracy and calibration
+
+See [IMU calibration and encoder errors](/mycobot-280-lab/results/imu-encoders/) (2026-10-06).
+
+- [x] Check the pitch zero offsets with the IMU (2026-10-06: δ2 + δ3 + δ4 = 0.2–0.3°, no correction needed).
+- [x] One robot description for the firmware, the Control page, the simulator and Julia ([Robot description](/mycobot-280-lab/software/robot-description/)).
+- [x] **J5 encoder correction** in the Julia package (2026-10-06): 3.7° → 0.18° peak to peak over ±148°.
+- [ ] **Store the calibration on each ATOM** (NVS) and apply it in the firmware and the Control page. The public firmware and the GitHub Pages site serve every user's arm, so the values cannot be built in.
+- [ ] J1 (0.56° peak to peak) and J4 (1.0°): add their corrections if a task needs them. J4's axis is always horizontal, so its play is in every J4 sweep: separate the play from the encoder error first.
+- [ ] **Gravity model for the play of J2–J4 and the bending of J2:** identify the masses and centres of mass (`inertials.yaml`) from the IMU and the encoders, not from the load register. Then predict which side of the play each link rests on.
+- [ ] J2 and J3 oscillate at rest in some poses with the integral gains (9 of 60 holds, 0.3–0.5°). Find gains or a deadband that stop it. Check whether this is the hunting in Live mode.
+- [ ] J4 and J5 settle up to 1° and 2.4° from their goal (no integral action). Try integral action on J4–J5.
+- [ ] Calibration file per robot: the IMU mounting and accelerometer calibration, encoder corrections, play.
+- [ ] Separate δ2, δ3 and δ4 with a second IMU (a phone) on link 2 or 3, if a tool needs it.
+- [ ] Measure the flange accuracy with an external reference (pen on paper, dial gauge, a cone plate milled on the CNC).
+
 ## Beyond position control
 
 - [ ] PWM mode (mode 2) on J1 (no gravity load), with a watchdog. It is the closest mode to torque control.
 - [ ] Find what the load register measures, with a known load. The data suggests PWM duty.
-- [ ] Real inertial data for the URDF (weigh the links, or identify them).
+- [ ] Real inertial data for the URDF (weigh the links, or identify them). Elephant's URDFs have placeholders only (checked 2026-10-06). See *Gravity model* above.
 
 ## Hardware
 
