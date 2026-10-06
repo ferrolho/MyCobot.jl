@@ -6,14 +6,8 @@
 # Above the limit (factory register 85 × 100 steps/s²) the servo saturates: a 10° sine on J1
 # stops following at ~1.2 Hz. Register 41 (acceleration) is clamped to register 85.
 
-"Natural frequency ωn (rad/s) of each joint servo, from acceleration-limited chirps."
-const SERVO_WN = [14.8, 14.7, 14.2, 34.4, 52.4, 54.9]
-
-"Damping ratio ζ of each joint servo."
-const SERVO_ZETA = [0.82, 0.75, 0.78, 0.65, 0.77, 0.83]
-
-"Acceleration limit of each servo (°/s²): factory register 85 (50 or 250) × 100 steps/s²."
-const SERVO_AMAX = [50, 50, 50, 250, 250, 250] .* 100 ./ STEPS_PER_DEG
+# SERVO_WN, SERVO_ZETA and SERVO_AMAX: src/robot_params.jl, generated from
+# mycobot_description/config/mycobot_280_arduino/servos.yaml.
 
 """
     plan_derivatives(t, q)
@@ -69,14 +63,13 @@ end
 """
 Servo position-loop gains (registers 21/22/23 = P, D, I) per joint, as `(P, D, I)`.
 
-- `GAINS`: **our default**. The controller firmware (v3+) writes them at every power-up
-  (`GAINS` in firmware/atom_controller). Integral action on J1–J3 halves the flange error on
+- `GAINS`: **our default** (src/robot_params.jl, generated from servos.yaml). The controller
+  firmware (v3+) writes them at every power-up. Integral action on J1–J3 halves the flange error on
   the circle (5.3 → 2.6 mm) with almost the same end-effector vibration (155 → 165 mg RMS);
   a higher P (≥ 48) raised the vibration up to 4× (2026-10-04, docs: results/servo-dynamics).
 - `SERVO_STORED_GAINS`: what the servos store and use without a firmware that writes gains.
 - `STOCK_FIRMWARE_GAINS`: what Elephant's stock ATOM firmware writes at power-up.
 """
-const GAINS = [(32, 4, 16), (32, 4, 16), (32, 4, 16), (32, 8, 0), (32, 8, 0), (32, 8, 0)]
 const SERVO_STORED_GAINS = [(32, 8, 0) for _ in 1:6]
 const STOCK_FIRMWARE_GAINS = [(32, 8, 0), (32, 8, 0), (10, 0, 1), (10, 0, 1), (10, 0, 1), (10, 0, 1)]
 

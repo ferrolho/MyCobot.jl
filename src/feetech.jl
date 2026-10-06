@@ -29,15 +29,12 @@ module Feetech
     const REG_PRESENT_POSITION = 56  # 2 bytes; then speed (2), load (2), voltage, temperature
 end
 
-const SERVO_IDS = UInt8.(1:6)
-
 # A SYNC WRITE followed by another request within ~0.3 ms is lost by every servo (24 % of
 # writes with no gap, 0.17 % at 0.3 ms, none at ≥ 0.5 ms; measured 2026-10-04). SYNC WRITE
 # gets no reply, so nothing else would notice. Waiting for the bytes to drain also works
 # but costs a USB frame (~1 ms more per cycle).
 const SYNC_WRITE_GAP = 1e-3   # s
-const JOINT_SIGN = (-1, -1, +1, -1, -1, -1)   # joint angle direction vs servo position
-const STEPS_PER_DEG = 4096 / 360
+# SERVO_IDS, JOINT_SIGN and STEPS_PER_DEG: src/robot_params.jl (generated).
 
 # --- Transport -----------------------------------------------------------------
 

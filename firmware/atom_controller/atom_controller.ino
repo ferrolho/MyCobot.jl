@@ -181,8 +181,9 @@ struct PlayParams { uint16_t rate, speed_cap, max_err, start_tol; } play_params;
 uint8_t reg_req[4 + 32];   // REG_READ / REG_WRITE request, copied by the network task
 sig::Params signal_params;  // PLAY_SIGNAL request
 
-// Joint angle (°) <-> servo position, as MyCobot.angle_to_position (0° = 2048).
-const int8_t JOINT_SIGN[N_SERVOS] = {-1, -1, +1, -1, -1, -1};
+// Joint angle (°) <-> servo position, as MyCobot.angle_to_position (0° = 2048). JOINT_SIGN and
+// GAINS: robot_params.h (generated from mycobot_description/config/mycobot_280_arduino/servos.yaml).
+using robot::JOINT_SIGN;
 inline uint16_t deg_to_pos(int j, float deg) {
     long p = lroundf(2048 + JOINT_SIGN[j] * deg * (4096.0f / 360.0f));
     return (uint16_t)(p < 0 ? 0 : (p > 4095 ? 4095 : p));
@@ -192,8 +193,8 @@ inline float pos_to_deg(int j, uint16_t p) { return JOINT_SIGN[j] * ((int)p - 20
 // ---- Servo position-loop gains (P, D, I = registers 21, 22, 23), written at power-up ----------
 // The servos store 32/8/0 (no integral action). Integral action on J1-J3 halves the tracking
 // error on the circle without more end-effector vibration; a higher P raises the vibration
-// (2026-10-04, docs: results/servo-dynamics). Keep in sync with MyCobot.GAINS.
-const uint8_t GAINS[N_SERVOS][3] = {{32, 4, 16}, {32, 4, 16}, {32, 4, 16}, {32, 8, 0}, {32, 8, 0}, {32, 8, 0}};
+// (2026-10-04, docs: results/servo-dynamics).
+using robot::GAINS;
 volatile bool gains_ok = false;
 
 bool write_gains() {

@@ -1,0 +1,73 @@
+# Joint limits of the myCobot 280 for Arduino, in the ros2_control joint_limits format
+# (https://control.ros.org: joint_limits; rad, rad/s, rad/s²). tools/gen_robot.py reads this file
+# and writes the URDF <limit> elements and the limit tables of the firmware, the Control page,
+# the simulator and the Julia package. Edit this file, not the generated files.
+#
+# Position: round values inside the end stops measured by hand on 2026-10-04 (the largest multiple
+#   of 5° at least 2° inside both stops; docs: system/robot). J6 has no end stop: ±180°.
+# Velocity: the speed limit of our controller firmware (MOVE_TO, TRACK): 90°/s.
+# Acceleration: the planning limit of our firmware, below the servo limit (factory register 85 ×
+#   100 steps/s²: 439°/s² on J1–J3, 2197°/s² on J4–J6; docs: results/servo-dynamics).
+# Effort: not known (the servo models are not identified).
+
+joint_limits:
+  joint2_to_joint1:      # J1, 165°
+    has_position_limits: true
+    min_position: -2.879793
+    max_position: 2.879793
+    has_velocity_limits: true
+    max_velocity: 1.570796
+    has_acceleration_limits: true
+    max_acceleration: 6.981317
+    has_effort_limits: false
+    max_effort: 0.0
+  joint3_to_joint2:      # J2, 140°
+    has_position_limits: true
+    min_position: -2.443461
+    max_position: 2.443461
+    has_velocity_limits: true
+    max_velocity: 1.570796
+    has_acceleration_limits: true
+    max_acceleration: 6.981317
+    has_effort_limits: false
+    max_effort: 0.0
+  joint4_to_joint3:      # J3, 150°
+    has_position_limits: true
+    min_position: -2.617994
+    max_position: 2.617994
+    has_velocity_limits: true
+    max_velocity: 1.570796
+    has_acceleration_limits: true
+    max_acceleration: 6.981317
+    has_effort_limits: false
+    max_effort: 0.0
+  joint5_to_joint4:      # J4, 150°
+    has_position_limits: true
+    min_position: -2.617994
+    max_position: 2.617994
+    has_velocity_limits: true
+    max_velocity: 1.570796
+    has_acceleration_limits: true
+    max_acceleration: 34.906585
+    has_effort_limits: false
+    max_effort: 0.0
+  joint6_to_joint5:      # J5, 160°
+    has_position_limits: true
+    min_position: -2.792527
+    max_position: 2.792527
+    has_velocity_limits: true
+    max_velocity: 1.570796
+    has_acceleration_limits: true
+    max_acceleration: 34.906585
+    has_effort_limits: false
+    max_effort: 0.0
+  joint6output_to_joint6:   # J6, 180°
+    has_position_limits: true
+    min_position: -3.141593
+    max_position: 3.141593
+    has_velocity_limits: true
+    max_velocity: 1.570796
+    has_acceleration_limits: true
+    max_acceleration: 34.906585
+    has_effort_limits: false
+    max_effort: 0.0

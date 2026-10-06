@@ -21,6 +21,7 @@ They do not need the robot.
 | Simulated bus | Reads, writes, "goal speed 0 = no motion", `enable_motion`, missing servos. |
 | Player | A plan plays to the end; a stuck joint stops the run and every joint holds; bad plans are refused. |
 | Learning control | On a model plant with delay, lag and sticking, the error goes down in every iteration and halves in five. |
+| Robot description | The generated URDFs and parameter tables are up to date (`uv run tools/gen_robot.py --check`; skipped without `uv`). |
 
 ## The simulated bus
 

@@ -81,6 +81,7 @@ export default defineConfig({
             { label: 'Python tools', slug: 'software/python' },
             { label: 'Raspberry Pi 5', slug: 'software/raspberry-pi' },
             { label: 'Control page', slug: 'software/control-page' },
+            { label: 'Robot description', slug: 'software/robot-description' },
             { label: 'Trajectory optimisation (TORA)', slug: 'software/tora' },
             { label: 'Tests', slug: 'software/tests' },
           ],

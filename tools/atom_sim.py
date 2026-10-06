@@ -24,19 +24,20 @@ from websockets.exceptions import ConnectionClosed
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import atom_replay  # noqa: E402
+import robot_params  # noqa: E402  (generated from mycobot_description/config)
 
 VERSION = (4, 4, 0)
-SIGN = (-1, -1, 1, -1, -1, -1)
-STEPS_PER_DEG = 4096 / 360
-LIMITS = (165, 140, 150, 150, 160, 180)   # degrees, from the URDF
+SIGN = robot_params.SIGN
+STEPS_PER_DEG = robot_params.STEPS_PER_DEG
+LIMITS = robot_params.LIMITS   # model joint limits (±°)
 BOOTING, HOLDING, READY, PLAYING, ERROR, OTA, MOVING, JOGGING, TRACKING = range(9)
 STATE_NAMES = ("booting", "holding", "ready", "playing", "error", "ota", "moving", "jogging", "tracking")
 
 DT = 0.002            # simulation step (500 Hz, as the firmware's control loop)
 TAU = 0.12            # servo lag (s)
 SERVO_VMAX = 90.0     # °/s
-MOVE_VMAX = 90.0      # MOVE_TO speed limit (°/s)
-MOVE_AMAX = (400.0, 400.0, 400.0, 2000.0, 2000.0, 2000.0)   # MOVE_TO acceleration limits (°/s²)
+MOVE_VMAX = robot_params.VMAX   # MOVE_TO speed limit (°/s)
+MOVE_AMAX = robot_params.AMAX   # MOVE_TO acceleration limits (°/s²)
 JOG_VMAX = 30.0       # °/s
 JOG_AMAX = 200.0      # °/s²
 JOG_MARGIN = 2.0      # stop this far inside the joint limits (°)

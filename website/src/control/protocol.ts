@@ -1,14 +1,14 @@
 // The ATOM's WebSocket API (draft for controller firmware 4.2): message codes, encoders and
 // decoders. The bytes are the same as the UDP protocol. Docs: src/content/docs/comms/websocket-api.md.
 
-export const SIGN = [-1, -1, 1, -1, -1, -1] as const;
-export const STEPS_PER_DEG = 4096 / 360;
-export const LIMITS = [165, 140, 150, 150, 160, 180] as const; // degrees, from the URDF
+import { SIGN, STEPS_PER_DEG, LIMITS, AMAX, VMAX } from './robot_params';
+
+// SIGN, STEPS_PER_DEG, LIMITS (±°) and AMAX (°/s²): generated from mycobot_description/config.
+export { SIGN, STEPS_PER_DEG, LIMITS, AMAX };
 export const JOG_MARGIN = 2; // JOG stops this far inside the limits (°)
 export const JOG_VMAX = 30; // °/s
-export const TRACK_VMAX = 90; // °/s, Live mode (TRACK, firmware 4.4+): as MOVE_TO
-export const MOVE_VMAX = 90; // °/s, MOVE_TO (firmware motion_limits.h)
-export const AMAX = [400, 400, 400, 2000, 2000, 2000]; // °/s², per joint (firmware motion_limits.h)
+export const TRACK_VMAX = VMAX; // °/s, Live mode (TRACK, firmware 4.4+): as MOVE_TO
+export const MOVE_VMAX = VMAX; // °/s, MOVE_TO
 
 export const STATES = ['booting', 'holding', 'ready', 'playing', 'error', 'OTA update', 'moving', 'jogging', 'tracking'];
 export const STATE_PLAYING = 3;

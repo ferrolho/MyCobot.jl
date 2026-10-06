@@ -29,3 +29,14 @@ const norm = MyCobot.LinearAlgebra.norm
     @test q ≈ q_true atol = 1e-4
     @test pos_err < 1e-6 && rot_err < 1e-6
 end
+
+# The URDFs and parameter tables are generated from mycobot_description (tools/gen_robot.py).
+# Skipped without uv (the Pi): the generator needs xacro.
+@testset "Robot description is up to date" begin
+    uv = Sys.which("uv")
+    if uv === nothing
+        @info "no uv: skipping the robot description check"
+    else
+        @test success(`$uv run -q $(joinpath(@__DIR__, "..", "tools", "gen_robot.py")) --check`)
+    end
+end

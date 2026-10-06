@@ -35,6 +35,10 @@ description: What was done when, and the decisions on the way.
 - The **controller firmware** plays the circle at **500 Hz** onboard: 5.0 mm, then 1.0 mm after three ILC runs. The IMU shows vibration bursts at joint reversals that ILC does not change.
 - This documentation site replaces the Markdown notes in `docs/`.
 
+## 2026-10-06
+
+- **One robot description:** the URDF (xacro), `joint_limits.yaml` (ros2_control format) and `servos.yaml` in `mycobot_description/`. `tools/gen_robot.py` writes the copies for the firmware, the Control page, the simulator and Julia. See [Robot description](/mycobot-280-lab/software/robot-description/).
+
 ## Decisions
 
 | Decision | Reason |
@@ -45,3 +49,4 @@ description: What was done when, and the decisions on the way.
 | The ATOM holds the pose at power-up with goal speed 0 | No motion until a plan sets a speed. |
 | The button is not an emergency stop | It moves with the end effector. |
 | Firmware backups and WiFi credentials stay outside the repository | Proprietary firmware and secrets. |
+| One robot description in ROS formats (URDF + xacro, ros2_control `joint_limits`), with our own `servos.yaml` only for what no format has | One source for every copy; ROS tools can read it (2026-10-06). |

@@ -1,6 +1,7 @@
 module MyCobot
 
 include("serial/ProtocolCode.jl")
+include("robot_params.jl")   # generated from mycobot_description/config (tools/gen_robot.py)
 include("kinematics.jl")
 include("feetech.jl")
 include("fastloop.jl")

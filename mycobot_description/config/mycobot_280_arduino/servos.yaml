@@ -1,0 +1,23 @@
+# Servos of the myCobot 280 for Arduino (our own format: no standard robot-description format
+# has these). tools/gen_robot.py reads this file and writes the servo tables of the firmware,
+# the Control page, the simulator and the Julia package. Edit this file, not the generated files.
+#
+# Feetech STS-series bus servos, 4096 steps per turn, step 2048 = joint angle 0.
+#   id      bus ID
+#   sign    joint angle direction against the servo position: angle = sign × (step − 2048) × 360 / 4096
+#   model   model number (registers 3–4; docs: system/servos)
+#   gains   position-loop gains [P, D, I] (registers 21, 22, 23) that our firmware writes at power-up
+#           (2026-10-04; docs: results/servo-dynamics)
+#   max_acceleration_register   factory register 85 (× 100 steps/s²): the servo's acceleration limit
+#   wn, zeta                    second-order model of the position loop (rad/s, -), fitted on
+#                               2026-10-04 inside the acceleration limit (docs: results/servo-dynamics)
+
+steps_per_turn: 4096
+center_step: 2048
+joints:
+  joint2_to_joint1:      { id: 1, sign: -1, model: 0x0809, gains: [32, 4, 16], max_acceleration_register: 50,  wn: 14.8, zeta: 0.82 }
+  joint3_to_joint2:      { id: 2, sign: -1, model: 0x0809, gains: [32, 4, 16], max_acceleration_register: 50,  wn: 14.7, zeta: 0.75 }
+  joint4_to_joint3:      { id: 3, sign: 1,  model: 0x0809, gains: [32, 4, 16], max_acceleration_register: 50,  wn: 14.2, zeta: 0.78 }
+  joint5_to_joint4:      { id: 4, sign: -1, model: 0x0709, gains: [32, 8, 0],  max_acceleration_register: 250, wn: 34.4, zeta: 0.65 }
+  joint6_to_joint5:      { id: 5, sign: -1, model: 0x0209, gains: [32, 8, 0],  max_acceleration_register: 250, wn: 52.4, zeta: 0.77 }
+  joint6output_to_joint6: { id: 6, sign: -1, model: 0x0209, gains: [32, 8, 0],  max_acceleration_register: 250, wn: 54.9, zeta: 0.83 }

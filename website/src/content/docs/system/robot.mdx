@@ -72,8 +72,9 @@ pin and pin 13 to GND before you connect a 3.3 V device such as an ESP32.
 
 ## Joint limits
 
-The model (`mycobot_description/urdf/mycobot_280_arduino/mycobot_280_arduino.urdf`)
-uses these limits. The planners and players read them from the URDF:
+The [robot description](/mycobot-280-lab/software/robot-description/) has these limits
+(`mycobot_description/config/mycobot_280_arduino/joint_limits.yaml`). The URDF, the
+firmware, the Control page and the planners get them from there:
 
 | Joint | J1 | J2 | J3 | J4 | J5 | J6 |
 | --- | --- | --- | --- | --- | --- | --- |
