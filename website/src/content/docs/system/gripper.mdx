@@ -1,15 +1,15 @@
 ---
 title: Gripper
-description: The adaptive gripper (myCobot_gripper_ag) — size, mount, cable, model and how to control it. Mounted and in the model (shape only), not yet controlled.
+description: The adaptive gripper (myCobot_gripper_ag) — size, mount, cable, model and how to control it. Mounted, in the model (shape only), controlled by firmware 4.6.
 ---
 
 import Gripper from '../../../components/Gripper.astro';
 import ArmEnd from '../../../components/ArmEnd.astro';
 
-:::note[Mounted, in the model, not yet controlled]
+:::note[Mounted, in the model, controlled]
 The gripper is on the arm since 2026-10-06 (see [Mount and cable](#mount-and-cable)).
-The robot model has its shape, but not its mass (see [Model](#model-urdf)). It is not yet
-controlled. This page records what is known
+The robot model has its shape, but not its mass (see [Model](#model-urdf)). Controller
+firmware 4.6 finds it and moves it (see [Control](#control)). This page records what is known
 from the gripper, its label, Elephant's 3D model and Elephant's software. The items marked "not
 checked" need a test.
 :::
@@ -140,10 +140,11 @@ The Control page's 3D view (`viewer3d.ts`) shows the opening as a fraction. It s
 | 0 (closed) | −0.70 rad | 6.0 mm |
 | 1 (open) | +0.15 rad | 43.4 mm |
 
-:::note[Not calibrated]
-The opening is not calibrated. The gripper servo positions (ID 7) for "closed" and
-"open" are not measured, and the model angles are not compared with the gripper. The
-pad gap is not linear in the joint angle.
+:::note[Partly calibrated]
+The servo end stops are measured (see [Control](#control)), and firmware 4.6 reports the
+opening between them. The 3D view sets the model joint linearly from that opening. The
+model angles are not compared with the gripper, and the pad gap is not linear in the
+joint angle.
 :::
 
 ### In the software
@@ -154,6 +155,37 @@ pad gap is not linear in the joint angle.
 | Control page | `ArmView.setGripper(present)` swaps the 3D view (solid arm and goal ghost) to the URDF with the gripper. `setGripperOpening(fraction)` sets the measured opening, `setGoalGripperOpening(fraction or null)` the opening of the ghost. urdf-loader applies the `mimic` tags. |
 
 ## Control
+
+### With our controller firmware (4.6+)
+
+The gripper is a Feetech bus servo, **ID 7**, model `0x070A` (registers 3–4), on the same
+bus as J1–J6 (checked 2026-10-06). Our firmware:
+
+- looks for it at power-up and then once a second, so it can be connected later; it
+  reads its position 10 times a second while it is there;
+- reports it in the STREAM (present, opening, load) and takes the GRIPPER command
+  (`0x11`): opening 0 (closed) to 1000 (open) in 0.1 %, or `0xFFFF` to turn its torque
+  off. See [WebSocket API](/mycobot-280-lab/comms/websocket-api/#gripper-46);
+- works also during MOVE_TO, JOG and TRACK (Live mode), but not during PLAY or PLAY_SIGNAL.
+
+The opening maps linearly to servo steps (`servos.yaml`, key `gripper`):
+
+| Item | Value |
+| --- | --- |
+| End stops (slow scan at 15 % torque, 2026-10-06) | 1462 closed, 2048 open (51.5°; the model joint range is 48.7°) |
+| Opening 0 (closed) | 1477 (15 steps inside the stop at 1462) |
+| Opening 1000 (open) | 2033 (15 steps inside the stop at 2048) |
+| Goal speed | 1000 steps/s: the full stroke in about 0.6 s |
+| Torque limit (register 48) | 300 (30 %), as set by Elephant; not changed |
+
+Checked with the camera on 2026-10-06: at 2033 the jaws are wide open, at 1477 the
+pads almost touch. The stock calibration point (2048) is the open end.
+
+Servo registers as found (2026-10-06): firmware 3.40, angle limits 0–4095, P/D/I
+150/150/0, offset −889 (the stock calibration), torque off, goal speed 0.
+
+On the [Control page](/mycobot-280-lab/software/control-page/#gripper-j7) a **J7** strip
+appears next to J6 when the ATOM finds the gripper.
 
 ### With the stock ATOM firmware
 
@@ -167,20 +199,12 @@ pymycobot sends these stock-ATOM commands (`FE FE` frames):
 | `SET_GRIPPER_CALIBRATION` | `0x68` | The present position becomes 2048 |
 | `IS_GRIPPER_MOVING` | `0x69` | Reply: 0 or 1 |
 
-### Direct, on the servo bus (not checked)
+### Direct, on the servo bus
 
-The evidence points to a bus servo with **ID 7**:
+The gripper is a bus servo with **ID 7** (checked 2026-10-06). The evidence before:
 
 - The stock firmware sends a PING to ID 7 before each angle read. See
   [Stock ATOM protocol](/mycobot-280-lab/comms/stock-atom/).
 - Calibration sets the position to 2048, the centre of a 12-bit Feetech position.
 
-If this is correct, the ATOM controller and the laptop can control the gripper with
-the same packets as J1–J6.
-
-To check it:
-
-1. Switch off the 12 V supply. Connect the gripper cable.
-2. Switch on. Send a PING to ID 7.
-3. Read the model number (registers 3–4) and the present position (56–57).
-4. Read the angle limits (9–12) before you write a goal.
+The ATOM controller (above) and the laptop can control it with the same packets as J1–J6.

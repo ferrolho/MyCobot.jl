@@ -212,6 +212,7 @@ export function start() {
   const armEl = $('#arm-view');
   import('./viewer3d').then(({ ArmView }) => {
     arm = new ArmView(armEl, armEl.dataset.urdf!);
+    if (gripperShown) arm.setGripper(true); // found before the 3D view was ready
     dirty = true;
   });
   $('#arm-reset').addEventListener('click', () => arm?.resetView());
@@ -257,6 +258,107 @@ export function start() {
     strips.append(s);
   }
   const stripEls = [...strips.querySelectorAll<HTMLElement>('.strip')];
+
+  // J7, the gripper (firmware 4.6+): shown while the ATOM finds it (servo ID 7). It works as the other
+  // joints: the fader and the typed value set the goal (Move sends it; in Live mode it goes at once), and
+  // ▼/▲ move it while held (not in Live mode). 0 % closed, 100 % open.
+  const gStrip = stripTpl.content.firstElementChild!.cloneNode(true) as HTMLElement;
+  gStrip.classList.add('gripper-strip');
+  gStrip.hidden = true;
+  gStrip.style.setProperty('--key', 'var(--sl-color-gray-3)');
+  $('.j-name', gStrip).textContent = 'J7';
+  gStrip.title = 'J7: the gripper';
+  $('.f-top', gStrip).textContent = '100'; // % open; words do not fit next to the fader
+  $('.f-bot', gStrip).textContent = '0';
+  $('.f-zero', gStrip).hidden = true;
+  $('.goal-field .sr-only', gStrip).textContent = 'Goal (%)';
+  const gFader = $<HTMLInputElement>('.goal-input', gStrip);
+  const gNum = $<HTMLInputElement>('.goal-num', gStrip);
+  for (const i of [gFader, gNum]) Object.assign(i, { min: '0', max: '100', step: '1', value: '0' });
+  gFader.setAttribute('aria-label', 'J7 (gripper) goal opening');
+  gFader.setAttribute('orient', 'vertical');
+  gNum.setAttribute('aria-label', 'J7 (gripper) goal opening, percent');
+  // ▼ closes and ▲ opens while held, as the jog buttons of the other joints: on release the goal
+  // becomes the measured opening, so the gripper stops where it is.
+  const [gClose, gOpen] = [...gStrip.querySelectorAll<HTMLButtonElement>('.jog')];
+  for (const [b, label] of [[gClose, 'Close J7 (hold)'], [gOpen, 'Open J7 (hold)']] as const) {
+    b.className = 'btn jog grip-btn needs-control not-live'; // .jog styling; the joint jog handlers skip .grip-btn
+    b.setAttribute('aria-label', label);
+  }
+  $('.j-meta', gStrip).replaceChildren(Object.assign(document.createElement('span'), { className: 'g-load', title: 'Servo load' }));
+  strips.append(gStrip);
+  let gripperShown = false;
+  let gGoal = 0; // %
+
+  // At most 20 GRIPPER messages a second; the last value is always sent.
+  let gTimer: number | undefined;
+  let gPending: { v: number | null } | null = null;
+  const sendGripper = (opening: number | null) => {
+    if (gTimer !== undefined) {
+      gPending = { v: opening };
+      return;
+    }
+    link.send(P.gripper(opening));
+    gTimer = window.setTimeout(() => {
+      gTimer = undefined;
+      const p = gPending;
+      gPending = null;
+      if (p) sendGripper(p.v);
+    }, 50);
+  };
+  const gMeasured = () => (link.last?.gripper ? Math.max(0, Math.min(1, link.last.gripper.opening)) * 100 : null);
+  const setGripperGoal = (pct: number, send: boolean) => {
+    gGoal = Math.round(Math.max(0, Math.min(100, pct)));
+    gFader.value = String(gGoal);
+    if (document.activeElement !== gNum) gNum.value = String(gGoal);
+    if (send && link.inControl) sendGripper(gGoal / 100);
+    updateGoals();
+  };
+  gFader.addEventListener('input', () => setGripperGoal(Number(gFader.value), live));
+  gNum.addEventListener('change', () => {
+    const v = Number(gNum.value.replace(',', '.'));
+    if (Number.isFinite(v) && gNum.value.trim() !== '') setGripperGoal(v, live);
+    gNum.value = String(gGoal);
+  });
+  for (const [b, end] of [[gClose, 0], [gOpen, 100]] as const) {
+    let held = false;
+    b.addEventListener('pointerdown', (e) => {
+      if (b.disabled) return;
+      b.setPointerCapture(e.pointerId);
+      held = true;
+      setGripperGoal(end, true);
+    });
+    const stop = () => {
+      if (!held) return;
+      held = false;
+      const m = gMeasured();
+      if (m !== null) setGripperGoal(m, true);
+    };
+    b.addEventListener('pointerup', stop);
+    b.addEventListener('pointercancel', stop);
+    b.addEventListener('lostpointercapture', stop);
+    b.addEventListener('contextmenu', (e) => e.preventDefault());
+  }
+
+  function renderGripper(g: P.Stream['gripper']) {
+    if (!!g !== gripperShown) {
+      gripperShown = !!g;
+      gStrip.hidden = !g;
+      arm?.setGripper(!!g);
+      if (g) setGripperGoal(g.opening * 100, false); // start from where it is: no jump to an old goal
+      updateControls();
+    }
+    if (!g) return;
+    const pctOpen = Math.max(0, Math.min(1, g.opening)) * 100;
+    $('.j-angle', gStrip).textContent = `${Math.round(pctOpen)}\u00a0%`;
+    $('.f-pos', gStrip).style.top = `${100 - pctOpen}%`;
+    const fill = $('.f-fill', gStrip);
+    fill.style.top = `${100 - pctOpen}%`;
+    fill.style.height = `${pctOpen}%`;
+    $('.g-load', gStrip).textContent = `${fmt(g.load)}\u00a0%`;
+    arm?.setGripperOpening(g.opening);
+    arm?.setGoalGripperOpening(Math.abs(gGoal - pctOpen) > 3 ? gGoal / 100 : null);
+  }
 
   // Plots
   const plotTpl = $<HTMLTemplateElement>('#plot');
@@ -425,8 +527,8 @@ export function start() {
     $('#robot-state').dataset.state = String(s.state);
     stripEls.forEach((row, j) => {
       $('.j-angle', row).textContent = `${fmt(s.q[j])}°`;
-      $('.j-temp', row).textContent = `${s.temp[j]} °C`;
-      $('.j-volt', row).textContent = `${fmt(s.volt[j])} V`;
+      $('.j-temp', row).textContent = `${s.temp[j]}\u00a0°C`; // no-break space: the unit stays with its number
+      $('.j-volt', row).textContent = `${fmt(s.volt[j])}\u00a0V`;
       // The track runs from the min limit (bottom) to the max limit (top). The fill goes from zero to the angle.
       const y = 100 - pct(j, s.q[j]), y0 = 100 - pct(j, 0);
       $('.f-pos', row).style.top = `${y}%`;
@@ -436,6 +538,7 @@ export function start() {
       row.classList.toggle('servo-fault', s.status[j] !== 0);
     });
     arm?.setPose(s.q);
+    renderGripper(s.gripper);
     updateGoals();
     updateControls();
   }
@@ -491,6 +594,7 @@ export function start() {
       : 'Live: the arm follows the goals at once (up to the speed setting). Off: set the goals, then Move.';
     liveBox.checked = live;
     $<HTMLButtonElement>('#goal-current').disabled = !mine;
+    gFader.disabled = gNum.disabled = !mine;
   }
 
   controlBtn.addEventListener('click', () => {
@@ -536,7 +640,7 @@ export function start() {
     $('#jog-speed-value').textContent = `${speed.value} °/s`;
     sendLive();
   });
-  strips.querySelectorAll<HTMLButtonElement>('.jog').forEach((b) => {
+  strips.querySelectorAll<HTMLButtonElement>('.jog:not(.grip-btn)').forEach((b) => {
     const j = Number((b.closest('.strip') as HTMLElement).dataset.joint);
     const dir = Number(b.dataset.dir);
     const end = () => link.setJog(j, 0);
@@ -572,6 +676,10 @@ export function start() {
       num.toggleAttribute('data-same', same);
       differs ||= !same;
     });
+    const gm = gMeasured();
+    const gSame = !gripperShown || gm === null || Math.abs(gGoal - gm) <= 3;
+    gNum.toggleAttribute('data-same', gSame);
+    differs ||= !gSame;
     arm?.setGoal(s && differs ? goal : null);
   }
   const setGoal = (j: number, deg: number) => {
@@ -601,8 +709,19 @@ export function start() {
   });
   const setGoals = (q: number[]) => q.forEach((x, j) => setGoal(j, x));
   updateGoals();
-  $('#goal-current').addEventListener('click', () => link.last && setGoals(link.last.q));
-  $('#goal-move').addEventListener('click', () => moveToGoal(goal.slice()));
+  const gripperToCurrent = () => {
+    const m = gMeasured();
+    if (gripperShown && m !== null) setGripperGoal(m, false);
+  };
+  $('#goal-current').addEventListener('click', () => {
+    if (link.last) setGoals(link.last.q);
+    gripperToCurrent();
+  });
+  $('#goal-move').addEventListener('click', () => {
+    moveToGoal(goal.slice());
+    const m = gMeasured();
+    if (gripperShown && m !== null && Math.abs(gGoal - m) > 1) sendGripper(gGoal / 100); // J7 with the joints
+  });
 
   // --- Live mode (firmware 4.4+): the ATOM moves the joints to the goals at once (TRACK), at up to the
   // speed setting and the joints' acceleration limits, and stops on them. Never MOVE_TO. ---
@@ -613,6 +732,7 @@ export function start() {
     if (on) {
       if (!link.inControl || !link.last || !liveSupported()) return updateControls();
       setGoals(link.last.q); // start from where the arm is: no jump to an old goal
+      gripperToCurrent();
       live = true;
       sendLive();
       toast('Live: the arm follows the faders and the typed goals. Esc stops.', 'warning');

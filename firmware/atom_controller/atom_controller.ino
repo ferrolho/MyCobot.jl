@@ -22,6 +22,10 @@
 //        every 200 ms (deadman: brake and hold). ACK only if refused (-1 busy, -10-j goal of joint j outside); state 8
 //        JOG and TRACK stopped by a following error (20°; in TRACK 20° + 0.15 s × recent peak speed) -> DONE result 1, joint, error
 //   STREAM (4.2+) has one more byte at offset 73: control 0 nobody, 1 you, 2 another client (74 bytes).
+//   0x11 GRIPPER u16 opening (0.1 %: 0 closed, 1000 open; 0xFFFF torque off) (4.6+). ACK only if refused
+//        (-1 bad value or busy (PLAY, PLAY_SIGNAL), -4 no gripper). Also during MOVE_TO, JOG and TRACK.
+//   STREAM (4.6+) has 5 more bytes at offset 74: u8 gripper (0 none, 1 found), i16 opening (0.1 %),
+//        i16 load (0.1 %) (79 bytes).
 // Full API: website/src/content/docs/comms/websocket-api.md.
 //
 // UDP protocol (little-endian). Clients -> ATOM port 5006. Replies go to the sender of each request
@@ -109,8 +113,8 @@
 // PATCH for fixes. PING reports MAJOR as its u16 version, then MINOR and PATCH (3.1+).
 // History: docs (firmware/changelog). FW_GIT is set by the build (git describe).
 #define FW_MAJOR 4
-#define FW_MINOR 5
-#define FW_PATCH 1
+#define FW_MINOR 6
+#define FW_PATCH 0
 #define FW_VERSION FW_MAJOR
 #ifndef FW_GIT
 #define FW_GIT "unknown"
@@ -299,6 +303,7 @@ struct Latest {                                    // written by the control loo
     uint32_t t_ms; uint8_t ok;
     uint16_t pos[N_SERVOS], spd[N_SERVOS], load[N_SERVOS];
     uint8_t temp[N_SERVOS], volt[N_SERVOS], status[N_SERVOS];
+    uint8_t gripper; int16_t gripper_opening, gripper_load;   // 4.6+: present, permille, 0.1 %
 } latest;
 portMUX_TYPE latest_mux = portMUX_INITIALIZER_UNLOCKED;
 
@@ -338,10 +343,77 @@ float jog_target[N_SERVOS]; volatile uint32_t jog_ms = 0;   // JOG velocities, o
 float jog_vmax = 0;                                           // TRACK speed cap (°/s)
 portMUX_TYPE jog_mux = portMUX_INITIALIZER_UNLOCKED;
 
+// ---- Gripper (4.6+): the adaptive gripper, servo GRIPPER_ID on the same bus -------------------------
+// Found by its model number at power-up and once a second after (it can be plugged in later). The
+// opening is in permille: 0 = closed (GRIPPER_CLOSED_STEP), 1000 = open (GRIPPER_OPEN_STEP), from
+// servos.yaml. GRIPPER (0x11) sets a goal; the control loop writes it (gripper_tick).
+const int32_t GRIPPER_RELEASE = 0xFFFF;   // GRIPPER value: torque off
+const uint8_t GRIPPER_ACCELERATION = 250;  // register 41 (× 100 steps/s²), as Elephant set it
+volatile int32_t gripper_cmd = -1;        // pending goal (permille or GRIPPER_RELEASE), -1 = none
+volatile bool gripper_present = false;    // control loop writes, network task reads
+
+inline uint16_t gripper_step(int32_t permille) {
+    return (uint16_t)(robot::GRIPPER_CLOSED_STEP + (robot::GRIPPER_OPEN_STEP - robot::GRIPPER_CLOSED_STEP) * permille / 1000);
+}
+inline int16_t gripper_permille(uint16_t step) {
+    return (int16_t)(((int32_t)step - robot::GRIPPER_CLOSED_STEP) * 1000 / (robot::GRIPPER_OPEN_STEP - robot::GRIPPER_CLOSED_STEP));
+}
+
+void publish_gripper(bool present, int16_t opening, int16_t load) {
+    portENTER_CRITICAL(&latest_mux);
+    latest.gripper = present; latest.gripper_opening = opening; latest.gripper_load = load;
+    portEXIT_CRITICAL(&latest_mux);
+}
+
+// Control loop (idle, MOVE_TO, JOG and TRACK; not PLAY): at most one bus transfer per call (about 0.3 ms): a
+// pending goal, else a read every 100 ms while present, else a probe every second.
+void gripper_tick() {
+    static uint32_t next_ms = 0;
+    static uint8_t misses = 0;
+    uint32_t now = millis();
+    int32_t cmd = gripper_cmd;
+    if (cmd >= 0 && gripper_present) {
+        gripper_cmd = -1;
+        if (cmd == GRIPPER_RELEASE) {
+            uint8_t off = 0;
+            reg_write(robot::GRIPPER_ID, REG_TORQUE_ENABLE, &off, 1);
+        } else {
+            // One write from register 41: acceleration, goal position, goal time 0, goal speed (as
+            // Feetech's WritePosEx). With two writes back to back (goal speed, then goal position), the
+            // servo took the goal into its registers but did not move (2026-10-06).
+            uint16_t st = gripper_step(cmd), sp = robot::GRIPPER_SPEED;
+            uint8_t g[7] = {GRIPPER_ACCELERATION, (uint8_t)(st & 0xFF), (uint8_t)(st >> 8), 0, 0,
+                            (uint8_t)(sp & 0xFF), (uint8_t)(sp >> 8)};
+            reg_write(robot::GRIPPER_ID, REG_ACCELERATION, g, 7);   // turns the torque on
+            delayMicroseconds(300);   // no request straight after a write (see bus.h)
+        }
+        return;
+    }
+    if ((int32_t)(now - next_ms) < 0) return;
+    if (gripper_present) {
+        next_ms = now + 100;
+        uint8_t d[6];
+        if (reg_read(robot::GRIPPER_ID, REG_PRESENT_POSITION, 6, d)) {
+            misses = 0;
+            uint16_t l = u16le(d + 4);
+            publish_gripper(true, gripper_permille(u16le(d)), (l & 0x400) ? -(int16_t)(l & 0x3FF) : (int16_t)(l & 0x3FF));
+        } else if (++misses >= 5) {   // unplugged
+            gripper_present = false; gripper_cmd = -1;
+            publish_gripper(false, 0, 0);
+        }
+    } else {
+        next_ms = now + 1000;
+        uint8_t m[2];
+        if (reg_read(robot::GRIPPER_ID, 3, 2, m) && u16le(m) == robot::GRIPPER_MODEL) {
+            gripper_present = true; misses = 0; next_ms = now;
+        }
+    }
+}
+
 void serve_stream() {                              // network task
     uint32_t now = millis();
     uint16_t top = 0;
-    uint8_t pkt[74]; bool built = false;
+    uint8_t pkt[79]; bool built = false;
     for (int i = 0; i < MAX_SUBS; i++) {
         Sub& s = subs[i];
         if (!s.rate) continue;
@@ -359,6 +431,7 @@ void serve_stream() {                              // network task
             memcpy(pkt + 7, l.pos, 12); memcpy(pkt + 19, l.spd, 12); memcpy(pkt + 31, l.load, 12);
             memcpy(pkt + 43, l.temp, 6); memcpy(pkt + 49, l.volt, 6); memcpy(pkt + 55, l.status, 6);
             memcpy(pkt + 61, im.acc, 6); memcpy(pkt + 67, im.gyro, 6);
+            pkt[74] = l.gripper; memcpy(pkt + 75, &l.gripper_opening, 2); memcpy(pkt + 77, &l.gripper_load, 2);
             built = true;
         }
         pkt[73] = !valid(ctrl) ? 0 : (same(s.a, ctrl) ? 1 : 2);   // control: nobody, you, another client
@@ -368,7 +441,7 @@ void serve_stream() {                              // network task
 }
 
 bool needs_control(uint8_t c) {
-    return c == 0x04 || c == 0x05 || c == 0x06 || c == 0x07 || c == 0x0A || c == 0x0B || c == 0x0E || c == 0x0F || c == 0x10;
+    return c == 0x04 || c == 0x05 || c == 0x06 || c == 0x07 || c == 0x0A || c == 0x0B || c == 0x0E || c == 0x0F || c == 0x10 || c == 0x11;
 }
 
 void handle_command(const uint8_t* b, int n) {
@@ -439,6 +512,15 @@ void handle_command(const uint8_t* b, int n) {
             req_from = play_to = cmd_from; telem_on = true;
             request = REQ_TRACK;
         } else ack(0x10, -1);
+        break;
+    }
+    case 0x11: {   // GRIPPER u16 opening (0.1 %, 0 = closed, 1000 = open; 0xFFFF = torque off). ACK only if refused.
+        if (n != 3) { ack(0x11, -1); break; }
+        uint16_t v; memcpy(&v, b + 1, 2);
+        if (v > 1000 && v != GRIPPER_RELEASE) { ack(0x11, -1); break; }
+        if (!gripper_present) { ack(0x11, -4); break; }
+        if (state == PLAYING || state == OTA || state == BOOTING) { ack(0x11, -1); break; }
+        gripper_cmd = v;
         break;
     }
     case 0x01: {   // PING
@@ -856,6 +938,7 @@ void play(uint8_t src = 0) {
         sync_write_u16(REG_GOAL_POSITION, cmd);
         bool ok = read_state(pos, spd, load);
         if (stream_rate) publish_state(ok, pos, spd, load);
+        if (use_move) gripper_tick();   // MOVE_TO: the Control page's Move sends J7 with the joints
 
         Sample& s = ring[ring_head % RING];
         if (ring_head - ring_tail >= RING) { telem_dropped++; }
@@ -978,6 +1061,7 @@ void jog_run(bool track = false) {
         sync_write_u16(REG_GOAL_POSITION, cmd);
         bool ok = read_state(pos, spd, load);
         publish_state(ok, pos, spd, load);
+        gripper_tick();
         // TRACK at speed: the servos lag their goal by about 0.11 s, and up to twice that with the integral
         // gain on J1-J3 in fast reversals (2026-10-05: J1 at 90 °/s went past 20°). So in TRACK the allowed
         // following error grows with the recent peak speed (it decays over 0.3 s, so a reversal through zero
@@ -1028,6 +1112,7 @@ void idle_stream_reads() {
 }
 
 void loop() {
+    if (state != PLAYING && state != MOVING && state != OTA) gripper_tick();
     static bool btn_prev = false;
     bool btn = digitalRead(BTN_PIN) == LOW;
     if (btn && !btn_prev && state != PLAYING) { req_from = Addr(); request = REQ_HOLD; }   // acknowledge / clear error

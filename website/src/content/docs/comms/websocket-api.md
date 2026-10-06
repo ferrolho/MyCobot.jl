@@ -78,6 +78,7 @@ converts them to servo steps.
 | `0x0E` | MOVE_TO | i16 goal[6] (0.01°), u16 duration (ms; 0 = the ATOM chooses it from the speed limit) | ACK: 0 started, −1 busy, −2 no control, −10−j goal of joint j outside the limits. Then DONE (`0x85`) when the move ends. No TELEM over WebSocket (4.3.1+): watch the STREAM. |
 | `0x0F` | JOG | u8 frame (0 = joints), i16 velocity[6] (0.1 °/s) | ACK only if refused: −1 busy, −2 no control |
 | `0x10` | TRACK (4.4+) | i16 goal[6] (0.01°), u16 vmax (0.1 °/s, at most 90 °/s) | ACK only if refused: −1 busy, −2 no control, −10−j goal of joint j outside the limits. See [TRACK](#track-live-mode). |
+| `0x11` | GRIPPER (4.6+) | u16 opening (0.1 %: 0 closed, 1000 open; `0xFFFF` = torque off) | ACK only if refused: −1 bad value or busy (PLAY, PLAY_SIGNAL), −2 no control, −4 no gripper. See [GRIPPER](#gripper-46). |
 
 ### MOVE_TO
 
@@ -136,6 +137,26 @@ Control page's Live mode sends the fader goals with TRACK.
 The motion runs on the ATOM at 500 Hz, so WiFi delays do not change the path. Before
 4.4, Live mode sent JOG velocities from the page (at most 30 °/s and 200 °/s², with a
 slow approach to the goal).
+
+### GRIPPER (4.6+)
+
+The ATOM looks for the [gripper](/mycobot-280-lab/system/gripper/#control) (servo ID 7,
+model `0x070A`) at power-up and once a second. GRIPPER sets its goal opening; the
+servo moves there at 1000 steps/s (the full stroke in about 0.6 s) and holds it. On an
+object it squeezes with its torque limit (30 %). `0xFFFF` turns its torque off.
+
+- It needs control, like the motion commands. It works while the arm holds, moves
+  (MOVE_TO), jogs or tracks (Live mode), not during PLAY or PLAY_SIGNAL.
+- The ATOM writes at most one gripper goal per control cycle (2 ms). The Control page
+  sends at most 20 a second.
+- The Control page shows the gripper as **J7**.
+- STREAM (4.6+) has 5 more bytes (79 bytes):
+
+| Offset | Field | Values |
+| --- | --- | --- |
+| 74 | u8 gripper | 0 not found, 1 found |
+| 75 | i16 opening | 0.1 %: 0 closed, 1000 open (a little outside 0–1000 at the end stops) |
+| 77 | i16 load | 0.1 % (signed) |
 
 ## State in the STREAM packet (4.2 additions)
 

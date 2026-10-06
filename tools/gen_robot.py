@@ -88,6 +88,7 @@ def params():
         "wn": [x["wn"] for x in s],
         "zeta": [x["zeta"] for x in s],
         "center": servos["center_step"],
+        "gripper": servos["gripper"],
         "steps_per_turn": servos["steps_per_turn"],
     }
 
@@ -107,6 +108,11 @@ def c_params(p):
             f"const float AMAX_DPS2[N_JOINTS] = {arr(p['amax_dps2'])};   // acceleration limits (°/s²)\n"
             f"const int8_t JOINT_SIGN[N_JOINTS] = {arr(p['sign'])};   // angle = sign × (step − {p['center']}) × 360 / {p['steps_per_turn']}\n"
             f"const uint8_t GAINS[N_JOINTS][3] = {{{', '.join(arr(g) for g in p['gains'])}}};   // P, D, I (registers 21, 22, 23)\n"
+            f"const uint8_t GRIPPER_ID = {p['gripper']['id']};   // adaptive gripper: bus ID, model (registers 3-4)\n"
+            f"const uint16_t GRIPPER_MODEL = 0x{p['gripper']['model']:04X};\n"
+            f"const int GRIPPER_CLOSED_STEP = {p['gripper']['closed_step'] + p['gripper']['margin'] * (1 if p['gripper']['open_step'] > p['gripper']['closed_step'] else -1)};   // opening 0 (end stop {p['gripper']['closed_step']}, the margin inside)\n"
+            f"const int GRIPPER_OPEN_STEP = {p['gripper']['open_step'] - p['gripper']['margin'] * (1 if p['gripper']['open_step'] > p['gripper']['closed_step'] else -1)};   // opening 1000 (end stop {p['gripper']['open_step']}, the margin inside)\n"
+            f"const uint16_t GRIPPER_SPEED = {p['gripper']['speed']};   // goal speed (steps/s)\n"
             "}  // namespace robot\n")
 
 

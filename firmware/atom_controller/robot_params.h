@@ -11,4 +11,9 @@ const float VMAX_DPS = 90;   // speed limit (°/s)
 const float AMAX_DPS2[N_JOINTS] = {400, 400, 400, 2000, 2000, 2000};   // acceleration limits (°/s²)
 const int8_t JOINT_SIGN[N_JOINTS] = {-1, -1, 1, -1, -1, -1};   // angle = sign × (step − 2048) × 360 / 4096
 const uint8_t GAINS[N_JOINTS][3] = {{32, 4, 16}, {32, 4, 16}, {32, 4, 16}, {32, 8, 0}, {32, 8, 0}, {32, 8, 0}};   // P, D, I (registers 21, 22, 23)
+const uint8_t GRIPPER_ID = 7;   // adaptive gripper: bus ID, model (registers 3-4)
+const uint16_t GRIPPER_MODEL = 0x070A;
+const int GRIPPER_CLOSED_STEP = 1477;   // opening 0 (end stop 1462, the margin inside)
+const int GRIPPER_OPEN_STEP = 2033;   // opening 1000 (end stop 2048, the margin inside)
+const uint16_t GRIPPER_SPEED = 1000;   // goal speed (steps/s)
 }  // namespace robot

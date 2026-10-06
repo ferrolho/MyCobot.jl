@@ -26,7 +26,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import atom_replay  # noqa: E402
 import robot_params  # noqa: E402  (generated from mycobot_description/config)
 
-VERSION = (4, 5, 1)
+VERSION = (4, 6, 0)
 SIGN = robot_params.SIGN
 STEPS_PER_DEG = robot_params.STEPS_PER_DEG
 LIMIT_MIN = robot_params.LIMIT_MIN   # model joint limits (°)
@@ -103,6 +103,9 @@ class Sim:
         self.jog_last = 0.0
         self.track_goal = [0.0] * 6   # TRACK (4.4): goal pose and speed cap
         self.track_vmax = 0.0
+        self.gripper = 0.5            # gripper (4.6): opening 0..1, its goal, and torque on
+        self.gripper_goal = 0.5
+        self.gripper_on = False
         self.state = HOLDING
         self.plan_samples = 0
         self.gains = {j: [32, 4, 16] if j <= 3 else [32, 8, 0] for j in range(1, 8)}
@@ -136,8 +139,10 @@ class Sim:
         volt = [76, 76, 76, 66, 64, 64]
         ctrl = 0 if self.controller is None else (1 if self.controller is client else 2)
         t_ms = int((time.monotonic() - self.t0) * 1000) & 0xFFFFFFFF
-        return struct.pack("<BIBB6H6H6H6B6B6B3h3hB", 0x88, t_ms, self.state, 1, *p, *s, *l,
-                           *[int(round(t)) for t in self.temp], *volt, *([0] * 6), *acc, *gyr, ctrl)
+        g_load = 30 if self.gripper_on and abs(self.gripper - self.gripper_goal) < 1e-3 else 5
+        return struct.pack("<BIBB6H6H6H6B6B6B3h3hBBhh", 0x88, t_ms, self.state, 1, *p, *s, *l,
+                           *[int(round(t)) for t in self.temp], *volt, *([0] * 6), *acc, *gyr, ctrl,
+                           1, int(round(self.gripper * 1000)), g_load if self.gripper_on else 0)
 
     def status_line(self):
         ctrl = "none" if self.controller is None else "taken"
@@ -147,6 +152,9 @@ class Sim:
     # --- Simulation ----------------------------------------------------------------------------
 
     def step(self, now):
+        if self.gripper_on:   # the full stroke in about 0.6 s
+            d = self.gripper_goal - self.gripper
+            self.gripper += max(-DT / 0.6, min(DT / 0.6, d))
         if self.controller is not None and now - self.controller.last_msg > LEASE:
             run = (self.state == PLAYING and self.play_client is self.controller) or \
                   (self.state == MOVING and self.move and self.move[4] is self.controller)
@@ -230,7 +238,7 @@ class Sim:
         now = time.monotonic()
         c.last_msg = now
         code = b[0]
-        needs_control = code in (0x04, 0x05, 0x06, 0x07, 0x0A, 0x0B, 0x0E, 0x0F, 0x10)
+        needs_control = code in (0x04, 0x05, 0x06, 0x07, 0x0A, 0x0B, 0x0E, 0x0F, 0x10, 0x11)
         if needs_control and self.controller is None:
             self.controller = c       # nobody has control: the command takes it (as CONTROL 1)
         if needs_control and self.controller is not c:
@@ -332,6 +340,13 @@ class Sim:
             if any(self.jog_cmd) and self.state != JOGGING:
                 self.goal = list(self.q)
                 self.state = JOGGING
+        elif code == 0x11 and len(b) >= 3:    # GRIPPER (4.6): opening (0.1 %) or 0xFFFF (torque off)
+            v = struct.unpack_from("<H", b, 1)[0]
+            if v > 1000 and v != 0xFFFF or self.state == PLAYING:
+                return self.ack(c, 0x11, -1)
+            self.gripper_on = v != 0xFFFF
+            if self.gripper_on:
+                self.gripper_goal = v / 1000
         elif code == 0x10 and len(b) >= 15:   # TRACK (4.4): goal pose (0.01°) and speed cap (0.1°/s)
             goal = [v / 100 for v in struct.unpack_from("<6h", b, 1)]
             vmax = struct.unpack_from("<H", b, 13)[0] / 10

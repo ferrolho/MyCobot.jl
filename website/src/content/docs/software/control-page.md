@@ -110,6 +110,22 @@ later.
 - The joints panel has an amber frame while Live is on.
 - The jog buttons (▼/▲) use the **Speed** setting, at most 30 °/s.
 
+### Gripper (J7)
+
+With firmware 4.6 or later, a **J7** strip appears next to J6 when the ATOM finds the
+[gripper](/mycobot-280-lab/system/gripper/#control). It disappears when the gripper is
+disconnected. The 3D view then shows the arm with the gripper.
+
+J7 works as the other joints, with the opening in % (0 closed, 100 open):
+
+- The fader and the typed value set the goal. The ghost shows it. **Move** sends the
+  joints and J7 together. With **Live** on, J7 follows the goal at once.
+- Hold **▼** to close and **▲** to open. When you let go, the gripper stops where it
+  is. As the jog buttons, they are off in Live mode.
+- **Use current pose** and switching Live on set the J7 goal to the measured opening.
+- The strip shows the measured opening and the servo load (%).
+- These controls need control, as the joints do.
+
 :::danger
 **Stop** and the **Esc** key stop the robot through the software. They are not an
 emergency stop. Keep the power switch or a real emergency stop in reach. See

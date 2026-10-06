@@ -14,6 +14,19 @@ UDP port 5005 shows it with the git commit of the build, for example
 `atom_controller v4.0.0 (bff4529)`. Each version has a git tag
 `atom-controller-vX.Y.Z` (local until the repository is pushed).
 
+## 4.6.0 — 2026-10-06
+
+- **Gripper.** The ATOM finds the adaptive gripper (servo ID 7, model `0x070A`) at
+  power-up and once a second after, and reads it 10 times a second while it is there.
+  New command **GRIPPER** (`0x11`): u16 opening in 0.1 % (0 closed, 1000 open), or
+  `0xFFFF` for torque off. It needs control and works also during MOVE_TO, JOG and
+  TRACK.
+  See [GRIPPER](/mycobot-280-lab/comms/websocket-api/#gripper-46).
+- STREAM has 5 more bytes (79): gripper found, opening (0.1 %), load (0.1 %).
+  Older clients read the first 74 bytes and still work.
+- The opening maps to the servo end stops in `servos.yaml` (key `gripper`; generated
+  into `robot_params.h`).
+
 ## 4.5.1 — 2026-10-06
 
 - J6 limits **−225° to +135°** (was −220°): one full turn, so the gripper can face

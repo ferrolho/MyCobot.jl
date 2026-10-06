@@ -28,6 +28,7 @@ export const enum Code {
   MOVE_TO = 0x0e,
   JOG = 0x0f,
   TRACK = 0x10,
+  GRIPPER = 0x11,
   PONG = 0x81,
   ACK = 0x83,
   TELEM = 0x84,
@@ -38,7 +39,7 @@ export const enum Code {
 export const CODE_NAMES: Record<number, string> = {
   0x01: 'PING', 0x02: 'STATE', 0x03: 'HOLD', 0x04: 'PLAN_BEGIN', 0x05: 'PLAN_DATA', 0x06: 'PLAN_END',
   0x07: 'PLAY', 0x08: 'STOP', 0x09: 'REG_READ', 0x0a: 'REG_WRITE', 0x0b: 'PLAY_SIGNAL', 0x0c: 'SUBSCRIBE',
-  0x0d: 'CONTROL', 0x0e: 'MOVE_TO', 0x0f: 'JOG', 0x10: 'TRACK',
+  0x0d: 'CONTROL', 0x0e: 'MOVE_TO', 0x0f: 'JOG', 0x10: 'TRACK', 0x11: 'GRIPPER',
 };
 
 export function ackText(code: number, status: number): string {
@@ -46,6 +47,7 @@ export function ackText(code: number, status: number): string {
   if (status === -1) return code === Code.CONTROL ? 'the robot moves' : 'busy';
   if (status === -2) return code === Code.CONTROL ? 'another client has control' : 'you do not have control';
   if ((code === Code.MOVE_TO || code === Code.TRACK) && status <= -11 && status >= -16) return `goal of J${-10 - status} is outside the limits`;
+  if (code === Code.GRIPPER && status === -4) return 'no gripper found';
   return `status ${status}`;
 }
 
@@ -71,6 +73,7 @@ export interface Stream {
   acc: number[]; // g
   gyro: number[]; // °/s
   control: number | null; // 0 nobody, 1 you, 2 another client; null before firmware 4.2
+  gripper: { opening: number; load: number } | null; // 4.6+: opening 0 closed .. 1 open, load %; null: no gripper
 }
 
 export function decodeStream(v: DataView): Stream {
@@ -81,6 +84,7 @@ export function decodeStream(v: DataView): Stream {
     ok: v.getUint8(6) === 1,
     q: [], dq: [], load: [], temp: [], volt: [], status: [], acc: [], gyro: [],
     control: v.byteLength >= 74 ? v.getUint8(73) : null,
+    gripper: v.byteLength >= 79 && v.getUint8(74) === 1 ? { opening: v.getInt16(75, true) / 1000, load: v.getInt16(77, true) / 10 } : null,
   };
   for (let j = 0; j < 6; j++) {
     s.q.push(posToDeg(j, u16(7 + 2 * j)));
@@ -194,4 +198,12 @@ export function isLocalAddress(address: string): boolean {
   if (!m) return false;
   const [a, b] = [Number(m[1]), Number(m[2])];
   return a === 10 || a === 127 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254);
+}
+
+/** GRIPPER (firmware 4.6+): opening 0 (closed) to 1 (open), or null to turn the gripper servo off. */
+export function gripper(opening: number | null): Bytes {
+  const b = new DataView(new ArrayBuffer(3));
+  b.setUint8(0, Code.GRIPPER);
+  b.setUint16(1, opening == null ? 0xffff : Math.round(Math.max(0, Math.min(1, opening)) * 1000), true);
+  return new Uint8Array(b.buffer);
 }

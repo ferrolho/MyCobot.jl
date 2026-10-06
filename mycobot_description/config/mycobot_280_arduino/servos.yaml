@@ -24,3 +24,12 @@ joints:
   joint5_to_joint4:      { id: 4, sign: -1, model: 0x0709, gains: [32, 8, 0],  max_acceleration_register: 250, wn: 34.4, zeta: 0.65 }
   joint6_to_joint5:      { id: 5, sign: -1, model: 0x0209, gains: [32, 8, 0],  max_acceleration_register: 250, wn: 52.4, zeta: 0.77 }
   joint6output_to_joint6: { id: 6, sign: -1, model: 0x0209, gains: [32, 8, 0],  max_acceleration_register: 250, wn: 54.9, zeta: 0.83, multi_turn: true }
+
+# Adaptive gripper (myCobot_gripper_ag; docs: system/gripper), on the same bus. Our firmware (4.6+)
+# finds it by its model number and maps the opening (0 = closed, 1000 = open, in permille) to steps.
+#   closed_step, open_step   the two end stops found by a slow scan at 15 % torque (2026-10-06):
+#                            the fingers stall at 1462 (closed) and 2048 (open, the stock calibration
+#                            point), 51.5°. Checked with the camera on 2026-10-06.
+#   margin                   the opening range stays this many steps inside the end stops
+#   speed                    goal speed (steps/s): the full stroke in about 0.6 s
+gripper: { id: 7, model: 0x070A, closed_step: 1462, open_step: 2048, margin: 15, speed: 1000 }
