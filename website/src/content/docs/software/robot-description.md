@@ -100,6 +100,7 @@ file. The generator converts them to degrees for the firmware and the Control pa
 | Gains, ωn, ζ | [Servo dynamics](/mycobot-280-lab/results/servo-dynamics/) (2026-10-04). |
 | Gripper meshes and finger joints | Elephant's `mycobot_280m5_with_gripper_parallel.urdf` (mycobot_ros), with the finger joints on the body moved 7.5 mm ([Gripper](/mycobot-280-lab/system/gripper/#model-urdf)). |
 | Gripper mount angle | The user's report of the mount on this arm (2026-10-06). |
+| Base plate (`g_base`) | Elephant's mesh, turned 90° about z (2026-10-06): on this robot the round base is mounted on the plate 90° from Elephant's model. The 150 mm side is along x, and the plate is 10 mm toward −y (checked with the calibrated lab camera). |
 | Masses and inertias | **Not in the description yet** (arm and gripper). |
 
 The generated URDF gives the same forward kinematics as the URDF before 2026-10-06
