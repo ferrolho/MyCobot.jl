@@ -98,6 +98,7 @@ export default defineConfig({
             { label: 'Onboard control and vibration', slug: 'results/onboard' },
             { label: 'IMU calibration and encoder errors', slug: 'results/imu-encoders' },
             { label: 'Kinematic calibration', slug: 'results/kinematic-calibration' },
+            { label: 'Pick and place (plush toy)', slug: 'results/pick-and-place' },
           ],
         },
         {
