@@ -11,7 +11,7 @@ use. Do not edit a generated file: edit the source and run the generator.
 
 | File | Format | Holds |
 | --- | --- | --- |
-| `urdf/mycobot_280_arduino/mycobot_280_arduino.urdf.xacro` | URDF in [xacro](https://github.com/ros/xacro) | Links, meshes, joint origins and axes |
+| `urdf/mycobot_280_arduino/mycobot_280_arduino.urdf.xacro` | URDF in [xacro](https://github.com/ros/xacro) | Links, meshes, joint origins and axes; the gripper (with `gripper:=true`) |
 | `config/mycobot_280_arduino/joint_limits.yaml` | ros2_control `joint_limits` | Position, speed, acceleration and effort limits |
 | `config/mycobot_280_arduino/servos.yaml` | Our own | Servo IDs, directions, models, gains, acceleration registers, servo model (ωn, ζ) |
 | `config/mycobot_280_arduino/calibration.yaml` | Our own | This robot only: encoder corrections. Only the Julia package uses it (`ENCODER_CORRECTION`). |
@@ -22,6 +22,8 @@ The generator `tools/gen_robot.py` writes:
 | --- | --- |
 | `mycobot_description/urdf/mycobot_280_arduino/mycobot_280_arduino.urdf` | Julia (`load_mechanism`), meshes as `package://…/*.dae` |
 | `website/public/robot/mycobot_280_arduino.urdf` | Control page 3D view, meshes as `*.glb` |
+| `mycobot_description/urdf/mycobot_280_arduino/mycobot_280_arduino_gripper.urdf` | Julia, the arm with the gripper (`load_mechanism(urdf=...)`) |
+| `website/public/robot/mycobot_280_arduino_gripper.urdf` | Control page 3D view with the gripper (`ArmView.setGripper(true)`) |
 | `firmware/atom_controller/robot_params.h` | Controller firmware (`motion_limits.h`, joint directions, gains) |
 | `website/src/control/robot_params.ts` | Control page (`protocol.ts`) |
 | `tools/robot_params.py` | Simulator (`tools/atom_sim.py`) |
@@ -29,6 +31,28 @@ The generator `tools/gen_robot.py` writes:
 
 Before 2026-10-06 the limits were written by hand in five places, and the Control
 page had its own copy of the URDF.
+
+## Xacro arguments
+
+| Argument | Default | Effect |
+| --- | --- | --- |
+| `mesh_uri` | `package://mycobot_description/urdf/mycobot_280_arduino/` | Prefix of the mesh file names. The web copy uses `""` (meshes next to the URDF). |
+| `mesh_ext` | `dae` | Mesh file type. The web copy uses `glb`. |
+| `gripper` | `false` | `true` adds the adaptive gripper at the flange ([Gripper](/mycobot-280-lab/system/gripper/#model-urdf)). |
+
+The gripper part has two properties in the xacro file:
+
+| Property | Value | Meaning |
+| --- | --- | --- |
+| `gripper_mount_deg` | 0 | Mount angle about the J6 axis, from Elephant's mount ([Mount angle](/mycobot-280-lab/system/gripper/#mount-angle)) |
+| `gripper_closed`, `gripper_open` | −0.7, 0.15 rad | Range of the actuated finger joint `gripper_controller` |
+
+The gripper meshes are `gripper_*.dae` in `urdf/mycobot_280_arduino/`. After you add or
+change a mesh, convert it for the Control page (only the named meshes):
+
+```bash
+uv run --with trimesh --with pycollada --with pillow --with scipy python tools/web_meshes.py gripper_base
+```
 
 ## Change a value
 
@@ -74,7 +98,9 @@ file. The generator converts them to degrees for the firmware and the Control pa
 | Acceleration limits 400 / 2000 °/s² | Our firmware, below the servo limits (439 / 2197 °/s², [Servo dynamics](/mycobot-280-lab/results/servo-dynamics/)). |
 | Effort | Not known: the servo models are not identified. `has_effort_limits: false`, `effort="0"` in the URDF. |
 | Gains, ωn, ζ | [Servo dynamics](/mycobot-280-lab/results/servo-dynamics/) (2026-10-04). |
-| Masses and inertias | **Not in the description yet.** |
+| Gripper meshes and finger joints | Elephant's `mycobot_280m5_with_gripper_parallel.urdf` (mycobot_ros), with the finger joints on the body moved 7.5 mm ([Gripper](/mycobot-280-lab/system/gripper/#model-urdf)). |
+| Gripper mount angle | The user's report of the mount on this arm (2026-10-06). |
+| Masses and inertias | **Not in the description yet** (arm and gripper). |
 
 The generated URDF gives the same forward kinematics as the URDF before 2026-10-06
 (difference 0 over 200 random poses). Two small changes: the collision origin of

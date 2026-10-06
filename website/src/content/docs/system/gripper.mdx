@@ -1,14 +1,15 @@
 ---
 title: Gripper
-description: The adaptive gripper (myCobot_gripper_ag) — size, mount, cable, model and how to control it. Mounted, not yet in the model.
+description: The adaptive gripper (myCobot_gripper_ag) — size, mount, cable, model and how to control it. Mounted and in the model (shape only), not yet controlled.
 ---
 
 import Gripper from '../../../components/Gripper.astro';
 import ArmEnd from '../../../components/ArmEnd.astro';
 
-:::note[Mounted, not yet in the model]
-The gripper is on the arm since 2026-10-06 (see [Mount and cable](#mount-and-cable)),
-but it is not yet in the robot model and not yet controlled. This page records what is known
+:::note[Mounted, in the model, not yet controlled]
+The gripper is on the arm since 2026-10-06 (see [Mount and cable](#mount-and-cable)).
+The robot model has its shape, but not its mass (see [Model](#model-urdf)). It is not yet
+controlled. This page records what is known
 from the gripper, its label, Elephant's 3D model and Elephant's software. The items marked "not
 checked" need a test.
 :::
@@ -61,30 +62,96 @@ sides of zero. Look at the flange face (the LEGO holes) with J6 at 0°:
 | Cable | Leaves the body at the top right and goes to the 3-pin side port at J5 |
 
 With only J6 limp, the cable stops J6 at **−237.1°** and **+139.9°**
-(`scripts/measure_joint_range.jl 6`). The model limit of J6 is **±135°** while the
-gripper is on (see [Robot](/mycobot-280-lab/system/robot/#joint-limits)).
+(`scripts/measure_joint_range.jl 6`). The J6 limits are **−225° to +135°** (one full
+turn; J6 is multi-turn from firmware 4.5, see [Robot](/mycobot-280-lab/system/robot/#joint-limits)).
 
-:::caution[Before you connect the gripper]
-Do not run a joint motion with the gripper on before you add it to the model. The
-gripper adds mass at the flange, and the planner checks joint limits only, not
-collisions with the gripper.
+:::caution[Gripper on the arm]
+The model has the gripper's shape but not its mass. The planners and the firmware
+check joint limits only, not collisions: the gripper can hit the arm or the table.
 :::
 
 ## Model (URDF)
 
-The ROS package has a model of this gripper for the 280 M5 arm:
-`mycobot_ros/mycobot_description/urdf/mycobot_280_m5/mycobot_280m5_with_gripper_parallel.urdf`
-(meshes `gripper_base.dae`, `gripper_left1–3.dae`, `gripper_right1–3.dae`).
+The [robot description](/mycobot-280-lab/software/robot-description/) has the gripper
+since 2026-10-06. Set the xacro argument `gripper:=true`. The generator writes the arm
+with the gripper to `mycobot_280_arduino_gripper.urdf`.
 
-| Item | Value |
+The model comes from Elephant's model of this gripper for the 280 M5 arm:
+`mycobot_ros/mycobot_description/urdf/mycobot_280_m5/mycobot_280m5_with_gripper_parallel.urdf`.
+`urdf/adaptive_gripper/` in the same package has the same meshes and finger joints, but no
+mount. The outlines of these meshes match the photos of this gripper. Our model:
+
+| Item | Our model | Elephant's model |
+| --- | --- | --- |
+| Meshes | `gripper_base.dae`, `gripper_left1–3.dae`, `gripper_right1–3.dae` (millimetres, scale 0.001) | The same |
+| Mount | Fixed joint `joint6output_to_gripper_base`, 34 mm along the J6 axis, roll 90°, then the mount angle (below) | 34 mm, roll 1.579 rad |
+| Actuated joint | `gripper_controller`, −0.70 rad (closed) to +0.15 rad (open) | −0.78 or −0.7 to +0.15 rad |
+| Other finger joints | Five joints that follow `gripper_controller` (`mimic`, multiplier ±1). Their limits are the range that the mimic gives. | Limits narrower than the mimic range (urdf-loader then stops the fingers) |
+| Finger joints on the body | 7.5 mm nearer the flange than in Elephant's model | — |
+| Mass and inertia | **None. The masses are not known.** | Placeholders (0.1 kg on every link) |
+| Collision | The visual meshes | Small cylinders |
+
+- **7.5 mm shift:** in Elephant's model the finger mechanism is 7.5 mm too far from the
+  body. With the shift, the gears are in the slot of the body and the parallel links are
+  on their pivots, as in the meshes' own coordinates. The drawing at the top of this page
+  uses the same positions.
+- **Pad gap in the model:** 6.0 mm closed, 43.4 mm open (the inner faces of the finger
+  tips). This agrees with the gripper (a few millimetres closed, about 43 mm open).
+- **Body:** the back face of the body touches the flange face (1.7 mm along the J6 axis
+  from the flange frame). The 34 mm offset is not measured on this arm.
+
+### Mount angle
+
+The xacro property `gripper_mount_deg` turns the gripper about the J6 axis. It is
+**0** for this arm (2026-10-06). It is the angle from Elephant's mount, positive
+counterclockwise when you look at the flange face. Change it in steps of 45° (the
+flange holes).
+
+How the value was found:
+
+1. At the zero pose the arm is upright and the flange face points forward (+x).
+   To look at the flange face, stand in front of the robot. Up is +z. Your left is −y
+   (the robot's right).
+2. The user's report and the model at the zero pose agree with mount angle 0. Elephant's
+   mount on our flange (which is turned 45°) already puts the fingers on a diagonal.
+
+| Part | Report (look at the flange face, J6 at 0°) | Model, `gripper_mount_deg` = 0 |
+| --- | --- | --- |
+| Fingers | Bottom left and top right | `gripper_right1` at −y −z (bottom left), `gripper_left1` at +y +z (top right) |
+| Gripper servo | Top left | The servo box (+z side of `gripper_base`) at −y +z |
+| Cable | Leaves the body at the top right | Not in the meshes, not checked |
+
+Other values, from the front of the flange:
+
+| `gripper_mount_deg` | Fingers | Servo |
+| --- | --- | --- |
+| 0 (this arm) | Bottom left, top right | Top left |
+| 45 | Bottom, top | Left |
+| 90 | Bottom right, top left | Bottom left |
+| 180 | Bottom left, top right (the two fingers change places) | Bottom right |
+
+### Opening in the 3D view
+
+The Control page's 3D view (`viewer3d.ts`) shows the opening as a fraction. It sets
+`gripper_controller` linearly between its limits:
+
+| Opening | `gripper_controller` | Pad gap (model) |
+| --- | --- | --- |
+| 0 (closed) | −0.70 rad | 6.0 mm |
+| 1 (open) | +0.15 rad | 43.4 mm |
+
+:::note[Not calibrated]
+The opening is not calibrated. The gripper servo positions (ID 7) for "closed" and
+"open" are not measured, and the model angles are not compared with the gripper. The
+pad gap is not linear in the joint angle.
+:::
+
+### In the software
+
+| Use | How |
 | --- | --- |
-| Mount | Fixed joint `joint6output_to_gripper_base`, 34 mm along the J6 output axis, roll 1.579 rad |
-| Actuated joint | `gripper_controller`, −0.7 to 0.15 rad |
-| Other finger joints | Five joints that follow `gripper_controller` with `mimic` tags (multiplier ±1) |
-
-The M5 and Arduino versions use the same arm links, but check the mount offset
-on this arm before you use the model. Check also how the URDF parser handles the
-`mimic` tags.
+| Julia | `load_mechanism(urdf=...)` with `mycobot_280_arduino_gripper.urdf`. RigidBodyDynamics.jl ignores `mimic`: the six finger joints are free joints, so the mechanism has 12 positions instead of 6. The default is the arm without the gripper. |
+| Control page | `ArmView.setGripper(present)` swaps the 3D view (solid arm and goal ghost) to the URDF with the gripper. `setGripperOpening(fraction)` sets the measured opening, `setGoalGripperOpening(fraction or null)` the opening of the ghost. urdf-loader applies the `mimic` tags. |
 
 ## Control
 

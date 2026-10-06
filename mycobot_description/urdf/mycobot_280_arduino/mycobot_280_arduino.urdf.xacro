@@ -6,11 +6,13 @@
 
      Kinematics and meshes: Elephant Robotics' mycobot_280_arduino.urdf (mycobot_ros), with the
      flange turned 45° about its axis (2025-02-16). Elephant's other 280 URDFs have the same lengths.
-     Joint limits: config/mycobot_280_arduino/joint_limits.yaml. -->
+     Joint limits: config/mycobot_280_arduino/joint_limits.yaml.
+     With gripper:=true it adds the adaptive gripper (myCobot_gripper_ag) at the flange (end of file). -->
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="mycobot_280_arduino">
 
   <xacro:arg name="mesh_uri" default="package://mycobot_description/urdf/mycobot_280_arduino/" />
   <xacro:arg name="mesh_ext" default="dae" />
+  <xacro:arg name="gripper" default="false" />
   <xacro:property name="limits" value="${xacro.load_yaml('../../config/mycobot_280_arduino/joint_limits.yaml')['joint_limits']}" />
 
   <!-- A link with the same mesh for visual and collision. -->
@@ -65,5 +67,58 @@
   <xacro:arm_joint name="joint5_to_joint4" parent="joint4" child="joint5" xyz="-0.096 0 0.06462" rpy="0 0 -1.5708" />
   <xacro:arm_joint name="joint6_to_joint5" parent="joint5" child="joint6" xyz="0 -0.07318 0" rpy="1.5708 -1.5708 0" />
   <xacro:arm_joint name="joint6output_to_joint6" parent="joint6" child="joint6_flange" xyz="0 0.0456 0" rpy="-1.5708 0.7854 0" />
+
+  <!-- Adaptive gripper (myCobot_gripper_ag), from Elephant's mycobot_280m5_with_gripper_parallel.urdf
+       (mycobot_ros; the same meshes and joints as urdf/adaptive_gripper/). Meshes gripper_*.dae are in
+       millimetres. No masses: Elephant's <inertial> values are placeholders (0.1 kg on every link).
+       One change: the four joints on gripper_base are 7.5 mm nearer the flange (y) than in Elephant's
+       model, so the gears sit in the slot of the body and the parallel links on their pivots, as in the
+       meshes' own coordinates. Docs: website/src/content/docs/system/gripper.mdx, "Model (URDF)". -->
+  <xacro:if value="$(arg gripper)">
+    <!-- Mount angle about the J6 axis (degrees, positive = counterclockwise when you look at the flange
+         face), from Elephant's mount. 0: at the zero pose the fingers are bottom left and top right and the
+         gripper servo is top left (on this arm, 2026-10-06). Use multiples of 45 (the flange holes). -->
+    <xacro:property name="gripper_mount_deg" value="0" />
+    <!-- Range of the actuated joint gripper_controller (rad): closed (pads a few mm apart) to open
+         (pads about 43 mm apart). From Elephant's model; not calibrated against the gripper servo. -->
+    <xacro:property name="gripper_closed" value="-0.7" />
+    <xacro:property name="gripper_open" value="0.15" />
+
+    <xacro:mesh_link name="gripper_base" mesh="gripper_base" xyz="0 0 -0.012" rpy="0 0 0" scale="0.001 0.001 0.001" />
+    <xacro:mesh_link name="gripper_left1" mesh="gripper_left1" xyz="0.039 -0.0133 -0.012" rpy="0 0 0" scale="0.001 0.001 0.001" />
+    <xacro:mesh_link name="gripper_left2" mesh="gripper_left2" xyz="0.005 -0.0195 -0.012" rpy="0 0 0" scale="0.001 0.001 0.001" />
+    <xacro:mesh_link name="gripper_left3" mesh="gripper_left3" xyz="0.012 0.0025 -0.012" rpy="0 0 0" scale="0.001 0.001 0.001" />
+    <xacro:mesh_link name="gripper_right1" mesh="gripper_right1" xyz="-0.039 -0.0133 -0.012" rpy="0 0 0" scale="0.001 0.001 0.001" />
+    <xacro:mesh_link name="gripper_right2" mesh="gripper_right2" xyz="-0.005 -0.0195 -0.012" rpy="0 0 0" scale="0.001 0.001 0.001" />
+    <xacro:mesh_link name="gripper_right3" mesh="gripper_right3" xyz="-0.012 0.0025 -0.012" rpy="0 0 0" scale="0.001 0.001 0.001" />
+
+    <!-- The body's back face on the flange, the fingers along the J6 axis. Elephant's roll is 1.579; π/2 here. -->
+    <joint name="joint6output_to_gripper_base" type="fixed">
+      <parent link="joint6_flange" />
+      <child link="gripper_base" />
+      <origin xyz="0 0 0.034" rpy="${pi / 2} 0 ${radians(gripper_mount_deg)}" />
+    </joint>
+
+    <!-- A finger joint about its z axis. multiplier 0: the actuated joint; otherwise it follows
+         gripper_controller (mimic), with the limits that the mimic gives. -->
+    <xacro:macro name="finger_joint" params="name parent child xyz multiplier">
+      <xacro:property name="m" value="${1 if multiplier == 0 else multiplier}" />
+      <joint name="${name}" type="revolute">
+        <axis xyz="0 0 1" />
+        <limit lower="${min(m * gripper_closed, m * gripper_open)}" upper="${max(m * gripper_closed, m * gripper_open)}" velocity="0" effort="0" />
+        <parent link="${parent}" />
+        <child link="${child}" />
+        <origin xyz="${xyz}" rpy="0 0 0" />
+        <xacro:if value="${multiplier != 0}"><mimic joint="gripper_controller" multiplier="${multiplier}" offset="0" /></xacro:if>
+      </joint>
+    </xacro:macro>
+
+    <xacro:finger_joint name="gripper_controller" parent="gripper_base" child="gripper_left3" xyz="-0.012 -0.0025 0" multiplier="0" />
+    <xacro:finger_joint name="gripper_base_to_gripper_left2" parent="gripper_base" child="gripper_left2" xyz="-0.005 0.0195 0" multiplier="1" />
+    <xacro:finger_joint name="gripper_left3_to_gripper_left1" parent="gripper_left3" child="gripper_left1" xyz="-0.027 0.016 0" multiplier="-1" />
+    <xacro:finger_joint name="gripper_base_to_gripper_right3" parent="gripper_base" child="gripper_right3" xyz="0.012 -0.0025 0" multiplier="-1" />
+    <xacro:finger_joint name="gripper_base_to_gripper_right2" parent="gripper_base" child="gripper_right2" xyz="0.005 0.0195 0" multiplier="-1" />
+    <xacro:finger_joint name="gripper_right3_to_gripper_right1" parent="gripper_right3" child="gripper_right1" xyz="0.027 0.016 0" multiplier="1" />
+  </xacro:if>
 
 </robot>

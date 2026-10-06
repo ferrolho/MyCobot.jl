@@ -13,6 +13,7 @@ mycobot_description/config/mycobot_280_arduino/{joint_limits,servos,calibration}
 Writes:
     mycobot_description/urdf/mycobot_280_arduino/mycobot_280_arduino.urdf   Julia (RigidBodyDynamics.jl)
     website/public/robot/mycobot_280_arduino.urdf                           Control page (.glb meshes)
+    ..._gripper.urdf (both folders)                                         the same, with the adaptive gripper
     firmware/atom_controller/robot_params.h                                 controller firmware
     website/src/control/robot_params.ts                                     Control page
     tools/robot_params.py                                                   simulator (tools/atom_sim.py)
@@ -39,9 +40,9 @@ def num(x):
     return str(int(r)) if r == int(r) else repr(r)
 
 
-def urdf(mesh_uri, mesh_ext):
-    doc = xacro.process_file(XACRO, mappings={"mesh_uri": mesh_uri, "mesh_ext": mesh_ext})
-    return doc.toprettyxml(indent="  ")
+def urdf(mesh_uri, mesh_ext, gripper=False):
+    doc = xacro.process_file(XACRO, mappings={"mesh_uri": mesh_uri, "mesh_ext": mesh_ext, "gripper": str(gripper).lower()})
+    return doc.toprettyxml(indent="  ").replace(ROOT + os.sep, "")   # the same output in every checkout
 
 
 def params():
@@ -168,6 +169,9 @@ def outputs():
         "mycobot_description/urdf/mycobot_280_arduino/mycobot_280_arduino.urdf":
             urdf("package://mycobot_description/urdf/mycobot_280_arduino/", "dae"),
         "website/public/robot/mycobot_280_arduino.urdf": urdf("", "glb"),
+        "mycobot_description/urdf/mycobot_280_arduino/mycobot_280_arduino_gripper.urdf":
+            urdf("package://mycobot_description/urdf/mycobot_280_arduino/", "dae", gripper=True),
+        "website/public/robot/mycobot_280_arduino_gripper.urdf": urdf("", "glb", gripper=True),
         "firmware/atom_controller/robot_params.h": c_params(p),
         "website/src/control/robot_params.ts": ts_params(p),
         "tools/robot_params.py": py_params(p),

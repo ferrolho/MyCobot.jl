@@ -233,14 +233,19 @@ The code is in `website/src/pages/control.astro` and `website/src/control/`:
 ### 3D model
 
 The URDF meshes (`mycobot_description/`, 25 MB of COLLADA) are too large for a web
-page. `tools/web_meshes.py` converts them to compressed GLB files (2 MB in total) and
-writes a copy of the URDF to `website/public/robot/`. Run it again when the URDF or
-the meshes change:
+page. `tools/web_meshes.py` converts them to compressed GLB files (2 MB in total, the
+gripper 0.2 MB) in `website/public/robot/`. `tools/gen_robot.py` writes the URDF copies
+there ([Robot description](/mycobot-280-lab/software/robot-description/)). Run
+`web_meshes.py` again when a mesh changes:
 
 ```bash
-~/venvs/control/bin/python tools/web_meshes.py              # needs trimesh, pycollada, pillow and Node
-~/venvs/control/bin/python tools/web_meshes.py --urdf-only  # only the URDF, when only the URDF changed
+~/venvs/control/bin/python tools/web_meshes.py               # needs trimesh, pycollada, pillow and Node
+~/venvs/control/bin/python tools/web_meshes.py gripper_base  # only the named meshes
 ```
+
+`ArmView.setGripper(true)` swaps the solid arm and the ghost to
+`mycobot_280_arduino_gripper.urdf`. It loads that URDF at the first call and keeps both
+models, so later swaps are immediate. See [Gripper](/mycobot-280-lab/system/gripper/#model-urdf).
 
 The script removes extra spaces from the `xyz` and `rpy` number lists of the web URDF.
 urdf-loader does not trim `<axis xyz="...">`: before 2026-10-05, the axes of J3 and J4
