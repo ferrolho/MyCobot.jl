@@ -64,6 +64,30 @@ Register 33 sets the mode.
 | 2 — PWM (open loop) | Goal time / PWM, 44–45 | Not tested. The closest mode to torque control. |
 | 3 — step | relative position | Not used. |
 
+## Multi-turn (J6)
+
+The STS servos can read and move past one turn (tested on J6 on 2026-10-06, through
+the ATOM's REG_READ and REG_WRITE, with J6 turned by hand and then moved):
+
+| Setting | Present position (56–57) | Goal position (42–43) |
+| --- | --- | --- |
+| As shipped: phase 100, angle limits 0/4095 | One turn: wraps at 0/4095 (±180°) | Clamped to 0–4095: J6 stopped at −179.3° for a −190° goal |
+| Phase bit 4 set (100 → 116), angle limits 0/4095 | **Past one turn:** read −231.8° (4685) | Clamped as above |
+| Phase bit 4 set, angle limits **0/0** | Past one turn | **Past one turn:** J6 moved to −209.3° and back across ±180° the correct way |
+
+- Values past one turn are sign-magnitude: bit 15 is the sign.
+- The EEPROM lock (55) stays 1, so these settings last until the servo's next power-off.
+  Our firmware (4.5+) writes them at each power-up for the joints marked `multi_turn`
+  in `servos.yaml` (J6).
+- After a power-up the servo counts from its one-turn reading. The firmware finds the
+  turn from the J6 limits: they span less than one turn (−220° to +135°), so a reading
+  above +137.5° (the middle of the gap) is one turn lower. It keeps a `turn_offset` for
+  the joint.
+- The positions in STATE, STREAM and plans go past 0–4095 on J6: −220° is step 4551.
+- This also explains an older problem: after many turns by hand, J6 turned away from
+  its goal when motion was enabled (see [Known problems](/mycobot-280-lab/reference/gotchas/#servos)).
+  The servo counts turns inside, even when it reports one turn only.
+
 ## How goals and torque behave
 
 These rules come from measurements. They are also in

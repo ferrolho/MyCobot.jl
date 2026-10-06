@@ -30,6 +30,9 @@ int main() {
     printf("ok move: T %.2f s, peak speed %.1f deg/s, peak accel %.0f %% of the limit\n", T, vmax, 100 * amax_ratio);
 
     // JOG: ramp, speed limit, braking at the limit, deadman ramp-down
+    auto inside = [](int j, float q) {   // within the jog limits (min/max, not symmetric on J6)
+        return q >= lim::MODEL_MIN_DEG[j] + lim::JOG_MARGIN - 1e-4f && q <= lim::MODEL_MAX_DEG[j] - lim::JOG_MARGIN + 1e-4f;
+    };
     motion::Jog s = {};
     float target[6] = {100, 0, 0, 0, 0, -30};      // J1 asks for more than JOG_VMAX
     float t_full = -1, vpeak = 0, prev_v1 = 0, apeak = 0;
@@ -38,13 +41,14 @@ int main() {
         vpeak = fmaxf(vpeak, fabsf(s.v[0]));
         apeak = fmaxf(apeak, fabsf(s.v[0] - prev_v1) / 0.002f); prev_v1 = s.v[0];
         if (t_full < 0 && s.v[0] >= lim::JOG_VMAX - 1e-3f) t_full = i * 0.002f;
-        CHECK(fabsf(s.q[0]) <= lim::MODEL_LIMIT_DEG[0] - lim::JOG_MARGIN + 1e-4f, "J1 never passes its jog limit");
-        CHECK(fabsf(s.q[5]) <= lim::MODEL_LIMIT_DEG[5] - lim::JOG_MARGIN + 1e-4f, "J6 never passes its jog limit");
+        CHECK(inside(0, s.q[0]), "J1 never passes its jog limit");
+        CHECK(inside(5, s.q[5]), "J6 never passes its jog limit");
     }
     CHECK(vpeak <= lim::JOG_VMAX + 1e-3f, "jog speed %.2f within %.0f", vpeak, lim::JOG_VMAX);
     CHECK(apeak <= lim::JOG_AMAX * 1.15f, "jog acceleration %.1f within %.0f (+15 %% for the last step at the limit)", apeak, lim::JOG_AMAX);
     CHECK(fabsf(t_full - lim::JOG_VMAX / lim::JOG_AMAX) < 0.01f, "reaches 30 deg/s after 0.15 s (%.3f)", t_full);
-    CHECK(fabsf(s.q[0] - (lim::MODEL_LIMIT_DEG[0] - lim::JOG_MARGIN)) < 0.05f && fabsf(s.v[0]) < 1e-3f, "J1 stops at its limit (%.2f, v %.3f)", s.q[0], s.v[0]);
+    CHECK(fabsf(s.q[0] - (lim::MODEL_MAX_DEG[0] - lim::JOG_MARGIN)) < 0.05f && fabsf(s.v[0]) < 1e-3f, "J1 stops at its limit (%.2f, v %.3f)", s.q[0], s.v[0]);
+    CHECK(fabsf(s.q[5] - (lim::MODEL_MIN_DEG[5] + lim::JOG_MARGIN)) < 0.05f && fabsf(s.v[5]) < 1e-3f, "J6 stops at its negative limit (%.2f, v %.3f)", s.q[5], s.v[5]);
     printf("ok jog: full speed after %.3f s, peak %.1f deg/s, %.0f deg/s2, J1 stops at %.2f deg, J6 at %.2f deg\n", t_full, vpeak, apeak, s.q[0], s.q[5]);
 
     // Deadman: from full speed, a zero target ramps down at JOG_AMAX and stops
@@ -60,7 +64,7 @@ int main() {
     {
         const float dt = 0.002f;
         motion::Jog t = {};
-        float g[6] = {120, -60, 90, 140, -100, 170};
+        float g[6] = {120, -60, 90, 140, -100, -210};   // J6 past -180 deg (multi-turn)
         float vp[6] = {0}, ap[6] = {0}, pv[6] = {0}, over = 0, arrive[6];
         for (int j = 0; j < 6; j++) arrive[j] = -1;
         for (int i = 1; i <= 2000; i++) {             // 4 s
@@ -68,10 +72,10 @@ int main() {
             for (int j = 0; j < 6; j++) {
                 vp[j] = fmaxf(vp[j], fabsf(t.v[j]));
                 ap[j] = fmaxf(ap[j], fabsf(t.v[j] - pv[j]) / dt); pv[j] = t.v[j];
-                float gl = fmaxf(-(lim::MODEL_LIMIT_DEG[j] - lim::JOG_MARGIN), fminf(lim::MODEL_LIMIT_DEG[j] - lim::JOG_MARGIN, g[j]));
+                float gl = fmaxf(lim::MODEL_MIN_DEG[j] + lim::JOG_MARGIN, fminf(lim::MODEL_MAX_DEG[j] - lim::JOG_MARGIN, g[j]));
                 over = fmaxf(over, (t.q[j] - gl) * (gl > 0 ? 1 : -1));
                 if (arrive[j] < 0 && t.q[j] == gl && t.v[j] == 0) arrive[j] = i * dt;
-                CHECK(fabsf(t.q[j]) <= lim::MODEL_LIMIT_DEG[j] - lim::JOG_MARGIN + 1e-4f, "track J%d inside its limit", j + 1);
+                CHECK(inside(j, t.q[j]), "track J%d inside its limit", j + 1);
             }
         }
         for (int j = 0; j < 6; j++) {
@@ -80,7 +84,7 @@ int main() {
             CHECK(arrive[j] > 0, "track J%d arrives exactly and stops", j + 1);
         }
         CHECK(over <= 0.01f, "track never passes a fixed goal by more than 0.01 deg, far below one servo step of 0.088 deg (%.4f)", over);
-        printf("ok track: J1 120 deg in %.2f s (JOG at 30 deg/s: >4 s), J6 170 deg in %.2f s, peak %.1f deg/s\n", arrive[0], arrive[5], vp[0]);
+        printf("ok track: J1 120 deg in %.2f s (JOG at 30 deg/s: >4 s), J6 -210 deg in %.2f s, peak %.1f deg/s\n", arrive[0], arrive[5], vp[0]);
 
         // Arrival without a creep: the last 0.3 deg take a few steps, not a 1.5 s tail.
         motion::Jog c = {}; float g3[6] = {10, 0, 0, 0, 0, 0}; int steps = 0;

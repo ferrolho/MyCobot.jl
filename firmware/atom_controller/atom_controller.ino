@@ -60,7 +60,8 @@
 //        -6 the read-back differs. Writes in the EEPROM area last until the next power cycle.
 // Status log (text) once a second: UDP broadcast, port 5005.
 //
-// Power-up: hold the pose, then write the position-loop gains GAINS (verified).
+// Power-up: hold the pose, then write the position-loop gains GAINS and set up the multi-turn joints
+// (MULTI_TURN, 4.5+), all verified. PONG's gains_ok is 1 when both took.
 //
 // LED matrix: blue = starting, green = holding, yellow = plan ready, cyan + progress = playing,
 //   red = error (press the button to clear and hold again), magenta = OTA update.
@@ -108,8 +109,8 @@
 // PATCH for fixes. PING reports MAJOR as its u16 version, then MINOR and PATCH (3.1+).
 // History: docs (firmware/changelog). FW_GIT is set by the build (git describe).
 #define FW_MAJOR 4
-#define FW_MINOR 4
-#define FW_PATCH 1
+#define FW_MINOR 5
+#define FW_PATCH 0
 #define FW_VERSION FW_MAJOR
 #ifndef FW_GIT
 #define FW_GIT "unknown"
@@ -184,9 +185,11 @@ sig::Params signal_params;  // PLAY_SIGNAL request
 // Joint angle (°) <-> servo position, as MyCobot.angle_to_position (0° = 2048). JOINT_SIGN and
 // GAINS: robot_params.h (generated from mycobot_description/config/mycobot_280_arduino/servos.yaml).
 using robot::JOINT_SIGN;
+// Past 0-4095 only on multi-turn joints (bus.h).
+inline long pos_max(int j) { return robot::MULTI_TURN[j] ? 0xFFFF : 4095; }
 inline uint16_t deg_to_pos(int j, float deg) {
     long p = lroundf(2048 + JOINT_SIGN[j] * deg * (4096.0f / 360.0f));
-    return (uint16_t)(p < 0 ? 0 : (p > 4095 ? 4095 : p));
+    return (uint16_t)(p < 0 ? 0 : (p > pos_max(j) ? pos_max(j) : p));
 }
 inline float pos_to_deg(int j, uint16_t p) { return JOINT_SIGN[j] * ((int)p - 2048) * (360.0f / 4096.0f); }
 
@@ -200,6 +203,31 @@ volatile bool gains_ok = false;
 bool write_gains() {
     bool ok = true;
     for (int j = 0; j < N_SERVOS; j++) ok &= reg_write_verified(j + 1, 21, GAINS[j], 3);
+    return ok;
+}
+
+// Multi-turn joints (4.5+, J6 with the gripper cable): phase bit 4 makes the servo read past one
+// turn, and angle limits 0/0 let it take goals past one turn (both tested on J6, 2026-10-06). The
+// EEPROM lock stays on, so they last until the servo's next power-off: write them at each power-up.
+// The servo then counts from its one-turn reading. The limits span less than one turn, so the
+// reading tells the turn: an angle in the gap between the limits (past the middle of the gap) is one
+// turn off. Example J6 (−220° to +135°): a reading of +150° is −210°.
+bool setup_multi_turn() {
+    bool ok = true;
+    for (int j = 0; j < N_SERVOS; j++) {
+        if (!robot::MULTI_TURN[j]) continue;
+        uint8_t phase, zero[4] = {0, 0, 0, 0}, d[2];
+        if (!reg_read(j + 1, REG_PHASE, 1, &phase)) { ok = false; continue; }
+        phase |= 0x10;
+        if (!reg_write_verified(j + 1, REG_PHASE, &phase, 1) || !reg_write_verified(j + 1, REG_MIN_ANGLE, zero, 4) ||
+            !reg_read(j + 1, REG_PRESENT_POSITION, 2, d)) { ok = false; continue; }
+        const float lo = robot::LIMIT_MIN_DEG[j], hi = robot::LIMIT_MAX_DEG[j], gap_mid = hi + (360 - (hi - lo)) / 2;
+        float a = JOINT_SIGN[j] * (servo_signed(u16le(d)) - 2048) * (360.0f / 4096.0f);
+        int turns = 0;
+        while (a > gap_mid) { a -= 360; turns--; }
+        while (a < gap_mid - 360) { a += 360; turns++; }
+        turn_offset[j] = JOINT_SIGN[j] * turns * 4096;
+    }
     return ok;
 }
 
@@ -730,14 +758,14 @@ void interp(const PlanSample* p, uint32_t n, float s, uint16_t cmd[N_SERVOS], ui
         // Catmull-Rom through the samples (C1, passes through every sample).
         uint32_t i0 = i > 0 ? i - 1 : 0, i3 = i + 2 < n ? i + 2 : n - 1;
         float f2 = f * f, f3 = f2 * f;
-        auto cr = [&](float p0, float p1, float p2, float p3) {
+        auto cr = [&](int j, float p0, float p1, float p2, float p3) {
             float v = 0.5f * (2 * p1 + (p2 - p0) * f + (2 * p0 - 5 * p1 + 4 * p2 - p3) * f2 + (3 * p1 - p0 - 3 * p2 + p3) * f3);
             long r = lroundf(v);
-            return (uint16_t)(r < 0 ? 0 : (r > 4095 ? 4095 : r));
+            return (uint16_t)(r < 0 ? 0 : (r > pos_max(j) ? pos_max(j) : r));
         };
         for (int j = 0; j < N_SERVOS; j++) {
-            cmd[j] = cr(p[i0].cmd[j], p[i].cmd[j], p[i + 1].cmd[j], p[i3].cmd[j]);
-            ref[j] = cr(p[i0].ref[j], p[i].ref[j], p[i + 1].ref[j], p[i3].ref[j]);
+            cmd[j] = cr(j, p[i0].cmd[j], p[i].cmd[j], p[i + 1].cmd[j], p[i3].cmd[j]);
+            ref[j] = cr(j, p[i0].ref[j], p[i].ref[j], p[i + 1].ref[j], p[i3].ref[j]);
         }
         return;
     }
@@ -890,7 +918,8 @@ void setup() {
     // Power-up: hold the pose (torque on, goal speed 0). Retry until all servos answer.
     delay(300);
     for (int k = 0; k < 20 && !hold_pose(); k++) delay(100);
-    for (int k = 0; k < 5 && !gains_ok; k++) { gains_ok = write_gains(); if (!gains_ok) delay(100); }
+    for (int k = 0; k < 5 && !gains_ok; k++) { gains_ok = write_gains() && setup_multi_turn(); if (!gains_ok) delay(100); }
+    hold_pose();   // goals in our steps (turn_offset)
     uint16_t p[N_SERVOS], s[N_SERVOS], l[N_SERVOS];
     state = read_state(p, s, l) ? HOLDING : ERROR_STATE;
 }

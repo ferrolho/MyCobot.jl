@@ -11,7 +11,7 @@ const norm = MyCobot.LinearAlgebra.norm
 
     lo, hi = MyCobot.joint_limits_deg(mechanism)
     @test hi ≈ [165.0, 140.0, 150.0, 150.0, 160.0, 135.0] atol = 0.1
-    @test lo ≈ -hi atol = 0.1
+    @test lo ≈ [-165.0, -140.0, -150.0, -150.0, -160.0, -220.0] atol = 0.1
 
     # Flange position vs the ATOM's get_coords at the same joint angles (mm). The URDF and
     # the ATOM put the tool point ~1 cm apart, so this checks joint directions and lengths.

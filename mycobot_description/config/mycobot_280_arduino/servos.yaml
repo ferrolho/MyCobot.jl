@@ -9,6 +9,9 @@
 #   gains   position-loop gains [P, D, I] (registers 21, 22, 23) that our firmware writes at power-up
 #           (2026-10-04; docs: results/servo-dynamics)
 #   max_acceleration_register   factory register 85 (× 100 steps/s²): the servo's acceleration limit
+#   multi_turn  (optional) our firmware sets phase bit 4 (register 18) and angle limits 0/0 (9–12) at
+#               power-up, so the servo reads and moves past one turn (J6 with the gripper cable,
+#               2026-10-06; docs: system/servos)
 #   wn, zeta                    second-order model of the position loop (rad/s, -), fitted on
 #                               2026-10-04 inside the acceleration limit (docs: results/servo-dynamics)
 
@@ -20,4 +23,4 @@ joints:
   joint4_to_joint3:      { id: 3, sign: 1,  model: 0x0809, gains: [32, 4, 16], max_acceleration_register: 50,  wn: 14.2, zeta: 0.78 }
   joint5_to_joint4:      { id: 4, sign: -1, model: 0x0709, gains: [32, 8, 0],  max_acceleration_register: 250, wn: 34.4, zeta: 0.65 }
   joint6_to_joint5:      { id: 5, sign: -1, model: 0x0209, gains: [32, 8, 0],  max_acceleration_register: 250, wn: 52.4, zeta: 0.77 }
-  joint6output_to_joint6: { id: 6, sign: -1, model: 0x0209, gains: [32, 8, 0],  max_acceleration_register: 250, wn: 54.9, zeta: 0.83 }
+  joint6output_to_joint6: { id: 6, sign: -1, model: 0x0209, gains: [32, 8, 0],  max_acceleration_register: 250, wn: 54.9, zeta: 0.83, multi_turn: true }

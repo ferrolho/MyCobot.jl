@@ -4,7 +4,9 @@
 
 namespace robot {
 const int N_JOINTS = 6;
-const float LIMIT_DEG[N_JOINTS] = {165, 140, 150, 150, 160, 135};   // model joint limits (±°)
+const float LIMIT_MIN_DEG[N_JOINTS] = {-165, -140, -150, -150, -160, -220};   // model joint limits (°)
+const float LIMIT_MAX_DEG[N_JOINTS] = {165, 140, 150, 150, 160, 135};
+const bool MULTI_TURN[N_JOINTS] = {false, false, false, false, false, true};   // phase bit 4 and angle limits 0/0 at power-up
 const float VMAX_DPS = 90;   // speed limit (°/s)
 const float AMAX_DPS2[N_JOINTS] = {400, 400, 400, 2000, 2000, 2000};   // acceleration limits (°/s²)
 const int8_t JOINT_SIGN[N_JOINTS] = {-1, -1, 1, -1, -1, -1};   // angle = sign × (step − 2048) × 360 / 4096

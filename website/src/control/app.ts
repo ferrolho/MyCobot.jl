@@ -222,21 +222,27 @@ export function start() {
   const faders: HTMLInputElement[] = [];
   const goalNums: HTMLInputElement[] = [];
   const goal = [0, 0, 0, 0, 0, 0];
-  const goalMax = (j: number) => P.LIMITS[j] - P.JOG_MARGIN; // MOVE_TO and JOG both stay inside this
-  const clampGoal = (j: number, deg: number) => Math.round(Math.max(-goalMax(j), Math.min(goalMax(j), deg)) * 10) / 10;
+  // MOVE_TO and JOG both stay inside these. The limits need not be symmetric (J6: −220° to +135°).
+  const goalMin = (j: number) => P.LIMIT_MIN[j] + P.JOG_MARGIN;
+  const goalMax = (j: number) => P.LIMIT_MAX[j] - P.JOG_MARGIN;
+  const clampGoal = (j: number, deg: number) => Math.round(Math.max(goalMin(j), Math.min(goalMax(j), deg)) * 10) / 10;
+  // Fader track: LIMIT_MIN (bottom) to LIMIT_MAX (top), in % from the bottom.
+  const pct = (j: number, deg: number) => Math.max(0, Math.min(1, (deg - P.LIMIT_MIN[j]) / (P.LIMIT_MAX[j] - P.LIMIT_MIN[j]))) * 100;
   for (let j = 0; j < 6; j++) {
     const s = stripTpl.content.firstElementChild!.cloneNode(true) as HTMLElement;
     const name = JOINT_NAMES[j];
     s.dataset.joint = String(j);
     s.style.setProperty('--key', `var(--series-${j + 1})`);
     $('.j-name', s).textContent = name;
-    $('.f-top', s).textContent = `+${P.LIMITS[j]}`;
-    $('.f-bot', s).textContent = `−${P.LIMITS[j]}`;
+    const signed = (x: number) => (x > 0 ? `+${x}` : `−${-x}`);
+    $('.f-top', s).textContent = signed(P.LIMIT_MAX[j]);
+    $('.f-bot', s).textContent = signed(P.LIMIT_MIN[j]);
+    $('.f-zero', s).style.top = `${100 - pct(j, 0)}%`;
     s.querySelectorAll<HTMLButtonElement>('.jog').forEach((b) =>
       b.setAttribute('aria-label', `Jog ${name} ${b.dataset.dir === '1' ? 'positive' : 'negative'} (hold)`),
     );
     const fader = $<HTMLInputElement>('.goal-input', s);
-    fader.min = String(-goalMax(j));
+    fader.min = String(goalMin(j));
     fader.max = String(goalMax(j));
     fader.value = '0';
     fader.setAttribute('aria-label', `${name} goal angle`);
@@ -251,7 +257,6 @@ export function start() {
     strips.append(s);
   }
   const stripEls = [...strips.querySelectorAll<HTMLElement>('.strip')];
-  const pct = (j: number, deg: number) => Math.max(0, Math.min(1, (deg + P.LIMITS[j]) / (2 * P.LIMITS[j]))) * 100;
 
   // Plots
   const plotTpl = $<HTMLTemplateElement>('#plot');
@@ -422,12 +427,12 @@ export function start() {
       $('.j-angle', row).textContent = `${fmt(s.q[j])}°`;
       $('.j-temp', row).textContent = `${s.temp[j]} °C`;
       $('.j-volt', row).textContent = `${fmt(s.volt[j])} V`;
-      // The track runs from −limit (bottom) to +limit (top). The fill goes from zero to the angle.
-      const y = 100 - pct(j, s.q[j]);
+      // The track runs from the min limit (bottom) to the max limit (top). The fill goes from zero to the angle.
+      const y = 100 - pct(j, s.q[j]), y0 = 100 - pct(j, 0);
       $('.f-pos', row).style.top = `${y}%`;
       const fill = $('.f-fill', row);
-      fill.style.top = `${Math.min(y, 50)}%`;
-      fill.style.height = `${Math.abs(y - 50)}%`;
+      fill.style.top = `${Math.min(y, y0)}%`;
+      fill.style.height = `${Math.abs(y - y0)}%`;
       row.classList.toggle('servo-fault', s.status[j] !== 0);
     });
     arm?.setPose(s.q);

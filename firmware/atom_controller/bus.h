@@ -4,12 +4,15 @@
 // unlike the laptop path through the FT232 and the base).
 #pragma once
 #include <Arduino.h>
+#include "robot_params.h"
 
 #define BUS_RX    19
 #define BUS_TX    22
 #define BUS_BAUD  1000000
 #define N_SERVOS  6
 
+#define REG_MIN_ANGLE          9      // min (9-10) and max (11-12) angle limit
+#define REG_PHASE             18
 #define REG_ACCELERATION      41
 #define REG_GOAL_POSITION     42
 #define REG_GOAL_SPEED        46
@@ -21,6 +24,32 @@ inline uint8_t ft_checksum(const uint8_t* body, int n) {
     uint32_t s = 0;
     for (int i = 0; i < n; i++) s += body[i];
     return ~s & 0xFF;
+}
+
+// Multi-turn joints (robot::MULTI_TURN, firmware 4.5+). The rest of the firmware uses one step value
+// per joint: 2048 + sign × angle × 4096 / 360, which goes past 0-4095 beyond ±180°. A multi-turn
+// servo reads and takes positions in sign-magnitude (bit 15 = sign), and counts from its one-turn
+// reading at power-up, so it can be one turn off: turn_offset = our steps − servo steps (a multiple
+// of 4096), set by setup_multi_turn(). REG_READ / REG_WRITE stay raw.
+int32_t turn_offset[N_SERVOS] = {0};
+
+inline int32_t servo_signed(uint16_t raw) { return (raw & 0x8000) ? -(int32_t)(raw & 0x7FFF) : raw; }
+
+inline uint16_t pos_from_servo(int j, uint16_t raw) {
+    if (!robot::MULTI_TURN[j]) return raw;
+    int32_t p = servo_signed(raw) + turn_offset[j];
+    return (uint16_t)(p < 0 ? 0 : (p > 0xFFFF ? 0xFFFF : p));
+}
+
+inline uint16_t pos_to_servo(int j, uint16_t pos) {
+    if (!robot::MULTI_TURN[j]) return pos;
+    int32_t s = (int32_t)pos - turn_offset[j];
+    return s < 0 ? (uint16_t)(0x8000 | (-s & 0x7FFF)) : (uint16_t)s;
+}
+
+// Values as the servos take them: goal positions of multi-turn joints in servo steps.
+inline void to_servo(uint8_t addr, const uint16_t v[N_SERVOS], uint16_t out[N_SERVOS]) {
+    for (int j = 0; j < N_SERVOS; j++) out[j] = addr == REG_GOAL_POSITION ? pos_to_servo(j, v[j]) : v[j];
 }
 
 void bus_begin() {
@@ -73,11 +102,13 @@ uint8_t sync_read(uint8_t addr, uint8_t len, uint8_t data[N_SERVOS][16]) {
 }
 
 void sync_write_u16(uint8_t addr, const uint16_t v[N_SERVOS]) {
+    uint16_t s[N_SERVOS];
+    to_servo(addr, v, s);
     uint8_t params[2 + N_SERVOS * 3] = {addr, 2};
     for (int j = 0; j < N_SERVOS; j++) {
         params[2 + 3 * j] = j + 1;
-        params[3 + 3 * j] = v[j] & 0xFF;
-        params[4 + 3 * j] = v[j] >> 8;
+        params[3 + 3 * j] = s[j] & 0xFF;
+        params[4 + 3 * j] = s[j] >> 8;
     }
     bus_send(0xFE, 0x83, params, sizeof(params));
 }
@@ -96,6 +127,8 @@ inline uint16_t u16le(const uint8_t* p) { return p[0] | (p[1] << 8); }
 volatile uint32_t write_retries = 0;
 
 bool sync_write_u16_verified(uint8_t addr, const uint16_t v[N_SERVOS], int attempts = 5) {
+    uint16_t s[N_SERVOS];
+    to_servo(addr, v, s);
     for (int a = 0; a < attempts; a++) {
         if (a) write_retries++;
         sync_write_u16(addr, v);
@@ -103,7 +136,7 @@ bool sync_write_u16_verified(uint8_t addr, const uint16_t v[N_SERVOS], int attem
         uint8_t d[N_SERVOS][16];
         if (sync_read(addr, 2, d) != (1 << N_SERVOS) - 1) continue;
         bool ok = true;
-        for (int j = 0; j < N_SERVOS; j++) ok &= u16le(d[j]) == v[j];
+        for (int j = 0; j < N_SERVOS; j++) ok &= u16le(d[j]) == s[j];
         if (ok) return true;
     }
     return false;
@@ -129,7 +162,7 @@ bool read_state(uint16_t pos[N_SERVOS], uint16_t spd[N_SERVOS], uint16_t load[N_
     uint8_t mask = sync_read(REG_PRESENT_POSITION, 6, d);
     for (int j = 0; j < N_SERVOS; j++) {
         if (mask & (1 << j)) {
-            pos[j] = u16le(d[j]); spd[j] = u16le(d[j] + 2); load[j] = u16le(d[j] + 4);
+            pos[j] = pos_from_servo(j, u16le(d[j])); spd[j] = u16le(d[j] + 2); load[j] = u16le(d[j] + 4);
         }
     }
     return mask == (1 << N_SERVOS) - 1;

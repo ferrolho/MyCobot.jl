@@ -6,7 +6,8 @@
 namespace lim {
 // Model joint limits (°), speed limit (°/s) and acceleration limits (°/s²): joint_limits.yaml.
 using robot::AMAX_DPS2;
-constexpr const float (&MODEL_LIMIT_DEG)[robot::N_JOINTS] = robot::LIMIT_DEG;
+constexpr const float (&MODEL_MIN_DEG)[robot::N_JOINTS] = robot::LIMIT_MIN_DEG;
+constexpr const float (&MODEL_MAX_DEG)[robot::N_JOINTS] = robot::LIMIT_MAX_DEG;
 const float SIGNAL_MARGIN = 10;   // test signals stay this far inside the model limits
 const float JOG_MARGIN = 2;       // JOG stops and MOVE_TO goals stay this far inside
 const float MOVE_VMAX = robot::VMAX_DPS;   // °/s, MOVE_TO and TRACK

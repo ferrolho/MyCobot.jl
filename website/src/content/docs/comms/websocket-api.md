@@ -183,7 +183,7 @@ test signals (PLAY_SIGNAL) stay 10° inside them.
 
 | Joint | J1 | J2 | J3 | J4 | J5 | J6 |
 | --- | --- | --- | --- | --- | --- | --- |
-| Limit (°) | ±165 | ±140 | ±150 | ±150 | ±160 | ±135 |
+| Limit (°) | ±165 | ±140 | ±150 | ±150 | ±160 | −220 to +135 |
 
 ## Example
 

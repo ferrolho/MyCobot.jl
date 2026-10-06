@@ -8,6 +8,9 @@ const JOINT_SIGN = (-1, -1, +1, -1, -1, -1)
 
 const STEPS_PER_DEG = 4096 / 360
 
+"Joints whose servo reads and moves past one turn (the firmware sets phase bit 4 at power-up)."
+const MULTI_TURN = (false, false, false, false, false, true)
+
 "Acceleration limits of the controller firmware (°/s²), below the servo limits `SERVO_AMAX`."
 const FIRMWARE_AMAX = [400.0, 400.0, 400.0, 2000.0, 2000.0, 2000.0]
 

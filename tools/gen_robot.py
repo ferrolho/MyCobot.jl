@@ -51,9 +51,16 @@ def params():
     if names != list(limits):
         sys.exit("joint_limits.yaml and servos.yaml list different joints")
     s = [servos["joints"][n] for n in names]
-    limit_deg = [math.degrees(limits[n]["max_position"]) for n in names]
-    if any(abs(math.degrees(limits[n]["min_position"]) + d) > 1e-4 for n, d in zip(names, limit_deg)):
-        sys.exit("the firmware and the Control page need symmetric position limits")
+    limit_min = [math.degrees(limits[n]["min_position"]) for n in names]
+    limit_max = [math.degrees(limits[n]["max_position"]) for n in names]
+    multi_turn = [bool(x.get("multi_turn", False)) for x in s]
+    for n, lo, hi, mt in zip(names, limit_min, limit_max, multi_turn):
+        if not lo < 0 < hi:
+            sys.exit(f"{n}: the position limits must include 0")
+        if (lo < -180 or hi > 180) and not mt:
+            sys.exit(f"{n}: limits past ±180° need multi_turn: true in servos.yaml")
+        if hi - lo >= 360:
+            sys.exit(f"{n}: the limits must span less than one turn (the power-up reading is one turn)")
     vmax = {round(math.degrees(limits[n]["max_velocity"]), 4) for n in names}
     if len(vmax) != 1:
         sys.exit("the firmware has one speed limit for all joints: give every joint the same max_velocity")
@@ -68,7 +75,9 @@ def params():
     return {
         "encoder_correction": [(pad(corr.get(n, {}).get("sin", [])), pad(corr.get(n, {}).get("cos", []))) for n in names],
         "names": names,
-        "limit_deg": [round(d, 4) for d in limit_deg],
+        "limit_min": [round(d, 4) for d in limit_min],
+        "limit_max": [round(d, 4) for d in limit_max],
+        "multi_turn": multi_turn,
         "vmax_dps": vmax.pop(),
         "amax_dps2": [round(math.degrees(limits[n]["max_acceleration"]), 4) for n in names],
         "ids": [x["id"] for x in s],
@@ -90,7 +99,9 @@ def c_params(p):
     arr = lambda xs: "{" + ", ".join(num(x) for x in xs) + "}"
     return (header("//") + "#pragma once\n#include <stdint.h>\n\nnamespace robot {\n"
             f"const int N_JOINTS = {len(p['names'])};\n"
-            f"const float LIMIT_DEG[N_JOINTS] = {arr(p['limit_deg'])};   // model joint limits (±°)\n"
+            f"const float LIMIT_MIN_DEG[N_JOINTS] = {arr(p['limit_min'])};   // model joint limits (°)\n"
+            f"const float LIMIT_MAX_DEG[N_JOINTS] = {arr(p['limit_max'])};\n"
+            f"const bool MULTI_TURN[N_JOINTS] = {{{', '.join('true' if m else 'false' for m in p['multi_turn'])}}};   // phase bit 4 and angle limits 0/0 at power-up\n"
             f"const float VMAX_DPS = {num(p['vmax_dps'])};   // speed limit (°/s)\n"
             f"const float AMAX_DPS2[N_JOINTS] = {arr(p['amax_dps2'])};   // acceleration limits (°/s²)\n"
             f"const int8_t JOINT_SIGN[N_JOINTS] = {arr(p['sign'])};   // angle = sign × (step − {p['center']}) × 360 / {p['steps_per_turn']}\n"
@@ -103,7 +114,8 @@ def ts_params(p):
     return (header("//") +
             f"export const SIGN = {arr(p['sign'])} as const; // angle = sign × (step − {p['center']}) × 360 / {p['steps_per_turn']}\n"
             f"export const STEPS_PER_DEG = {p['steps_per_turn']} / 360;\n"
-            f"export const LIMITS = {arr(p['limit_deg'])} as const; // model joint limits (±°)\n"
+            f"export const LIMIT_MIN = {arr(p['limit_min'])} as const; // model joint limits (°)\n"
+            f"export const LIMIT_MAX = {arr(p['limit_max'])} as const;\n"
             f"export const VMAX = {num(p['vmax_dps'])}; // speed limit (°/s)\n"
             f"export const AMAX = {arr(p['amax_dps2'])} as const; // acceleration limits (°/s²)\n")
 
@@ -113,7 +125,9 @@ def py_params(p):
     return (header("#") +
             f"SIGN = {tup(p['sign'])}   # angle = sign × (step − {p['center']}) × 360 / {p['steps_per_turn']}\n"
             f"STEPS_PER_DEG = {p['steps_per_turn']} / 360\n"
-            f"LIMITS = {tup(p['limit_deg'])}   # model joint limits (±°)\n"
+            f"LIMIT_MIN = {tup(p['limit_min'])}   # model joint limits (°)\n"
+            f"LIMIT_MAX = {tup(p['limit_max'])}\n"
+            f"MULTI_TURN = ({', '.join('True' if m else 'False' for m in p['multi_turn'])})   # servo reads and moves past one turn\n"
             f"VMAX = {num(p['vmax_dps'])}   # speed limit (°/s)\n"
             f"AMAX = {tup(p['amax_dps2'])}   # acceleration limits (°/s²)\n")
 
@@ -134,6 +148,8 @@ def jl_params(p):
             f"\"Joint angle direction against the servo position: angle = sign × (step − {p['center']}) / STEPS_PER_DEG.\"\n"
             f"const JOINT_SIGN = ({', '.join(f'{s:+d}' for s in p['sign'])})\n\n"
             f"const STEPS_PER_DEG = {p['steps_per_turn']} / 360\n\n"
+            f"\"Joints whose servo reads and moves past one turn (the firmware sets phase bit 4 at power-up).\"\n"
+            f"const MULTI_TURN = ({', '.join('true' if m else 'false' for m in p['multi_turn'])})\n\n"
             f"\"Acceleration limits of the controller firmware (°/s²), below the servo limits `SERVO_AMAX`.\"\n"
             f"const FIRMWARE_AMAX = {vec([float(x) for x in p['amax_dps2']])}\n\n"
             f"\"Speed limit of the controller firmware (°/s).\"\nconst FIRMWARE_VMAX = {jf(float(p['vmax_dps']))}\n\n"

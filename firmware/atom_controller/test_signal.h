@@ -18,7 +18,8 @@ namespace sig {
 
 const float MOVE_S = 2.0f, HOLD_S = 1.0f;
 // Model limits minus SIGNAL_MARGIN, and the servo acceleration limits (motion_limits.h).
-inline float limit_deg(int k) { return lim::MODEL_LIMIT_DEG[k] - lim::SIGNAL_MARGIN; }
+inline float limit_lo(int k) { return lim::MODEL_MIN_DEG[k] + lim::SIGNAL_MARGIN; }
+inline float limit_hi(int k) { return lim::MODEL_MAX_DEG[k] - lim::SIGNAL_MARGIN; }
 const float* const AMAX_DPS2 = lim::AMAX_DPS2;
 const float MAX_MOVE_DEG = 90;                                  // start→base distance per joint
 
@@ -50,8 +51,8 @@ inline int validate(const Params& p) {
     if (!(p.amax_dps2 > 0 && p.amax_dps2 <= AMAX_DPS2[j])) return 6;
     if (p.kind == CHIRP && !(p.f0_hz > 0 && p.f1_hz > p.f0_hz && p.f1_hz <= 20)) return 7;
     for (int k = 0; k < 6; k++) {
-        float reach = fabsf(base_deg(p, k)) + (k == j ? p.amp_deg : 0);
-        if (reach > limit_deg(k)) return 8;
+        float amp = k == j ? p.amp_deg : 0;
+        if (base_deg(p, k) - amp < limit_lo(k) || base_deg(p, k) + amp > limit_hi(k)) return 8;
     }
     return 0;
 }
@@ -59,7 +60,7 @@ inline int validate(const Params& p) {
 // Check the start pose (degrees): each joint within MAX_MOVE_DEG of the base and inside the limits.
 inline int validate_start(const Params& p, const float start[6]) {
     for (int k = 0; k < 6; k++) {
-        if (fabsf(start[k]) > limit_deg(k)) return 9;
+        if (start[k] < limit_lo(k) || start[k] > limit_hi(k)) return 9;
         if (fabsf(start[k] - base_deg(p, k)) > MAX_MOVE_DEG) return 10;
     }
     return 0;

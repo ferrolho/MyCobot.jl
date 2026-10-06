@@ -14,6 +14,24 @@ UDP port 5005 shows it with the git commit of the build, for example
 `atom_controller v4.0.0 (bff4529)`. Each version has a git tag
 `atom-controller-vX.Y.Z` (local until the repository is pushed).
 
+## 4.5.0 — 2026-10-06
+
+- **J6 past one turn.** With the gripper on, its cable lets J6 turn from −237° to +140°,
+  so the J6 limits are now **−220° to +135°**. At power-up the firmware sets J6's phase
+  bit 4 (multi-turn reading) and angle limits 0/0 (goals past one turn), in RAM, for
+  each joint marked `multi_turn` in `servos.yaml`. Tested on J6 on 2026-10-06: it read
+  −231.8° and moved to −209.3° and back. See [Servos](/mycobot-280-lab/system/servos/#multi-turn-j6).
+- After a servo power-up the servo counts from its one-turn reading. The limits span
+  less than one turn, so a reading in the gap between them (past its middle, +137.5° on
+  J6) is one turn off; the firmware corrects it (`turn_offset`).
+- Positions in STATE, STREAM and plans are steps as before (2048 + sign × angle × 4096 / 360).
+  On J6 they now go past 0–4095 (−220° is 4551). REG_READ and REG_WRITE stay raw.
+- **Limits need not be symmetric:** `robot_params.h` has `LIMIT_MIN_DEG` and
+  `LIMIT_MAX_DEG` (was `LIMIT_DEG`, ±). MOVE_TO, JOG, TRACK and PLAY_SIGNAL use both.
+- PONG `gains_ok` is 1 when the gains and the multi-turn setup both took.
+- No change in the messages: 4.4 clients work, but a client that clamps positions to
+  0–4095 shows J6 wrong past −180°.
+
 ## 4.4.1 — 2026-10-06
 
 - **Fix:** the J6 limit is ±135° (was ±180°). With the gripper on, its cable stops

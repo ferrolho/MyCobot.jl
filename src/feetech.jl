@@ -192,14 +192,16 @@ end
     angle_to_position(j, deg)
 
 Servo position (0–4095) for joint `j` at `deg` degrees (ATOM angle convention; 0° = 2048),
-with the encoder correction (`encoder_error`).
+with the encoder correction (`encoder_error`). On a `MULTI_TURN` joint (J6) the position goes past
+0–4095 beyond ±180°, as the ATOM firmware (4.5+) takes and reports it. Direct bus scripts do not set
+the servo up for this: use the ATOM there.
 """
 function angle_to_position(j::Integer, deg::Real)
     q = float(deg)
     for _ in 1:4                    # encoder angle q with q − error(q) = deg (the error changes < 0.05°/°)
         q = deg + encoder_error(j, q)
     end
-    return clamp(round(Int, 2048 + JOINT_SIGN[j] * q * STEPS_PER_DEG), 0, 4095)
+    return clamp(round(Int, 2048 + JOINT_SIGN[j] * q * STEPS_PER_DEG), 0, MULTI_TURN[j] ? 0xffff : 4095)
 end
 
 """

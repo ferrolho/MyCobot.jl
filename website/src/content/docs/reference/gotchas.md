@@ -17,7 +17,7 @@ Read this page before you write code that talks to the servos.
 | 6 | The servos do not enforce the URDF joint limits. | Check the limits in software (the players do). |
 | 7 | After a reversal, J1–J3 can stick for 0.2–0.5 s. | Expect it. ILC reduces its effect. |
 | 8 | Elephant's documentation names register 22 "I" and register 23 "D". | 22 is D, 23 is I (Feetech's table). |
-| 9 | After J6 was turned by hand about 9 turns while limp, it turned away from its goal (+45° in 0.4 s) as soon as motion was enabled. The servo probably counts turns internally, although it reports one turn only. A power cycle cleared it (2026-10-04). | After you turn J6 more than half a turn by hand, power-cycle the arm before the next motion. |
+| 9 | After J6 was turned by hand about 9 turns while limp, it turned away from its goal (+45° in 0.4 s) as soon as motion was enabled. The servo counts turns inside, although it reports one turn only (confirmed 2026-10-06, see [Multi-turn](/mycobot-280-lab/system/servos/#multi-turn-j6)). A power cycle cleared it (2026-10-04). | Firmware 4.5+ sets J6 to multi-turn, so its reading and its goal count the same turns. With older firmware: after you turn J6 more than half a turn by hand, power-cycle the arm before the next motion. |
 
 ## Servo bus
 

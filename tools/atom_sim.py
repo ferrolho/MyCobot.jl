@@ -26,10 +26,11 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import atom_replay  # noqa: E402
 import robot_params  # noqa: E402  (generated from mycobot_description/config)
 
-VERSION = (4, 4, 0)
+VERSION = (4, 5, 0)
 SIGN = robot_params.SIGN
 STEPS_PER_DEG = robot_params.STEPS_PER_DEG
-LIMITS = robot_params.LIMITS   # model joint limits (±°)
+LIMIT_MIN = robot_params.LIMIT_MIN   # model joint limits (°)
+LIMIT_MAX = robot_params.LIMIT_MAX
 BOOTING, HOLDING, READY, PLAYING, ERROR, OTA, MOVING, JOGGING, TRACKING = range(9)
 STATE_NAMES = ("booting", "holding", "ready", "playing", "error", "ota", "moving", "jogging", "tracking")
 
@@ -48,7 +49,8 @@ MAX_SUBS = 8
 
 
 def pos_raw(j, deg):
-    return int(min(4095, max(0, round(2048 + SIGN[j] * deg * STEPS_PER_DEG))))
+    hi = 0xFFFF if robot_params.MULTI_TURN[j] else 4095   # multi-turn joints go past one turn (4.5)
+    return int(min(hi, max(0, round(2048 + SIGN[j] * deg * STEPS_PER_DEG))))
 
 
 def track_step(q, v, goal, vmax, stop):
@@ -59,18 +61,19 @@ def track_step(q, v, goal, vmax, stop):
         a = MOVE_AMAX[j]
         dv = a * DT
         stoppable = lambda d: 0.0 if d <= 0 else dv * (math.sqrt(0.25 + 2 * d / (a * DT * DT)) - 0.5)
-        lim = LIMITS[j] - JOG_MARGIN
-        g = max(-lim, min(lim, goal[j]))
+        lo, hi = LIMIT_MIN[j] + JOG_MARGIN, LIMIT_MAX[j] - JOG_MARGIN
+        g = max(lo, min(hi, goal[j]))
         e = g - q[j]
         t = 0.0 if stop else math.copysign(min(vmax, stoppable(abs(e))), e)
-        t = max(-stoppable(lim + q[j]), min(stoppable(lim - q[j]), t))
+        t = max(-stoppable(q[j] - lo), min(stoppable(hi - q[j]), t))
         v0 = v[j]
         v[j] += max(-dv, min(dv, t - v[j]))
         qn = q[j] + v[j] * DT
         if not stop and e != 0 and (g - qn) * e <= 0 and abs(v0) <= 1.5 * dv:
             qn, v[j] = g, 0.0
-        if abs(qn) > lim:
-            v[j], qn = (math.copysign(lim, qn) - q[j]) / DT, math.copysign(lim, qn)
+        if qn > hi or qn < lo:
+            b = hi if qn > hi else lo
+            v[j], qn = (b - q[j]) / DT, b
         q[j] = qn
 
 
@@ -165,10 +168,10 @@ class Sim:
             for j in range(6):
                 dv = max(-JOG_AMAX * DT, min(JOG_AMAX * DT, self.jog_cmd[j] - self.jog_v[j]))
                 self.jog_v[j] += dv
-                lim = LIMITS[j] - JOG_MARGIN
+                lo, hi = LIMIT_MIN[j] + JOG_MARGIN, LIMIT_MAX[j] - JOG_MARGIN
                 g = self.goal[j] + self.jog_v[j] * DT
-                if abs(g) >= lim:
-                    g = math.copysign(lim, g)
+                if g >= hi or g <= lo:
+                    g = hi if g >= hi else lo
                     self.jog_v[j] = 0.0
                 self.goal[j] = g
             if not any(self.jog_cmd) and not any(self.jog_v):
@@ -308,7 +311,7 @@ class Sim:
             if self.moving():
                 return self.ack(c, 0x0E, -1)
             for j in range(6):
-                if abs(goal[j]) >= LIMITS[j]:
+                if not LIMIT_MIN[j] + JOG_MARGIN <= goal[j] <= LIMIT_MAX[j] - JOG_MARGIN:   # as motion::move_validate
                     return self.ack(c, 0x0E, -10 - (j + 1))
             start = list(self.q)
             t_min = max(max(1.875 * d / MOVE_VMAX, math.sqrt(5.77 * d / a))
@@ -332,7 +335,7 @@ class Sim:
         elif code == 0x10 and len(b) >= 15:   # TRACK (4.4): goal pose (0.01°) and speed cap (0.1°/s)
             goal = [v / 100 for v in struct.unpack_from("<6h", b, 1)]
             vmax = struct.unpack_from("<H", b, 13)[0] / 10
-            bad = [j for j in range(6) if abs(goal[j]) > LIMITS[j] - JOG_MARGIN]
+            bad = [j for j in range(6) if not LIMIT_MIN[j] + JOG_MARGIN <= goal[j] <= LIMIT_MAX[j] - JOG_MARGIN]
             if bad:
                 return self.ack(c, 0x10, -10 - (bad[0] + 1))
             if self.state not in (HOLDING, READY, TRACKING):
