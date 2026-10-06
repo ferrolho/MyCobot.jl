@@ -1,6 +1,6 @@
 ---
-title: Pick and place (plush toy)
-description: The arm picked a plush cow off the table and put it in a tissue box (2026-10-06), with the lab camera, a table touch with the IMU and the gripper at full torque. Calibration results, what failed and the grasp that worked.
+title: Pick and place (plush toy, corks)
+description: The arm put a plush cow and then four wine corks in a tissue box (2026-10-06), with the lab camera, a table touch with the IMU and the gripper. Calibration results, what failed and the grasps that worked.
 ---
 
 On 2026-10-06 the arm picked a plush cow (about 110 × 70 × 45 mm, belly up) from the table
@@ -118,3 +118,55 @@ neck, nearer the centre of mass, should hold better (the user's suggestion; not 
 
 The helpers for this session (IK with the gripper pointing down, workspace checks, the poke and
 the grasp) are in a scratch file on the Pi (`~/scratch/plush/plush.jl`), not in the repository yet.
+
+## Second task: four wine corks (2026-10-06 evening)
+
+The box moved next to the wall, left of the robot. Four corks lay on the table. All four
+went in the box. Corks C, D and B worked with the method above (B on the third try). Cork A,
+next to the box wall, took seven tries.
+
+### Checks with known sizes
+
+| Object | Data | Camera estimate |
+| --- | --- | --- |
+| Wine cork | 24 mm diameter; 38, 44.5 or 49 mm long (standard sizes) | 39–49 mm long (back-projected at z = −10, about the top of a cork) |
+| Tissue box (Kleenex Ultra Soft Extra Large) | 15.5 × 16 × 3.5 cm (user, with a ruler) | 16 × 15 × 3.5–3.9 cm |
+
+### The camera moved: calibrate again, at the work height
+
+During the task the camera moved about 50 mm (a lamp was added and the camera
+reconnected on USB). A few pixels of shift on a fixed object did not show this: the camera
+had also turned. Fingertips predicted with the old model were 50 px (20–25 mm) off.
+
+A new calibration used 9 points at fingertip heights −13 to 80 mm, near the corks:
+
+| Item | Value |
+| --- | --- |
+| Error | **2.0 px rms**, 3.6 px max |
+| Focal length, fitted | 1276 px (data sheet: 1272 px) |
+| Camera centre | (−232, −376, 462) mm |
+| Rejected detections | 3 of 12 (white tissues under the gripper; light wood under the new lamp) |
+
+The first calibration had points only at z = 96–141 mm. It extrapolated down to the table
+with an error of 20 mm or more. This explains the depth errors of the first task (the
+"+15 mm" from the poke and the 18 mm shift). **Calibrate at the height where you grasp.**
+
+### What made cork A fail, and the fix
+
+| Problem | Effect | Fix |
+| --- | --- | --- |
+| The sag correction moved the fingers sideways at cork height | The fingers pushed the cork away | Measure the sag 15 mm above, then go straight down with that offset |
+| A finger came down on the cork | Fingers pushed open (opening 974 for goal 700) | Better position (new calibration) |
+| Fingers across the cork at 45° | The cork spans 48 mm along the fingers: more than 43 mm | Keep the fingers perpendicular to the cork |
+| Pads above the middle of the cork | Closed at 188–257 and slid out | Fingertips about 3 mm lower |
+
+The grasps that held stalled at an opening of 266–325 (16–18 mm between the pads for a
+24 mm cork) and kept it through the lift.
+
+### Other findings
+
+- The joint-space path from the box (near the wall) to a far cork goes near the wall:
+  carry through a waypoint near the robot, (−130, −110).
+- The ATOM did not join WiFi again after a router restart (fixed in firmware 4.6.1).
+- After a power cycle the arm sags into a new pose. Check the pose before the first move.
+
