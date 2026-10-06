@@ -14,6 +14,15 @@ UDP port 5005 shows it with the git commit of the build, for example
 `atom_controller v4.0.0 (bff4529)`. Each version has a git tag
 `atom-controller-vX.Y.Z` (local until the repository is pushed).
 
+## 4.6.1 — 2026-10-06
+
+- **WiFi watchdog.** After a drop, the ATOM joins the saved network again every 15 s
+  until it works. Before, it relied on the ESP32's own auto-reconnect: after a router
+  restart on 2026-10-06 the ATOM stayed off the network until a power cycle.
+- mDNS (`mycobot.local`) starts again after each reconnect (before: only once).
+- The status log has `wifi_drops=N` (drops since power-up). The Control page shows it
+  in the footer when it is not 0.
+
 ## 4.6.0 — 2026-10-06
 
 - **Gripper.** The ATOM finds the adaptive gripper (servo ID 7, model `0x070A`) at

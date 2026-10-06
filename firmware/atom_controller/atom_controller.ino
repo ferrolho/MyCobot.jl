@@ -114,7 +114,7 @@
 // History: docs (firmware/changelog). FW_GIT is set by the build (git describe).
 #define FW_MAJOR 4
 #define FW_MINOR 6
-#define FW_PATCH 0
+#define FW_PATCH 1
 #define FW_VERSION FW_MAJOR
 #ifndef FW_GIT
 #define FW_GIT "unknown"
@@ -636,6 +636,40 @@ void wifi_join_saved() {
     }
 }
 
+// ---- WiFi watchdog (4.6.1, network task) ------------------------------------------------------------
+// After a drop (for example a router restart), join the saved network again every WIFI_RETRY_MS until
+// it works. On 2026-10-06 the ESP32's own auto-reconnect gave up after a router restart, and the ATOM
+// stayed off the network until a power cycle. mDNS starts again after each reconnect.
+const uint32_t WIFI_RETRY_MS = 15000;
+bool wifi_up = false, mdns_up = false;
+uint32_t wifi_retry_ms = 0;
+uint32_t wifi_drops = 0;   // shown in the status log
+
+void wifi_watch() {
+    if (!wifi_has_network || improv_provisioning) return;
+    uint32_t now = millis();
+    if (WiFi.status() == WL_CONNECTED) {
+        if (!wifi_up) {   // (re)connected: mycobot.local again
+            wifi_up = true;
+            if (mdns_up) MDNS.end();
+            mdns_up = MDNS.begin("mycobot");
+            if (mdns_up) MDNS.addService("http", "tcp", 80);
+        }
+        return;
+    }
+    if (wifi_up) {   // just lost
+        wifi_up = false;
+        wifi_drops++;
+        wifi_retry_ms = now;
+    }
+    if (wifi_retry_ms == 0) wifi_retry_ms = now;   // first join after boot: give it the full interval
+    if (now - wifi_retry_ms >= WIFI_RETRY_MS) {
+        wifi_retry_ms = now;
+        WiFi.disconnect();
+        wifi_join_saved();
+    }
+}
+
 void improv_write(const uint8_t* p, size_t n) { if (n) Serial.write(p, n); }
 
 void improv_send_state(uint8_t st) { uint8_t out[improv::MAX_PACKET]; improv_write(out, improv::build_state(st, out)); }
@@ -788,11 +822,7 @@ void net_task(void*) {
             if (n > 0) handle_command(buf, n);
         }
 
-        static bool mdns_up = false;
-        if (!mdns_up && WiFi.status() == WL_CONNECTED) {   // mycobot.local, once WiFi is up
-            mdns_up = MDNS.begin("mycobot");
-            if (mdns_up) MDNS.addService("http", "tcp", 80);
-        }
+        wifi_watch();   // rejoin after a drop; mycobot.local after each (re)connect
         wss.loop();
         control_tick();
         OutMsg om;
@@ -827,9 +857,9 @@ void net_task(void*) {
         if (now - last_log >= 1000) {
             last_log = now;
             char line[256];
-            snprintf(line, sizeof(line), "atom_controller v%d.%d.%d (%s, %s) ip=%s rssi=%d state=%d plan=%lu@%uHz valid=%d imu=%d write_retries=%lu heap=%lu up=%lus%s",
+            snprintf(line, sizeof(line), "atom_controller v%d.%d.%d (%s, %s) ip=%s rssi=%d state=%d plan=%lu@%uHz valid=%d imu=%d write_retries=%lu heap=%lu up=%lus wifi_drops=%lu%s",
                      FW_MAJOR, FW_MINOR, FW_PATCH, FW_GIT, FW_VARIANT, WiFi.localIP().toString().c_str(), WiFi.RSSI(), state, (unsigned long)plan_n, plan_rate,
-                     plan_valid, imu_ok, (unsigned long)write_retries, (unsigned long)ESP.getFreeHeap(), (unsigned long)(now / 1000),
+                     plan_valid, imu_ok, (unsigned long)write_retries, (unsigned long)ESP.getFreeHeap(), (unsigned long)(now / 1000), (unsigned long)wifi_drops,
                      turn_unsure ? " TURN UNKNOWN: move J6 away from ±135° by hand, then HOLD" : "");
             wss.broadcastTXT(line);
             if (WiFi.status() == WL_CONNECTED) {

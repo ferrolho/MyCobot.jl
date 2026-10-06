@@ -508,6 +508,7 @@ export function start() {
       v('rssi') && `RSSI ${v('rssi')} dBm`,
       up && `up ${Number(up) < 120 ? `${up} s` : `${Math.round(Number(up) / 60)} min`}`,
       v('write_retries') && `write retries ${v('write_retries')}`,
+      Number(v('wifi_drops') ?? 0) > 0 && `WiFi drops ${v('wifi_drops')}`,
     ].filter(Boolean);
     return parts.length ? parts.join(' · ') : line;
   }
