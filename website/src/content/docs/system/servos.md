@@ -80,10 +80,11 @@ the ATOM's REG_READ and REG_WRITE, with J6 turned by hand and then moved):
   Our firmware (4.5+) writes them at each power-up for the joints marked `multi_turn`
   in `servos.yaml` (J6).
 - After a power-up the servo counts from its one-turn reading. The firmware finds the
-  turn from the J6 limits: they span less than one turn (−220° to +135°), so a reading
-  above +137.5° (the middle of the gap) is one turn lower. It keeps a `turn_offset` for
-  the joint.
-- The positions in STATE, STREAM and plans go past 0–4095 on J6: −220° is step 4551.
+  turn from the J6 limits: they span one turn (−225° to +135°), so a reading above
+  +135° is one turn lower. It keeps a `turn_offset` for the joint. Within 1.5° of ±135°
+  the turn is not known: J6 goes limp and the ATOM stays in the error state until a
+  HOLD finds the turn (the status log says `TURN UNKNOWN`).
+- The positions in STATE, STREAM and plans go past 0–4095 on J6: −225° is step 4608.
 - This also explains an older problem: after many turns by hand, J6 turned away from
   its goal when motion was enabled (see [Known problems](/mycobot-280-lab/reference/gotchas/#servos)).
   The servo counts turns inside, even when it reports one turn only.

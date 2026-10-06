@@ -59,8 +59,8 @@ def params():
             sys.exit(f"{n}: the position limits must include 0")
         if (lo < -180 or hi > 180) and not mt:
             sys.exit(f"{n}: limits past ±180° need multi_turn: true in servos.yaml")
-        if hi - lo >= 360:
-            sys.exit(f"{n}: the limits must span less than one turn (the power-up reading is one turn)")
+        if hi - lo > 360:
+            sys.exit(f"{n}: the limits must span one turn at most (the power-up reading is one turn)")
     vmax = {round(math.degrees(limits[n]["max_velocity"]), 4) for n in names}
     if len(vmax) != 1:
         sys.exit("the firmware has one speed limit for all joints: give every joint the same max_velocity")

@@ -166,7 +166,7 @@
   </joint>
   <joint name="joint6output_to_joint6" type="revolute">
     <axis xyz="0 0 1"/>
-    <limit effort="0.0" lower="-3.839724" upper="2.356194" velocity="1.570796"/>
+    <limit effort="0.0" lower="-3.926991" upper="2.356194" velocity="1.570796"/>
     <parent link="joint6"/>
     <child link="joint6_flange"/>
     <origin rpy="-1.5708 0.7854 0" xyz="0 0.0456 0"/>

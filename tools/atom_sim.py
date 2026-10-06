@@ -26,7 +26,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import atom_replay  # noqa: E402
 import robot_params  # noqa: E402  (generated from mycobot_description/config)
 
-VERSION = (4, 5, 0)
+VERSION = (4, 5, 1)
 SIGN = robot_params.SIGN
 STEPS_PER_DEG = robot_params.STEPS_PER_DEG
 LIMIT_MIN = robot_params.LIMIT_MIN   # model joint limits (°)

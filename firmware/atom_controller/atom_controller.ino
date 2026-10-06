@@ -110,7 +110,7 @@
 // History: docs (firmware/changelog). FW_GIT is set by the build (git describe).
 #define FW_MAJOR 4
 #define FW_MINOR 5
-#define FW_PATCH 0
+#define FW_PATCH 1
 #define FW_VERSION FW_MAJOR
 #ifndef FW_GIT
 #define FW_GIT "unknown"
@@ -209,10 +209,16 @@ bool write_gains() {
 // Multi-turn joints (4.5+, J6 with the gripper cable): phase bit 4 makes the servo read past one
 // turn, and angle limits 0/0 let it take goals past one turn (both tested on J6, 2026-10-06). The
 // EEPROM lock stays on, so they last until the servo's next power-off: write them at each power-up.
-// The servo then counts from its one-turn reading. The limits span less than one turn, so the
-// reading tells the turn: an angle in the gap between the limits (past the middle of the gap) is one
-// turn off. Example J6 (−220° to +135°): a reading of +150° is −210°.
+// The servo then counts from its one-turn reading. The limits span one turn at most, so the reading
+// tells the turn: an angle past the middle of the gap between the limits is one turn off. Example
+// J6 (−225° to +135°, no gap): a reading of +150° is −210°. Within TURN_BAND of the middle of the
+// gap the turn is not known (J6 at ±135° by hand while off): turn_unsure, the joint goes limp and
+// the ATOM stays in ERROR until a HOLD finds the turn (move the joint by hand first).
+const float TURN_BAND = 1.5f;   // ° (JOG, TRACK and MOVE_TO stop 2° inside the limits)
+volatile bool turn_unsure = false;
+
 bool setup_multi_turn() {
+    turn_unsure = false;
     bool ok = true;
     for (int j = 0; j < N_SERVOS; j++) {
         if (!robot::MULTI_TURN[j]) continue;
@@ -227,6 +233,11 @@ bool setup_multi_turn() {
         while (a > gap_mid) { a -= 360; turns--; }
         while (a < gap_mid - 360) { a += 360; turns++; }
         turn_offset[j] = JOINT_SIGN[j] * turns * 4096;
+        if (fabsf(a - gap_mid) < TURN_BAND || fabsf(a - (gap_mid - 360)) < TURN_BAND) {
+            turn_unsure = true;
+            uint8_t off = 0;
+            reg_write(j + 1, REG_TORQUE_ENABLE, &off, 1);
+        }
     }
     return ok;
 }
@@ -734,9 +745,10 @@ void net_task(void*) {
         if (now - last_log >= 1000) {
             last_log = now;
             char line[256];
-            snprintf(line, sizeof(line), "atom_controller v%d.%d.%d (%s, %s) ip=%s rssi=%d state=%d plan=%lu@%uHz valid=%d imu=%d write_retries=%lu heap=%lu up=%lus",
+            snprintf(line, sizeof(line), "atom_controller v%d.%d.%d (%s, %s) ip=%s rssi=%d state=%d plan=%lu@%uHz valid=%d imu=%d write_retries=%lu heap=%lu up=%lus%s",
                      FW_MAJOR, FW_MINOR, FW_PATCH, FW_GIT, FW_VARIANT, WiFi.localIP().toString().c_str(), WiFi.RSSI(), state, (unsigned long)plan_n, plan_rate,
-                     plan_valid, imu_ok, (unsigned long)write_retries, (unsigned long)ESP.getFreeHeap(), (unsigned long)(now / 1000));
+                     plan_valid, imu_ok, (unsigned long)write_retries, (unsigned long)ESP.getFreeHeap(), (unsigned long)(now / 1000),
+                     turn_unsure ? " TURN UNKNOWN: move J6 away from ±135° by hand, then HOLD" : "");
             wss.broadcastTXT(line);
             if (WiFi.status() == WL_CONNECTED) {
                 out_udp.beginPacket(IPAddress(255, 255, 255, 255), LOG_PORT);
@@ -919,9 +931,9 @@ void setup() {
     delay(300);
     for (int k = 0; k < 20 && !hold_pose(); k++) delay(100);
     for (int k = 0; k < 5 && !gains_ok; k++) { gains_ok = write_gains() && setup_multi_turn(); if (!gains_ok) delay(100); }
-    hold_pose();   // goals in our steps (turn_offset)
+    if (!turn_unsure) hold_pose();   // goals in our steps (turn_offset)
     uint16_t p[N_SERVOS], s[N_SERVOS], l[N_SERVOS];
-    state = read_state(p, s, l) ? HOLDING : ERROR_STATE;
+    state = read_state(p, s, l) && !turn_unsure ? HOLDING : ERROR_STATE;
 }
 
 // JOG (4.2+): the client streams joint velocities; the goals integrate them at 500 Hz within the
@@ -1033,7 +1045,8 @@ void loop() {
             memcpy(m + 38, im.acc, 6); memcpy(m + 44, im.gyro, 6);
             post(m, sizeof(m), req_from);
         } else if (r == REQ_HOLD) {
-            bool ok = hold_pose();
+            if (turn_unsure) setup_multi_turn();   // the joint may have been moved by hand: find the turn again
+            bool ok = !turn_unsure && hold_pose();
             state = ok ? (plan_valid ? READY : HOLDING) : ERROR_STATE;
             ack_from_control(0x03, ok ? 0 : -4);
         } else if (r == REQ_PLAY) {

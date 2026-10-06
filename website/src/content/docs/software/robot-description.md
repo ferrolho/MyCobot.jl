@@ -69,7 +69,7 @@ file. The generator converts them to degrees for the firmware and the Control pa
 | Value | Source |
 | --- | --- |
 | Lengths, joint axes, meshes | Elephant's `mycobot_280_arduino.urdf` (mycobot_ros), with the flange turned 45° about its axis (2025-02-16). |
-| Position limits (±165, ±140, ±150, ±150, ±160, ±135°) | Inside the end stops measured by hand on 2026-10-04; J6 inside the gripper cable stops (2026-10-06) ([Robot](/mycobot-280-lab/system/robot/#joint-limits)). |
+| Position limits (±165, ±140, ±150, ±150, ±160°; J6 −225° to +135°) | Inside the end stops measured by hand on 2026-10-04; J6: one turn inside the gripper cable stops (2026-10-06) ([Robot](/mycobot-280-lab/system/robot/#joint-limits)). |
 | Speed limit 90 °/s | Our firmware (MOVE_TO, TRACK). |
 | Acceleration limits 400 / 2000 °/s² | Our firmware, below the servo limits (439 / 2197 °/s², [Servo dynamics](/mycobot-280-lab/results/servo-dynamics/)). |
 | Effort | Not known: the servo models are not identified. `has_effort_limits: false`, `effort="0"` in the URDF. |

@@ -14,6 +14,16 @@ UDP port 5005 shows it with the git commit of the build, for example
 `atom_controller v4.0.0 (bff4529)`. Each version has a git tag
 `atom-controller-vX.Y.Z` (local until the repository is pushed).
 
+## 4.5.1 — 2026-10-06
+
+- J6 limits **−225° to +135°** (was −220°): one full turn, so the gripper can face
+  every direction.
+- **Power-up guard:** at ±135° the one-turn reading cannot tell the turn. If J6 is
+  within 1.5° of it at power-up, J6 goes limp and the ATOM stays in ERROR. The status
+  log says `TURN UNKNOWN`. Turn J6 a few degrees by hand, then send HOLD: it finds the
+  turn again. Under control the arm never stops there (all motions stop 2° inside the
+  limits).
+
 ## 4.5.0 — 2026-10-06
 
 - **J6 past one turn.** With the gripper on, its cable lets J6 turn from −237° to +140°,

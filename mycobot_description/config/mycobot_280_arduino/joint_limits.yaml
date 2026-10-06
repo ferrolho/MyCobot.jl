@@ -5,9 +5,9 @@
 #
 # Position: round values inside the end stops measured by hand on 2026-10-04 (the largest multiple
 #   of 5° at least 2° inside both stops; docs: system/robot). J6 has no end stop; the gripper
-#   cable stops it at −237.1° and +139.9° (2026-10-06): −220° to +135°. J6 is multi-turn
-#   (servos.yaml); −220° keeps every pose inside the limits apart from its one-turn reading at
-#   power-up (a reading above +137.5° is one turn lower).
+#   cable stops it at −237.1° and +139.9° (2026-10-06): −225° to +135°, one full turn of the
+#   gripper. J6 is multi-turn (servos.yaml). At power-up a reading above +135° is one turn lower;
+#   within 1.5° of ±135° the turn is not known and the ATOM starts in the error state.
 # Velocity: the speed limit of our controller firmware (MOVE_TO, TRACK): 90°/s.
 # Acceleration: the planning limit of our firmware, below the servo limit (factory register 85 ×
 #   100 steps/s²: 439°/s² on J1–J3, 2197°/s² on J4–J6; docs: results/servo-dynamics).
@@ -64,9 +64,9 @@ joint_limits:
     max_acceleration: 34.906585
     has_effort_limits: false
     max_effort: 0.0
-  joint6output_to_joint6:   # J6, −220° to +135° (gripper cable)
+  joint6output_to_joint6:   # J6, −225° to +135° (gripper cable; one full turn)
     has_position_limits: true
-    min_position: -3.839724
+    min_position: -3.926991
     max_position: 2.356194
     has_velocity_limits: true
     max_velocity: 1.570796

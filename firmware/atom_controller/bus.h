@@ -13,6 +13,7 @@
 
 #define REG_MIN_ANGLE          9      // min (9-10) and max (11-12) angle limit
 #define REG_PHASE             18
+#define REG_TORQUE_ENABLE     40
 #define REG_ACCELERATION      41
 #define REG_GOAL_POSITION     42
 #define REG_GOAL_SPEED        46

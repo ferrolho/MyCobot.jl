@@ -78,7 +78,7 @@ firmware, the Control page and the planners get them from there:
 
 | Joint | J1 | J2 | J3 | J4 | J5 | J6 |
 | --- | --- | --- | --- | --- | --- | --- |
-| Model limit (°) | ±165 | ±140 | ±150 | ±150 | ±160 | −220 to +135 |
+| Model limit (°) | ±165 | ±140 | ±150 | ±150 | ±160 | −225 to +135 |
 
 They are round numbers inside the end stops that were measured by hand (below):
 the largest multiple of 5° that is at least 2° inside both end stops of the joint.
@@ -126,14 +126,17 @@ J6 is therefore **continuous without a tool** and limited with one.
 
 With the [gripper](/mycobot-280-lab/system/gripper/) on, the gripper cable stops J6 at
 −237.1° and +139.9° (measured by hand with only J6 limp, 2026-10-06). The J6 limits
-are **−220° to +135°**:
+are **−225° to +135°**: one full turn, so the gripper can face every direction.
 
 - +135°: the same rule as for the other joints.
-- −220°: past one turn. The firmware (4.5+) sets the J6 servo to
+- −225°: past one turn. The firmware (4.5+) sets the J6 servo to
   [multi-turn](/mycobot-280-lab/system/servos/#multi-turn-j6). At power-up the servo
-  knows only one turn, so the limits must span less than one turn: with −220°, the
-  power-up reading tells the turn (a reading above +137.5° is one turn lower). The
-  rule would give −235°, but −235° to −222.5° reads the same as +125° to +137.5°.
+  knows only one turn. The limits span one turn, so the power-up reading tells the
+  turn: a reading above +135° is one turn lower.
+- At ±135° itself (−225° = +135°) the reading cannot tell the turn. Live mode, JOG
+  and MOVE_TO stop 2° inside the limits, so the arm never stops there under control.
+  If J6 is within 1.5° of ±135° at power-up (turned by hand while off), the ATOM starts
+  in the **error** state with J6 limp: turn J6 a few degrees by hand, then press **Hold**.
 
 :::caution[After you turn J6 by hand]
 After J6 was turned about 9 turns by hand, it turned away from its goal when motion

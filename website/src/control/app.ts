@@ -222,7 +222,7 @@ export function start() {
   const faders: HTMLInputElement[] = [];
   const goalNums: HTMLInputElement[] = [];
   const goal = [0, 0, 0, 0, 0, 0];
-  // MOVE_TO and JOG both stay inside these. The limits need not be symmetric (J6: −220° to +135°).
+  // MOVE_TO and JOG both stay inside these. The limits need not be symmetric (J6: −225° to +135°).
   const goalMin = (j: number) => P.LIMIT_MIN[j] + P.JOG_MARGIN;
   const goalMax = (j: number) => P.LIMIT_MAX[j] - P.JOG_MARGIN;
   const clampGoal = (j: number, deg: number) => Math.round(Math.max(goalMin(j), Math.min(goalMax(j), deg)) * 10) / 10;
