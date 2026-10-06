@@ -14,8 +14,9 @@ centre, browser tabs that only watch. This page is the contract between them.
 2. **Watching is free.** Any number of clients may receive the state.
 3. **The laptop is only an interface.** Programs run on the Raspberry Pi
    (`raspberrypi5`) or in a browser.
-4. Network services listen **only on the Tailscale interface** (100.69.15.110),
-   not on the home network.
+4. Network services serve **only Tailscale clients** (100.69.15.110 is the Pi), not the
+   home network. The lab service also serves the home-network computers in its
+   `--allow` list.
 
 ## The ATOM (UDP, firmware 4.x)
 

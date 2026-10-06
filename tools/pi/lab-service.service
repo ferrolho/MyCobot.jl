@@ -4,14 +4,16 @@
 #           loginctl enable-linger $USER     # start at boot, without a login
 # It runs from the checkout ~/myCobot/lab-services (main). Docs: software/control-page.md.
 [Unit]
-Description=myCobot lab web service (site, camera and ATOM relay, Tailscale only)
+Description=myCobot lab web service (site, camera and ATOM relay)
 After=network-online.target
 StartLimitIntervalSec=0
 
 [Service]
 WorkingDirectory=%h/myCobot/lab-services
-# Binds the Tailscale address only. At boot Tailscale can come up later: the service retries.
-ExecStart=/usr/bin/python3 tools/pi/lab_service.py --host 100.69.15.110 --port 8280
+# Serves loopback and Tailscale clients, and the home-network computers in LAB_ALLOW from
+# ~/.config/lab-service.env, one "--allow ADDRESS" each: LAB_ALLOW=--allow 192.168.1.50
+EnvironmentFile=-%h/.config/lab-service.env
+ExecStart=/usr/bin/python3 tools/pi/lab_service.py --host 0.0.0.0 --port 8280 $LAB_ALLOW
 Restart=always
 RestartSec=5
 

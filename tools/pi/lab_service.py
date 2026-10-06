@@ -3,7 +3,7 @@ The lab web service on the Raspberry Pi: serves the built documentation site (wi
 page), the webcam next to the robot, and a relay to the ATOM's WebSocket. It is the only process
 that opens the camera.
 
-    python3 tools/pi/lab_service.py [--host 100.69.15.110] [--port 8280] [--atom 192.168.1.107]
+    python3 tools/pi/lab_service.py [--host 0.0.0.0] [--port 8280] [--atom 192.168.1.107] [--allow ADDRESS ...]
 
     /mycobot-280-lab/...   the site (website/dist; build it first with `npm run build`)
     /camera.json           {"camera": true, "running": ..., "clients": ...}: the page shows the Pi camera if this exists
@@ -22,9 +22,12 @@ once per round trip.
 
 The camera runs (tools/pi/camera.sh stdout) only while a client streams, and for IDLE_S after the
 last frame request, so other tools can open /dev/video0 when nobody watches.
-Listen on the Tailscale address only, never on the home network. Standard library only.
+The service has no login, and the relay moves the arm. Thus it serves only loopback, Tailscale
+and the clients in --allow (one computer each on the home network); it closes all other
+connections at once. Standard library only.
 """
 import argparse
+import ipaddress
 import json
 import os
 import re
@@ -48,6 +51,7 @@ LOG_DIR = os.path.expanduser("~/myCobot/lab-logs")   # Control page session logs
 LOG_MAX_BODY = 1 << 20
 SCENE = os.path.expanduser("~/myCobot/lab-scene.json")   # objects near the robot, for the 3D view (written by lab scripts)
 ATOM = "192.168.1.107"   # the ATOM's address on the home network (--atom)
+ALLOW = ("127.0.0.0/8", "100.64.0.0/10")   # clients always served: loopback and Tailscale (more with --allow)
 
 
 class Camera:
@@ -144,6 +148,14 @@ class Camera:
 
 
 camera = Camera()
+
+
+class Server(ThreadingHTTPServer):
+    daemon_threads = True
+    allow = [ipaddress.ip_network(n) for n in ALLOW]
+
+    def verify_request(self, request, client_address):
+        return any(ipaddress.ip_address(client_address[0]) in n for n in self.allow)
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -336,15 +348,17 @@ class Handler(SimpleHTTPRequestHandler):
 def main():
     global ATOM
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--host", default="127.0.0.1")   # or the Tailscale address; never the home network
+    ap.add_argument("--host", default="127.0.0.1", help="the address to listen on (0.0.0.0: all)")
     ap.add_argument("--port", type=int, default=8280)
     ap.add_argument("--atom", default=ATOM, help="the ATOM's address, for the relay at /atom/ws")
+    ap.add_argument("--allow", action="append", default=[], metavar="ADDRESS",
+                    help="also serve this client (address or network); loopback and Tailscale always")
     a = ap.parse_args()
     ATOM = a.atom
     threading.Thread(target=camera.reaper, daemon=True).start()
-    server = ThreadingHTTPServer((a.host, a.port), Handler)
-    server.daemon_threads = True
-    print(f"Lab service on http://{a.host}:{a.port}{BASE} (site: {SITE})", flush=True)
+    server = Server((a.host, a.port), Handler)
+    server.allow = server.allow + [ipaddress.ip_network(n) for n in a.allow]
+    print(f"Lab service on http://{a.host}:{a.port}{BASE} (site: {SITE}; clients: {', '.join(map(str, server.allow))})", flush=True)
     server.serve_forever()
 
 

@@ -18,7 +18,7 @@ controlled the real robot and showed the laptop's webcam. Without the robot, use
 | Place | URL | Camera |
 | --- | --- | --- |
 | GitHub Pages (any user) | `https://ferrolho.github.io/mycobot-280-lab/control/` | A camera on your own computer |
-| The Raspberry Pi in the lab (Tailscale only) | `http://raspberrypi5:8280/mycobot-280-lab/control/` | The webcam next to the robot |
+| The Raspberry Pi in the lab (Tailscale, or an [allowed computer](#the-lab-service-raspberry-pi) at home) | `http://raspberrypi5:8280/mycobot-280-lab/control/` | The webcam next to the robot |
 
 Add `?atom=<address>` to the URL to connect at once, for example
 `?atom=192.168.1.107`.
@@ -184,7 +184,19 @@ The camera panel shows one of two sources:
 ## The lab service (Raspberry Pi)
 
 `tools/pi/lab_service.py` serves the built site, the webcam and a relay to the ATOM on
-the Pi's Tailscale address. It is the only program that opens `/dev/video0`.
+port 8280. It is the only program that opens `/dev/video0`.
+
+The service has no login, and the relay moves the arm. Thus it serves only loopback,
+Tailscale (`100.64.0.0/10`) and the computers in `--allow`. It closes all other
+connections at once. To let a computer on the home network in (for example one that
+cannot have Tailscale), give it a fixed address on the router, then on the Pi:
+
+```bash
+echo 'LAB_ALLOW=--allow 192.168.1.50' > ~/.config/lab-service.env   # one --allow per computer
+systemctl --user restart lab-service
+```
+
+That computer opens `http://192.168.1.92:8280/mycobot-280-lab/control/`.
 
 | Path | Content |
 | --- | --- |
