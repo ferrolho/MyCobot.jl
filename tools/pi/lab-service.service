@@ -1,10 +1,10 @@
-# systemd user unit for the lab web service (site + camera) on the Raspberry Pi.
+# systemd user unit for the lab web service (site, camera, relay to the ATOM) on the Raspberry Pi.
 # Install:  mkdir -p ~/.config/systemd/user && cp tools/pi/lab-service.service ~/.config/systemd/user/
 #           systemctl --user daemon-reload && systemctl --user enable --now lab-service
 #           loginctl enable-linger $USER     # start at boot, without a login
 # It runs from the checkout ~/myCobot/lab-services (main). Docs: software/control-page.md.
 [Unit]
-Description=myCobot lab web service (site and camera, Tailscale only)
+Description=myCobot lab web service (site, camera and ATOM relay, Tailscale only)
 After=network-online.target
 StartLimitIntervalSec=0
 

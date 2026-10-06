@@ -11,7 +11,11 @@
 # 1280x960 (4:3) is the sensor's full field of view; 1280x720 crops the top and bottom.
 set -euo pipefail
 DEV=/dev/video0
-v4l2-ctl -d "$DEV" -c power_line_frequency=1 >/dev/null 2>&1 || true   # 50 Hz mains
+# Image settings (measured 2026-10-06, docs: software/raspberry-pi.md, "Image settings"). Auto exposure
+# and auto white balance stay on. Contrast stretches the tones: with the defaults, auto exposure makes the
+# white wall mid-grey and the black base grey. The camera keeps them only until it loses power.
+v4l2-ctl -d "$DEV" -c power_line_frequency=1,exposure_dynamic_framerate=0,contrast=64,brightness=144,saturation=40 \
+  >/dev/null 2>&1 || true   # 50 Hz mains; always 30 fps
 IN=(-hide_banner -loglevel error -f v4l2 -input_format mjpeg -video_size 1280x960 -framerate 30 -i "$DEV")
 case "${1:-}" in
   snapshot)

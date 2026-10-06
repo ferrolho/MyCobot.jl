@@ -1,8 +1,9 @@
 """
 The lab web service on the Raspberry Pi: serves the built documentation site (with the Control
-page) and the webcam next to the robot. It is the only process that opens the camera.
+page), the webcam next to the robot, and a relay to the ATOM's WebSocket. It is the only process
+that opens the camera.
 
-    python3 tools/pi/lab_service.py [--host 100.69.15.110] [--port 8280]
+    python3 tools/pi/lab_service.py [--host 100.69.15.110] [--port 8280] [--atom 192.168.1.107]
 
     /mycobot-280-lab/...   the site (website/dist; build it first with `npm run build`)
     /camera.json           {"camera": true, "running": ..., "clients": ...}: the page shows the Pi camera if this exists
@@ -10,6 +11,13 @@ page) and the webcam next to the robot. It is the only process that opens the ca
     /snapshot.jpg          one recent frame
     /log.json              {"log": true}: the Control page sends its session log if this exists
     POST /log?session=ID   JSONL events from the Control page, appended to LOG_DIR/ID.jsonl
+    /atom.json             {"atom": ADDRESS, "ws": "/atom/ws"}: the page connects through the relay if this exists
+    /atom/ws               the ATOM's WebSocket (ws://ATOM/ws), relayed byte for byte
+
+The relay lets a browser away from home reach the ATOM over Tailscale. Only the Pi talks to the
+ATOM, on the home network, so a slow link (for example a phone hotspot) does not fill the ATOM's
+small send buffers. Both sockets have TCP_NODELAY: without it, the 50 Hz stream arrives in clumps,
+once per round trip.
 
 The camera runs (tools/pi/camera.sh stdout) only while a client streams, and for IDLE_S after the
 last frame request, so other tools can open /dev/video0 when nobody watches.
@@ -19,6 +27,8 @@ import argparse
 import json
 import os
 import re
+import select
+import socket
 import subprocess
 import threading
 import time
@@ -31,9 +41,11 @@ SITE = os.path.join(ROOT, "website", "dist")
 BASE = "/mycobot-280-lab/"
 CAMERA_CMD = [os.path.join(ROOT, "tools", "pi", "camera.sh"), "stdout"]
 IDLE_S = 10.0          # stop the camera this long after the last client
+FIRST_FRAME_S = 10.0   # a stream waits this long for the camera's first frame
 BOUNDARY = "frame"
 LOG_DIR = os.path.expanduser("~/myCobot/lab-logs")   # Control page session logs, one JSONL file per session
 LOG_MAX_BODY = 1 << 20
+ATOM = "192.168.1.107"   # the ATOM's address on the home network (--atom)
 
 
 class Camera:
@@ -140,7 +152,7 @@ class Handler(SimpleHTTPRequestHandler):
         if route == "/snapshot.jpg":
             frame = camera.snapshot()
             if not frame:
-                return self.send_error(HTTPStatus.SERVICE_UNAVAILABLE, camera.error or "no frame from the camera")
+                return self.send_error(HTTPStatus.SERVICE_UNAVAILABLE, "No frame from the camera", camera.error)
             self.send_response(HTTPStatus.OK)
             self.send_header("Content-Type", "image/jpeg")
             self.send_header("Content-Length", str(len(frame)))
@@ -150,6 +162,10 @@ class Handler(SimpleHTTPRequestHandler):
             return self.stream()
         if route == "/log.json":
             return self.json({"log": True})
+        if route == "/atom.json":
+            return self.json({"atom": ATOM, "ws": "/atom/ws"})
+        if route == "/atom/ws":
+            return self.relay()
         if self.path.startswith(BASE):
             self.path = "/" + self.path[len(BASE):]
             return super().do_GET()
@@ -178,24 +194,97 @@ class Handler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def relay(self):
+        """Pass the WebSocket upgrade to the ATOM, then copy the bytes both ways until one side closes."""
+        if self.headers.get("Upgrade", "").lower() != "websocket":
+            return self.send_error(HTTPStatus.BAD_REQUEST, "WebSocket only")
+        try:
+            atom = socket.create_connection((ATOM, 80), timeout=3.0)
+        except OSError as e:
+            return self.send_error(HTTPStatus.BAD_GATEWAY, "No answer from the ATOM", f"{ATOM}: {e}")
+        atom.settimeout(None)
+        client = self.connection
+        for s in (atom, client):
+            s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        # Close the link to a browser that is gone (a dropped hotspot) after about 30 s, so that it
+        # does not keep one of the ATOM's few WebSocket slots: TCP_USER_TIMEOUT while data waits
+        # for an ACK, keepalive when idle. Its moves stop after 0.2 s (the deadman) and its control
+        # ends 2 s after its last message (the firmware).
+        client.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        for opt, v in (("TCP_USER_TIMEOUT", 30000), ("TCP_KEEPIDLE", 10), ("TCP_KEEPINTVL", 5), ("TCP_KEEPCNT", 4)):
+            if hasattr(socket, opt):
+                client.setsockopt(socket.IPPROTO_TCP, getattr(socket, opt), v)
+        headers = "".join(f"{k}: {v}\r\n" for k, v in self.headers.items() if k.lower() != "host")
+        atom.sendall(f"GET /ws HTTP/1.1\r\nHost: {ATOM}\r\n{headers}\r\n".encode("latin-1"))
+
+        def atom_to_client():
+            try:
+                while data := atom.recv(65536):
+                    client.sendall(data)
+            except OSError:
+                pass
+            finally:
+                for s in (client, atom):   # wake the other direction
+                    try:
+                        s.shutdown(socket.SHUT_RDWR)
+                    except OSError:
+                        pass
+
+        t = threading.Thread(target=atom_to_client, daemon=True)
+        t.start()
+        try:
+            while data := self.rfile.read1(65536):   # read1: the bytes already buffered first
+                atom.sendall(data)
+        except OSError:
+            pass
+        finally:
+            try:
+                atom.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            t.join()
+            atom.close()
+            self.close_connection = True
+
+    def client_gone(self):
+        """True if the browser closed the connection. It sends nothing else while it watches a stream."""
+        try:
+            readable, _, _ = select.select([self.connection], [], [], 0)
+            return bool(readable) and not self.connection.recv(1, socket.MSG_PEEK)
+        except OSError:
+            return True
+
     def stream(self):
+        """MJPEG until the browser closes it or the camera stops. If the camera gives no first frame, 503."""
         with camera.lock:
             camera.clients += 1
         try:
             camera.touch()
+            seq, frame = 0, None
+            deadline = time.monotonic() + FIRST_FRAME_S
+            while frame is None and camera.running() and time.monotonic() < deadline:
+                seq, frame = camera.wait_frame(seq, timeout=1.0)
+            if frame is None:   # the error text in the body: it can have several lines, the status line cannot
+                return self.send_error(HTTPStatus.SERVICE_UNAVAILABLE, "No frame from the camera", camera.error)
             self.send_response(HTTPStatus.OK)
             self.send_header("Content-Type", f"multipart/x-mixed-replace; boundary={BOUNDARY}")
             self.end_headers()
-            seq = 0
             while True:
-                new_seq, frame = camera.wait_frame(seq)
-                camera.touch()
-                if frame is None or new_seq == seq:   # no new frame (the camera starts or failed)
-                    time.sleep(0.2)
-                    continue
-                seq = new_seq
                 self.wfile.write(f"--{BOUNDARY}\r\nContent-Type: image/jpeg\r\nContent-Length: {len(frame)}\r\n\r\n".encode())
                 self.wfile.write(frame + b"\r\n")
+                # Wait for the next frame. A closed connection shows when we write; while no frames
+                # come, only client_gone() sees it.
+                while True:
+                    new_seq, frame = camera.wait_frame(seq)
+                    if not camera.running():
+                        return   # the camera stopped: end the stream (its error is in /camera.json)
+                    with camera.lock:
+                        camera.last_use = time.monotonic()
+                    if new_seq != seq and frame is not None:
+                        seq = new_seq
+                        break
+                    if self.client_gone():
+                        return
         except (BrokenPipeError, ConnectionResetError):
             pass
         finally:
@@ -205,10 +294,13 @@ class Handler(SimpleHTTPRequestHandler):
 
 
 def main():
+    global ATOM
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--host", default="127.0.0.1")   # or the Tailscale address; never the home network
     ap.add_argument("--port", type=int, default=8280)
+    ap.add_argument("--atom", default=ATOM, help="the ATOM's address, for the relay at /atom/ws")
     a = ap.parse_args()
+    ATOM = a.atom
     threading.Thread(target=camera.reaper, daemon=True).start()
     server = ThreadingHTTPServer((a.host, a.port), Handler)
     server.daemon_threads = True

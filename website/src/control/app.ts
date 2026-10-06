@@ -11,6 +11,7 @@ const $ = <T extends HTMLElement>(sel: string, root: ParentNode = document) => r
 const fmt = (x: number | null, d = 1) => (x !== null && Number.isFinite(x) ? x.toFixed(d) : '–');
 
 const HISTORY_KEY = 'mycobot-control.addresses';
+let relay = ''; // the lab service's relay to the ATOM ("raspberrypi5:8280/atom/ws"), when the Pi serves the page
 const WINDOW_S = 20; // plot window
 const MAX_POINTS = WINDOW_S * 50 + 10;
 const JOINT_NAMES = ['J1', 'J2', 'J3', 'J4', 'J5', 'J6'];
@@ -56,7 +57,8 @@ function saveHistory(address: string) {
 
 function renderHistory() {
   const dl = $('#addr-history');
-  dl.replaceChildren(...loadHistory().map((a) => Object.assign(document.createElement('option'), { value: a })));
+  const list = [...new Set([relay, ...loadHistory()].filter(Boolean))];
+  dl.replaceChildren(...list.map((a) => Object.assign(document.createElement('option'), { value: a })));
 }
 
 // --- Plots ---------------------------------------------------------------------------------------
@@ -283,6 +285,16 @@ export function start() {
   renderHistory();
   const params = new URLSearchParams(location.search);
   addr.value = params.get('atom') || loadHistory()[0] || '';
+  // Served by the lab service on the Pi: connect through its relay, which also works away from home.
+  fetch('/atom.json', { cache: 'no-store' })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((j: { ws?: string } | null) => {
+      if (!j?.ws) return;
+      relay = location.host + j.ws;
+      renderHistory();
+      if (!params.get('atom') && link.status === 'disconnected') addr.value = relay;
+    })
+    .catch(() => {});
 
   form.addEventListener('submit', (e) => {
     e.preventDefault();
@@ -314,8 +326,9 @@ export function start() {
     addr.disabled = status !== 'disconnected';
     if (status === 'connecting' && detail) {
       const https = location.protocol === 'https:';
+      const where = link.address === relay ? 'and that the Pi reaches it on the home network' : 'on the same network';
       hint(
-        `${detail}. Check that the robot is on, on the same network, and runs the controller firmware 4.2 or later.` +
+        `${detail}. Check that the robot is on, ${where}, and runs the controller firmware 4.2 or later.` +
           (https ? ' If the browser asks for access to devices on the local network, allow it.' : ''),
         'warning',
       );

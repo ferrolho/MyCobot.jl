@@ -173,12 +173,17 @@ export function jog(velDegS: number[]): Bytes {
 
 // --- Addresses ---------------------------------------------------------------------------------
 
-/** "192.168.1.107", "mycobot.local", "100.69.15.110:8281" or a full ws:// URL → the WebSocket URL. */
+/**
+ * "192.168.1.107", "mycobot.local", "localhost:8282" or a full ws:// URL → the WebSocket URL.
+ * An address with a path keeps it: "raspberrypi5:8280/atom/ws" is the relay on the Pi.
+ */
 export function wsUrl(address: string): string {
   const a = address.trim();
   if (/^wss?:\/\//i.test(a)) return a;
-  const host = a.replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
-  return `ws://${host}/ws`;
+  const rest = a.replace(/^https?:\/\//i, '');
+  const i = rest.indexOf('/');
+  const [host, path] = i < 0 ? [rest, ''] : [rest.slice(0, i), rest.slice(i)];
+  return `ws://${host}${path.length > 1 ? path : '/ws'}`;
 }
 
 /** True if the browser treats the address as the local network (private IP or .local). */

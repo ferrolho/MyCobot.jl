@@ -67,9 +67,48 @@ gives the correct port on macOS and Linux. The scripts use both.
 
 ## Camera
 
-`tools/pi/camera.sh` uses **1280×960 MJPEG at 30 fps**. This is the full 4:3 field
-of view of the sensor; 1280×720 crops the top and bottom. It sets the mains
-frequency to 50 Hz against flicker.
+`tools/pi/camera.sh` uses **1280×960 MJPEG at 30 fps** from the Logitech C505. This
+is the full 4:3 field of view of the sensor; 1280×720 crops the top and bottom. Each
+time it starts the camera, it sets the image settings below. The camera forgets them
+when it loses power.
+
+### Image settings
+
+With the default settings the picture is flat: the camera's auto exposure makes the
+white wall mid-grey, and the black base is grey. The settings below stretch the tones.
+Auto exposure and auto white balance stay on, so the picture adapts when the light
+changes.
+
+| Control | Default | Set to | Why |
+| --- | --- | --- | --- |
+| `power_line_frequency` | 60 Hz | 50 Hz | No flicker from the mains lights |
+| `exposure_dynamic_framerate` | 0 | 0 | Always 30 fps. With 1, the camera can lower the frame rate in dim light. |
+| `contrast` | 32 | 64 | Black is black, white is white; more detail on the arm |
+| `brightness` | 128 | 144 | Lifts the picture after the contrast stretch. It is an offset, not an exposure bias. |
+| `saturation` | 32 | 40 | Natural colours (cables, boards) |
+
+Measured on 2026-10-06 in daylight. Each line is the last frame of 4 s of stream.
+Brightness (luma, 0–255) and detail on the arm (the variance of the Laplacian):
+
+| Settings | Darkest 1% | Median | Brightest 1% | Clipped | Detail on the arm |
+| --- | --- | --- | --- | --- | --- |
+| Defaults | 18 | 130 | 155 | 0% | 32 |
+| `brightness` 192 only | 87 | 204 | 231 | 0% | 36 |
+| `contrast` 64 only | 2 | 156 | 211 | 0% | 101 |
+| `contrast` 64, `brightness` 156 | 2 | 206 | 255 | 3.3% | 123 |
+| **Set: `contrast` 64, `brightness` 144, `saturation` 40** | **2** | **183** | **236** | **0%** | **116** |
+
+Settings that do not help:
+
+- `gain`: auto exposure sets it. A value that you write has no effect.
+- `backlight_compensation` 1: the picture is flatter (darkest 1%: 40).
+- `sharpness` 40: detail 127 instead of 116. This is in the spread between runs (121 and 116 for
+  two runs that differ only in saturation), so it stays at the default 24.
+- `brightness` alone: it lifts the black too (darkest 1%: 87). This is the "milky" look.
+
+The camera gave 29.8 fps with every setting in daylight. Not measured yet: dim light
+(evening). A white arm in front of a white wall has little contrast at any setting:
+a darker background or light from the side would help more than camera settings.
 
 Watch it in a browser: the [lab service](/mycobot-280-lab/software/control-page/#the-lab-service-raspberry-pi)
 streams it at `http://raspberrypi5:8280/camera.mjpg` (Tailscale only), and the Control
