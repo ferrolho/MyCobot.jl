@@ -109,7 +109,7 @@
 // History: docs (firmware/changelog). FW_GIT is set by the build (git describe).
 #define FW_MAJOR 4
 #define FW_MINOR 4
-#define FW_PATCH 0
+#define FW_PATCH 1
 #define FW_VERSION FW_MAJOR
 #ifndef FW_GIT
 #define FW_GIT "unknown"

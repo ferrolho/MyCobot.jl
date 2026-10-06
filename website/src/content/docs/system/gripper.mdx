@@ -1,13 +1,14 @@
 ---
 title: Gripper
-description: The adaptive gripper (myCobot_gripper_ag) — size, mount, cable, model and how to control it. Not yet used.
+description: The adaptive gripper (myCobot_gripper_ag) — size, mount, cable, model and how to control it. Mounted, not yet in the model.
 ---
 
 import Gripper from '../../../components/Gripper.astro';
 import ArmEnd from '../../../components/ArmEnd.astro';
 
-:::note[Not yet used]
-The gripper is not yet connected to this arm. This page records what is known
+:::note[Mounted, not yet in the model]
+The gripper is on the arm since 2026-10-06 (see [Mount and cable](#mount-and-cable)),
+but it is not yet in the robot model and not yet controlled. This page records what is known
 from the gripper, its label, Elephant's 3D model and Elephant's software. The items marked "not
 checked" need a test.
 :::
@@ -46,8 +47,22 @@ From the gripper label:
   the holes of the flange. The side faces of the body also have LEGO-style holes.
 - **Cable:** one cable with a 3-pin white plug. It connects to the 3-pin side port
   at the end of the arm. Without a tool J6 turns without an end stop; with the
-  gripper on, the cable limits J6. Measure that limit before you plan J6 motions
-  with the gripper.
+  gripper on, the cable limits J6.
+
+### On this arm (2026-10-06)
+
+The gripper is mounted at 45° to the flange, so that J6 has the largest range on both
+sides of zero. Look at the flange face (the LEGO holes) with J6 at 0°:
+
+| Part | Position on the flange face |
+| --- | --- |
+| Fingers | One bottom left, one top right (on a diagonal) |
+| Gripper servo | Top left |
+| Cable | Leaves the body at the top right and goes to the 3-pin side port at J5 |
+
+With only J6 limp, the cable stops J6 at **−237.1°** and **+139.9°**
+(`scripts/measure_joint_range.jl 6`). The model limit of J6 is **±135°** while the
+gripper is on (see [Robot](/mycobot-280-lab/system/robot/#joint-limits)).
 
 :::caution[Before you connect the gripper]
 Do not run a joint motion with the gripper on before you add it to the model. The

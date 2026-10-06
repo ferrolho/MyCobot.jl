@@ -4,7 +4,8 @@
 # the simulator and the Julia package. Edit this file, not the generated files.
 #
 # Position: round values inside the end stops measured by hand on 2026-10-04 (the largest multiple
-#   of 5° at least 2° inside both stops; docs: system/robot). J6 has no end stop: ±180°.
+#   of 5° at least 2° inside both stops; docs: system/robot). J6 has no end stop; the gripper
+#   cable stops it at −237.1° and +139.9° (2026-10-06): ±135°.
 # Velocity: the speed limit of our controller firmware (MOVE_TO, TRACK): 90°/s.
 # Acceleration: the planning limit of our firmware, below the servo limit (factory register 85 ×
 #   100 steps/s²: 439°/s² on J1–J3, 2197°/s² on J4–J6; docs: results/servo-dynamics).
@@ -61,10 +62,10 @@ joint_limits:
     max_acceleration: 34.906585
     has_effort_limits: false
     max_effort: 0.0
-  joint6output_to_joint6:   # J6, 180°
+  joint6output_to_joint6:   # J6, 135° (gripper cable)
     has_position_limits: true
-    min_position: -3.141593
-    max_position: 3.141593
+    min_position: -2.356194
+    max_position: 2.356194
     has_velocity_limits: true
     max_velocity: 1.570796
     has_acceleration_limits: true

@@ -78,12 +78,11 @@ firmware, the Control page and the planners get them from there:
 
 | Joint | J1 | J2 | J3 | J4 | J5 | J6 |
 | --- | --- | --- | --- | --- | --- | --- |
-| Model limit (±°) | 165 | 140 | 150 | 150 | 160 | 180 |
+| Model limit (±°) | 165 | 140 | 150 | 150 | 160 | 135 |
 
 They are round numbers inside the end stops that were measured by hand (below):
 the largest multiple of 5° that is at least 2° inside both end stops of the joint.
-J6 has no end stop; it stays at ±180° because its servo counts one turn only, and a
-tool cable limits it. Until 2026-10-04 the URDF had Elephant's protocol-page limits
+J6 has no end stop, but the gripper cable limits it (below). Until 2026-10-04 the URDF had Elephant's protocol-page limits
 (±168, ±135, ±150, ±145, ±165, ±180).
 
 Elephant gives two sets of limits. The
@@ -112,7 +111,7 @@ is not blocked by the pose of the others. Results are in
 | J3 | −155.7 to +154.8 | ±150 | ±150 |
 | J4 | −156.4 to +157.1 | ±145 | ±150 |
 | J5 | −162.8 to +164.7 | ±165 | −155 to +160 |
-| J6 | no end stop (about 9 turns) | ±180 | ±180 |
+| J6 | no end stop (about 9 turns); −237.1 to +139.9 with the gripper (2026-10-06) | ±180 | ±180 |
 
 - The **product page** limits are all inside the end stops, with 3–8° of margin.
   They match the hardware better than the protocol page and the URDF.
@@ -126,6 +125,11 @@ is not blocked by the pose of the others. Results are in
 J6 is therefore **continuous without a tool** and limited with one. Its servo
 reports one position per turn (0–4095), so a planner must track turns itself if it
 uses more than ±180°.
+
+With the [gripper](/mycobot-280-lab/system/gripper/) on, the gripper cable stops J6 at
+−237.1° and +139.9° (measured by hand with only J6 limp, 2026-10-06). The same rule
+as for the other joints gives **±135°**. The model uses this limit while the gripper
+is on. Without the gripper, J6 can use ±180°.
 
 :::caution[After you turn J6 by hand]
 After J6 was turned about 9 turns by hand, it turned away from its goal when motion

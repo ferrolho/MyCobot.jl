@@ -14,6 +14,12 @@ UDP port 5005 shows it with the git commit of the build, for example
 `atom_controller v4.0.0 (bff4529)`. Each version has a git tag
 `atom-controller-vX.Y.Z` (local until the repository is pushed).
 
+## 4.4.1 — 2026-10-06
+
+- **Fix:** the J6 limit is ±135° (was ±180°). With the gripper on, its cable stops
+  J6 at −237.1° and +139.9°. See [Gripper](/mycobot-280-lab/system/gripper/#on-this-arm-2026-10-06).
+  Only `robot_params.h` changed (from `tools/gen_robot.py`); no protocol change.
+
 ## 4.4.0 — 2026-10-05
 
 - **TRACK** (`0x10`): the client sends a goal pose and a speed cap (at most 90 °/s).
