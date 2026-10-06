@@ -15,7 +15,7 @@ connected to it, so the arm can be controlled and watched remotely.
 | Repository | `~/myCobot/mycobot-280-lab` (working copy) and `~/git/mycobot-280-lab.git` (hub) |
 | Julia | 1.11 with juliaup: `~/.juliaup/bin/julia` (only login shells have it on `PATH`) |
 | Kernel | `kernel8.img`, **4 KB memory pages** (since 2026-10-04) |
-| Tools | Python `~/venvs/mycobot`, `~/bin/arduino-cli` (ESP32 core 3.3.10), Node `~/.local/opt/node` |
+| Tools | Python `~/venvs/mycobot`, `~/bin/arduino-cli` (ESP32 core 3.3.10), Node `~/.local/opt/node`, Go `~/.local/opt/go`, `/usr/local/bin/git-lfs-transfer` |
 
 ## Kernel: 4 KB pages
 
@@ -41,16 +41,26 @@ working copy clones it. Nothing goes to GitHub this way.
 laptop  ──push/pull──▶  raspberrypi5:git/mycobot-280-lab.git  ◀──push/pull──  Pi working copy
 ```
 
-Use the script on the laptop. It also copies the Git LFS files (meshes, images),
-because an SSH remote has no LFS server:
+Use plain `git push pi <branch>` and `git pull pi <branch>` on the laptop, and plain
+`git push` and `git pull` in the Pi's working copy. Git LFS files (meshes, images) go
+with them:
+
+- From the laptop, git-lfs (3.0 or later) runs `git-lfs-transfer` on the Pi over SSH
+  (the pure-SSH LFS protocol).
+- On the Pi, LFS works without it, because the hub is a local path.
+
+`git-lfs-transfer` is [charmbracelet/git-lfs-transfer](https://github.com/charmbracelet/git-lfs-transfer),
+built from commit `971c028` and installed in `/usr/local/bin` on 2026-10-06. It has no
+release binaries and no Debian package. To install it again:
 
 ```bash
-tools/sync-pi.sh push        # laptop → hub (current branch)
-tools/sync-pi.sh pull        # hub → laptop (fetch; then merge yourself)
+# on the Pi: Go toolchain in ~/.local/opt/go (from go.dev, linux-arm64)
+GOBIN=/tmp/lfsbin ~/.local/opt/go/bin/go install github.com/charmbracelet/git-lfs-transfer@971c0284dc33b1ed3f7ed9dde5d4fc0cee62db6b
+sudo install -m 755 /tmp/lfsbin/git-lfs-transfer /usr/local/bin/
 ```
 
-On the Pi, use plain `git pull` and `git push` in `~/myCobot/mycobot-280-lab`. LFS works
-there, because the hub is a local path.
+Until 2026-10-06 the script `tools/sync-pi.sh` copied the LFS files with rsync,
+because the hub had no LFS server.
 
 ## FT232R latency timer
 
