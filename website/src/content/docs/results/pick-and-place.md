@@ -220,3 +220,22 @@ A close takes 1.1–1.4 s and lifts the arm 12–13 mm. Results:
 An immediate stall above about 850 means that a finger is on the object: lift, move along
 the finger axis, try again.
 
+## Fourth task: a Jellycat espresso cup (2026-10-06, 20:20–20:35)
+
+A plush espresso cup (10 × 5 × 5 cm, 7 cm high: data sheet) and the box at a new place. The
+cup body (about 50 mm) does not fit in the gripper (43 mm). The handle does: a soft loop
+about 30 mm long, out of the side of the cup. The arm took the cup by the handle on the
+fourth try (the smooth grasp, fingers across the loop), lifted it 70 mm and put it in the box.
+
+| Try | Result |
+| --- | --- |
+| 1 | Closed to 34: the fingers were at the hole of the loop |
+| 2 | Aim at the outer part of the loop: closed to 0 (empty) |
+| 3 | Back-projected at z = 0 (the handle is lower than assumed): held at 59, then the check opened the gripper |
+| 4 | Same place, gripper torque 100 %, lower limits: held at 62 (load −1000) through the lift and the carry. **In the box.** |
+
+**The opening is not a grasp check for thin, soft parts.** A squeezed handle reads almost
+"closed" (30–60). The user saw try 3 hold the handle while the check let go. Better (the
+user's suggestion): lift to a fixed height first, then judge the grasp (camera, load).
+The camera did not move during this task (< 0.5 px), so the calibration of run 3 stayed valid.
+
