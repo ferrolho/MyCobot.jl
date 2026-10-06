@@ -170,3 +170,53 @@ The grasps that held stalled at an opening of 266–325 (16–18 mm between the 
 - The ATOM did not join WiFi again after a router restart (fixed in firmware 4.6.1).
 - After a power cycle the arm sags into a new pose. Check the pose before the first move.
 
+## Third run: the corks again (2026-10-06, 19:00–19:50)
+
+The user put the corks back on the table, in a group, and the box further left. Claude
+worked alone. All four corks went in the box. Two findings made it work.
+
+### The fingertip is not where the model says
+
+The first calibrations used one gripper yaw only. Then an offset of the fingertip in the
+flange frame is a constant world offset, and the camera fit absorbs it. At other yaws the
+offset turns with the gripper and comes back as an error of up to 2× its size. This explained
+why the errors changed from cork to cork (and the fingers that landed on a cork end).
+
+A calibration with four yaws (24°, 114°, 204°, 294°; 11 points, fingertip 28–74 mm above the
+table) fitted the camera and the fingertip offset together:
+
+| Fit | Error |
+| --- | --- |
+| Camera only | 12.4 px rms |
+| Camera + fingertip offset | **1.3 px rms**, 2.1 px max |
+| Fingertip centre in the flange frame | x **+6.7 mm** (along the finger axis), y 10.6 mm (model: 0, 8) |
+
+**Calibrate with several yaws.** The offset is now part of the TCP.
+
+Also: the end-face centres of a cork lie on its axis (z = −18), not on its top. Back-projected
+at z = −18, the four corks measured 41–44 mm long (standard: 44.5 mm).
+
+### A smooth grasp (the user's idea)
+
+The stepped close (close a little, lift the arm, repeat) let the fingertips touch the table
+or the cork between the steps. The user proposed one smooth close while the arm moves up by
+the fingertip extension that the gripper's measured position gives:
+
+1. Compute the joint positions for TCP lifts of 0–24 mm (1 mm steps) before the close.
+2. Send one GRIPPER command (goal 0) and SUBSCRIBE to the STREAM at 50 Hz.
+3. At each STREAM message: fingertip extension = `tip_z(opening) − tip_z(start)`; send the
+   interpolated joint goal with TRACK (the firmware takes GRIPPER during TRACK, not during PLAY).
+4. Stop when the opening has not changed for 0.3 s (holding or closed).
+
+A close takes 1.1–1.4 s and lifts the arm 12–13 mm. Results:
+
+| Cork | Tries | Note |
+| --- | --- | --- |
+| 1 | 1 | Held at 284 |
+| 4 | 2 | First try: a finger on the cork (stall at 949). Then held at 339. At r = 263 mm the lift stops at the reach limit (about 78 mm). |
+| 3 | 2 | First try: the back finger on the cork (the finger axis is along the line of sight). Then held at 296. |
+| 2 | 1 | Held at 309 |
+
+An immediate stall above about 850 means that a finger is on the object: lift, move along
+the finger axis, try again.
+
