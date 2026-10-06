@@ -12,6 +12,7 @@ const fmt = (x: number | null, d = 1) => (x !== null && Number.isFinite(x) ? x.t
 
 const HISTORY_KEY = 'mycobot-control.addresses';
 let relay = ''; // the lab service's relay to the ATOM ("raspberrypi5:8280/atom/ws"), when the Pi serves the page
+let direct = ''; // the ATOM's own address, when the Pi serves the page and this browser reaches the ATOM
 const WINDOW_S = 20; // plot window
 const MAX_POINTS = WINDOW_S * 50 + 10;
 const JOINT_NAMES = ['J1', 'J2', 'J3', 'J4', 'J5', 'J6'];
@@ -57,7 +58,7 @@ function saveHistory(address: string) {
 
 function renderHistory() {
   const dl = $('#addr-history');
-  const list = [...new Set([relay, ...loadHistory()].filter(Boolean))];
+  const list = [...new Set([direct, relay, ...loadHistory()].filter(Boolean))];
   dl.replaceChildren(...list.map((a) => Object.assign(document.createElement('option'), { value: a })));
 }
 
@@ -392,16 +393,40 @@ export function start() {
   renderHistory();
   const params = new URLSearchParams(location.search);
   addr.value = params.get('atom') || loadHistory()[0] || '';
-  // Served by the lab service on the Pi: connect through its relay, which also works away from home.
+  // Served by the lab service on the Pi: on the home network, connect straight to the ATOM; away from
+  // home, through the Pi's relay. The relay shares the Pi's link with the camera stream, which delayed
+  // the robot's messages by up to 2 s (2026-10-06).
   fetch('/atom.json', { cache: 'no-store' })
     .then((r) => (r.ok ? r.json() : null))
-    .then((j: { ws?: string } | null) => {
+    .then(async (j: { atom?: string; ws?: string } | null) => {
       if (!j?.ws) return;
       relay = location.host + j.ws;
+      direct = j.atom && (await reachable(j.atom)) ? j.atom : '';
       renderHistory();
-      if (!params.get('atom') && link.status === 'disconnected') addr.value = relay;
+      if (!params.get('atom') && link.status === 'disconnected') addr.value = direct || relay;
     })
     .catch(() => {});
+
+  // Does a WebSocket to this ATOM address open within 1.5 s? (It closes again at once.)
+  function reachable(address: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      let ws: WebSocket;
+      try {
+        ws = new WebSocket(P.wsUrl(address));
+      } catch {
+        return resolve(false);
+      }
+      const done = (ok: boolean) => {
+        clearTimeout(timer);
+        ws.onopen = ws.onerror = null;
+        ws.close();
+        resolve(ok);
+      };
+      const timer = setTimeout(() => done(false), 1500);
+      ws.onopen = () => done(true);
+      ws.onerror = () => done(false);
+    });
+  }
 
   form.addEventListener('submit', (e) => {
     e.preventDefault();

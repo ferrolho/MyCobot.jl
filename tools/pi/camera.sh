@@ -3,7 +3,8 @@
 #
 #   tools/pi/camera.sh snapshot [FILE]   # on the Pi: one 1280x960 JPEG (default /tmp/arm.jpg), from the
 #                                        # lab service if it runs, else from the camera
-#   tools/pi/camera.sh stdout            # on the Pi: MJPEG stream to stdout
+#   tools/pi/camera.sh stdout [FD]       # on the Pi: MJPEG stream to stdout; with FD, also a 640x480
+#                                        # preview to that file descriptor (the lab service)
 #
 # Watch it from the laptop (over SSH, no open port; needs ffplay from `brew install ffmpeg`):
 #   ssh raspberrypi5 '~/myCobot/mycobot-280-lab/tools/pi/camera.sh stdout' | ffplay -loglevel error -fflags nobuffer -f mjpeg -i -
@@ -23,6 +24,15 @@ case "${1:-}" in
     if curl -fsS -m 6 -o "${2:-/tmp/arm.jpg}" "${LAB_SERVICE:-http://100.69.15.110:8280}/snapshot.jpg" 2>/dev/null; then :
     else ffmpeg "${IN[@]}" -frames:v 10 -update 1 -y "${2:-/tmp/arm.jpg}" 2>/dev/null; fi
     echo "${2:-/tmp/arm.jpg}" ;;
-  stdout)   exec ffmpeg "${IN[@]}" -c:v copy -f mjpeg - ;;
+  stdout)
+    # The full frames are copied (no decoding). The preview is decoded, scaled and encoded again, at
+    # 30 fps (as the camera; fewer frames add delay): about 0.5 MB/s instead of 3.2 MB/s (2026-10-06:
+    # the full stream delayed the robot's WebSocket by 1-2 s on the laptop).
+    if [[ -n "${2:-}" ]]; then
+      # Low delay: one thread (frame threads hold frames back), and each preview frame written at once.
+      exec ffmpeg -fflags nobuffer -flags low_delay -threads 1 "${IN[@]}" -map 0:v -c:v copy -f mjpeg pipe:1 \
+        -map 0:v -vf scale=640:480 -c:v mjpeg -q:v 7 -threads 1 -flush_packets 1 -f mjpeg "pipe:$2"
+    fi
+    exec ffmpeg "${IN[@]}" -c:v copy -f mjpeg - ;;
   *)        sed -n '2,10p' "$0"; exit 1 ;;
 esac

@@ -121,8 +121,9 @@ The camera gave 29.8 fps with every setting in daylight. Not measured yet: dim l
 a darker background or light from the side would help more than camera settings.
 
 Watch it in a browser: the [lab service](/mycobot-280-lab/software/control-page/#the-lab-service-raspberry-pi)
-streams it at `http://raspberrypi5:8280/camera.mjpg` (Tailscale only), and the Control
-page shows it. While the service streams, it owns the camera: other programs get
+streams it at `http://raspberrypi5:8280/camera.mjpg` (Tailscale only): a 640×480
+preview at 30 fps, or the full 1280×960 at 30 fps with `?full=1`. The Control page
+shows the preview. While the service streams, it owns the camera: other programs get
 "device busy".
 
 Or watch it from the laptop over SSH (no open port; needs `ffplay` from

@@ -23,16 +23,51 @@ controlled the real robot and showed the laptop's webcam. Without the robot, use
 Add `?atom=<address>` to the URL to connect at once, for example
 `?atom=192.168.1.107`.
 
-### Away from home
+### At home and away from home
 
-The page from the Pi connects through the Pi by default: the address is
-`raspberrypi5:8280/atom/ws`, the [relay](#the-lab-service-raspberry-pi) in the lab
-service. It works on any network that has Tailscale, for example a phone hotspot. The
-browser cannot reach `192.168.1.107` or `mycobot.local` from there: these addresses
-are on the home network only.
+The page from the Pi asks the lab service for the ATOM's address (`/atom.json`) and
+tries it for 1.5 s:
 
-At home, a direct address is also possible. It saves the step through the Pi (about
-12 ms).
+- **At home** the browser reaches the ATOM, and the page uses its address
+  (`192.168.1.107`). This path does not share the Pi's link with the camera stream.
+- **Away from home** the page uses `raspberrypi5:8280/atom/ws`, the
+  [relay](#the-lab-service-raspberry-pi) in the lab service. It works on any network
+  that has Tailscale, for example a phone hotspot. The browser cannot reach
+  `192.168.1.107` or `mycobot.local` from there.
+
+Both addresses are in the address list.
+
+Round trip of a command (a GRIPPER that the ATOM refuses at once), laptop at home,
+2026-10-06:
+
+| Path | No camera stream | Camera stream before the fix (1280×960, 30 fps) | Preview stream (640×480, 30 fps) |
+| --- | --- | --- | --- |
+| Control page with its camera on | 18–53 ms | **0.8–2 s** | 12–61 ms (direct) |
+| Relay, another client | 19–64 ms | 250–550 ms | 18–38 ms |
+| Straight to the ATOM | 12–23 ms | 17–42 ms | 11–19 ms |
+
+The full stream (3.2 MB/s) filled the buffers on the way from the Pi to the laptop,
+and every message through the Pi waited behind it. The Live mode and the arm readings
+were late by the same time. Now the page shows a small preview (0.64 MB/s), the stream
+socket has a small send buffer (a slow viewer gets fewer frames, not old ones), and
+the page connects straight to the ATOM at home. With the full stream and the small
+send buffer, the relay round trip is 36–48 ms.
+
+#### The camera is behind the 3D view
+
+The 3D view follows the arm's state stream (50 Hz; the gripper opening 10 times a
+second). The camera image is later. Measured in Chrome on the Control page, from a
+GRIPPER command to the first visible change, 2026-10-06:
+
+| Preview | 3D view data changes | Camera image changes |
+| --- | --- | --- |
+| 10 fps, boundary at the start of the next frame | 117–165 ms | 600–730 ms |
+| 30 fps, boundary straight after each frame (now) | 140–214 ms | 482–502 ms |
+
+A browser shows an MJPEG frame only when the next boundary comes, so the service now
+sends it straight after each frame. The rest is the webcam itself (exposure, its MJPEG
+encoder, USB; about 0.1–0.2 s for a USB webcam) and the larger change that the image
+needs before it shows. Expect the camera about 0.3 s behind the 3D view.
 
 The stream through the relay, measured on 2026-10-06: laptop on a phone hotspot with
 Tailscale (round trip to the Pi 16–84 ms), watch only, 5 runs of 20 s for each path,
@@ -155,14 +190,14 @@ the Pi's Tailscale address. It is the only program that opens `/dev/video0`.
 | --- | --- |
 | `/mycobot-280-lab/` | The site (`website/dist`). Build it first with `npm run build`. |
 | `/camera.json` | The page shows the Pi camera if this path exists. |
-| `/camera.mjpg` | MJPEG stream, 1280×960 at 30 fps. It ends when the camera stops. If the camera gives no frame in 10 s (for example, another program uses it), the answer is 503 with the camera error. |
+| `/camera.mjpg` | MJPEG stream: a 640×480 preview at 30 fps (about 0.64 MB/s), or with `?full=1` 1280×960 at 30 fps (3.2 MB/s). It ends when the camera stops. If the camera gives no frame in 10 s (for example, another program uses it), the answer is 503 with the camera error. |
 | `/snapshot.jpg` | One recent frame. From cold it takes about 3.6 s, because the first 10 frames are skipped while the exposure settles. |
 | `/log.json` | The page sends its session log if this path exists. |
 | `POST /log?session=ID` | Session log events (JSONL). The service appends them to `~/myCobot/lab-logs/ID.jsonl`. |
-| `/atom.json` | The page connects through the relay if this path exists. |
+| `/atom.json` | The ATOM's address and the relay path. The page tries the ATOM's address first, then the relay. |
 | `/atom/ws` | The relay: the ATOM's WebSocket (`ws://192.168.1.107/ws`, set with `--atom`), byte for byte. |
 
-The relay is for a browser away from home (see [Away from home](#away-from-home)).
+The relay is for a browser away from home (see [At home and away from home](#at-home-and-away-from-home)).
 Only the Pi talks to the ATOM, on the home network. Thus a slow link does not fill the
 ATOM's small send buffers. Both connections send each packet at once (`TCP_NODELAY`).
 Without it, the 50 Hz stream arrives in clumps, once per round trip. If a browser is
@@ -171,7 +206,8 @@ its control ends after 2 s (the firmware). The relay closes its connection after
 30 s, so that it does not keep one of the ATOM's WebSocket slots.
 
 The service opens the camera only while a client streams, and closes it 10 s after
-the last request. `tools/pi/camera.sh snapshot` asks the service first and uses the
+the last request. `camera.sh stdout FD` copies the full frames (for `/snapshot.jpg`)
+and makes the preview at the same time (ffmpeg: about 45 % of one core on the Pi 5). `tools/pi/camera.sh snapshot` asks the service first and uses the
 camera directly only if the service does not answer.
 
 It runs as a systemd user service from a separate checkout of main,

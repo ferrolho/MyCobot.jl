@@ -7,7 +7,8 @@ that opens the camera.
 
     /mycobot-280-lab/...   the site (website/dist; build it first with `npm run build`)
     /camera.json           {"camera": true, "running": ..., "clients": ...}: the page shows the Pi camera if this exists
-    /camera.mjpg           MJPEG stream (multipart/x-mixed-replace), 1280x960 at 30 fps
+    /camera.mjpg           MJPEG stream (multipart/x-mixed-replace): a 640x480 preview at 30 fps;
+                           ?full=1 for 1280x960 at 30 fps (3.2 MB/s: too much for a slow link)
     /snapshot.jpg          one recent frame
     /log.json              {"log": true}: the Control page sends its session log if this exists
     POST /log?session=ID   JSONL events from the Control page, appended to LOG_DIR/ID.jsonl
@@ -49,12 +50,14 @@ ATOM = "192.168.1.107"   # the ATOM's address on the home network (--atom)
 
 
 class Camera:
-    """One capture process; frames shared with every client."""
+    """One capture process; frames shared with every client: the full frame and a small preview."""
 
     def __init__(self):
         self.lock = threading.Condition()
-        self.frame = None          # latest JPEG
+        self.frame = None          # latest JPEG, 1280x960
         self.seq = 0
+        self.preview = None        # latest preview JPEG, 640x480 at 30 fps
+        self.preview_seq = 0
         self.proc = None
         self.clients = 0           # open streams
         self.last_use = 0.0
@@ -71,18 +74,24 @@ class Camera:
                 self.start()
 
     def start(self):
-        self.frame, self.error, self.start_seq = None, "", self.seq
+        self.frame, self.preview, self.error, self.start_seq = None, None, "", self.seq
+        r, w = os.pipe()   # the preview stream
         try:
-            self.proc = subprocess.Popen(CAMERA_CMD, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)
+            self.proc = subprocess.Popen(CAMERA_CMD + [str(w)], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                         bufsize=0, pass_fds=(w,))
         except OSError as e:
             self.error = str(e)
+            os.close(r)
             return
-        threading.Thread(target=self.reader, args=(self.proc,), daemon=True).start()
+        finally:
+            os.close(w)
+        threading.Thread(target=self.reader, args=(self.proc, self.proc.stdout, False), daemon=True).start()
+        threading.Thread(target=self.reader, args=(self.proc, os.fdopen(r, "rb", buffering=0), True), daemon=True).start()
 
-    def reader(self, proc):
+    def reader(self, proc, pipe, preview):
         buf = b""
         while True:
-            chunk = proc.stdout.read(65536)
+            chunk = pipe.read(65536)
             if not chunk:
                 break
             buf += chunk
@@ -94,10 +103,17 @@ class Camera:
                     buf = buf[start:] if start > 0 else buf
                     break
                 with self.lock:
-                    self.frame = buf[start:end + 2]
-                    self.seq += 1
+                    if preview:
+                        self.preview = buf[start:end + 2]
+                        self.preview_seq += 1
+                    else:
+                        self.frame = buf[start:end + 2]
+                        self.seq += 1
                     self.lock.notify_all()
                 buf = buf[end + 2:]
+        pipe.close()
+        if preview:
+            return
         err = proc.stderr.read().decode(errors="replace").strip()
         with self.lock:
             self.error = err or f"camera process ended ({proc.poll()})"
@@ -110,10 +126,11 @@ class Camera:
             self.lock.wait_for(lambda: self.seq >= self.start_seq + warmup or not self.running(), timeout)
             return self.frame
 
-    def wait_frame(self, after_seq, timeout=3.0):
+    def wait_frame(self, after_seq, timeout=3.0, preview=False):
         with self.lock:
-            self.lock.wait_for(lambda: self.seq > after_seq or not self.running(), timeout)
-            return self.seq, self.frame
+            latest = (lambda: (self.preview_seq, self.preview)) if preview else (lambda: (self.seq, self.frame))
+            self.lock.wait_for(lambda: latest()[0] > after_seq or not self.running(), timeout)
+            return latest()
 
     def reaper(self):
         while True:
@@ -159,7 +176,7 @@ class Handler(SimpleHTTPRequestHandler):
             self.end_headers()
             return self.wfile.write(frame)
         if route == "/camera.mjpg":
-            return self.stream()
+            return self.stream(full=parse_qs(urlsplit(self.path).query).get("full") == ["1"])
         if route == "/log.json":
             return self.json({"log": True})
         if route == "/atom.json":
@@ -254,8 +271,16 @@ class Handler(SimpleHTTPRequestHandler):
         except OSError:
             return True
 
-    def stream(self):
-        """MJPEG until the browser closes it or the camera stops. If the camera gives no first frame, 503."""
+    def stream(self, full=False):
+        """MJPEG until the browser closes it or the camera stops. If the camera gives no first frame, 503.
+
+        The latest frame only: a write waits while the link is slow, and the frames that came meanwhile
+        are skipped. A small send buffer keeps that wait short, so that the stream does not fill the
+        link's buffers and delay the other connections (the robot's WebSocket)."""
+        preview = not full
+        self.connection.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 64 * 1024)
+        if hasattr(socket, "TCP_NOTSENT_LOWAT"):
+            self.connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NOTSENT_LOWAT, 16 * 1024)
         with camera.lock:
             camera.clients += 1
         try:
@@ -263,19 +288,22 @@ class Handler(SimpleHTTPRequestHandler):
             seq, frame = 0, None
             deadline = time.monotonic() + FIRST_FRAME_S
             while frame is None and camera.running() and time.monotonic() < deadline:
-                seq, frame = camera.wait_frame(seq, timeout=1.0)
+                seq, frame = camera.wait_frame(seq, timeout=1.0, preview=preview)
             if frame is None:   # the error text in the body: it can have several lines, the status line cannot
                 return self.send_error(HTTPStatus.SERVICE_UNAVAILABLE, "No frame from the camera", camera.error)
             self.send_response(HTTPStatus.OK)
             self.send_header("Content-Type", f"multipart/x-mixed-replace; boundary={BOUNDARY}")
             self.end_headers()
+            self.wfile.write(f"--{BOUNDARY}\r\n".encode())
             while True:
-                self.wfile.write(f"--{BOUNDARY}\r\nContent-Type: image/jpeg\r\nContent-Length: {len(frame)}\r\n\r\n".encode())
-                self.wfile.write(frame + b"\r\n")
+                # The boundary straight after each frame: a browser shows a part only when the next
+                # boundary comes (with it at the start of the next frame, every frame was one frame late).
+                self.wfile.write(f"Content-Type: image/jpeg\r\nContent-Length: {len(frame)}\r\n\r\n".encode()
+                                 + frame + f"\r\n--{BOUNDARY}\r\n".encode())
                 # Wait for the next frame. A closed connection shows when we write; while no frames
                 # come, only client_gone() sees it.
                 while True:
-                    new_seq, frame = camera.wait_frame(seq)
+                    new_seq, frame = camera.wait_frame(seq, preview=preview)
                     if not camera.running():
                         return   # the camera stopped: end the stream (its error is in /camera.json)
                     with camera.lock:
