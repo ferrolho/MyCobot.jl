@@ -18,6 +18,10 @@
 #define REG_GOAL_POSITION     42
 #define REG_GOAL_SPEED        46
 #define REG_PRESENT_POSITION  56
+#define REG_MAX_TORQUE        16     // EEPROM area: with the lock on, a write lasts to the next power cycle
+#define REG_PROTECTION_CURRENT 28    // caps the torque limit (48): seen on the gripper, 2026-10-06
+#define REG_TORQUE_LIMIT      48
+#define REG_PRESENT_TEMPERATURE 63
 
 HardwareSerial Bus(1);
 

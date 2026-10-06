@@ -113,6 +113,9 @@ def c_params(p):
             f"const int GRIPPER_CLOSED_STEP = {p['gripper']['closed_step'] + p['gripper']['margin'] * (1 if p['gripper']['open_step'] > p['gripper']['closed_step'] else -1)};   // opening 0 (end stop {p['gripper']['closed_step']}, the margin inside)\n"
             f"const int GRIPPER_OPEN_STEP = {p['gripper']['open_step'] - p['gripper']['margin'] * (1 if p['gripper']['open_step'] > p['gripper']['closed_step'] else -1)};   // opening 1000 (end stop {p['gripper']['open_step']}, the margin inside)\n"
             f"const uint16_t GRIPPER_SPEED = {p['gripper']['speed']};   // goal speed (steps/s)\n"
+            f"const uint16_t GRIPPER_TORQUE = {p['gripper']['torque']};   // registers 16, 28 and 48 (0-1000), set when found\n"
+            f"const uint8_t GRIPPER_HOT_C = {p['gripper']['hot_c']}, GRIPPER_COOL_C = {p['gripper']['cool_c']};   // derate above, restore below (°C)\n"
+            f"const uint16_t GRIPPER_HOT_TORQUE = {p['gripper']['hot_torque']};   // torque limit while derated\n"
             "}  // namespace robot\n")
 
 

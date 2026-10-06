@@ -32,4 +32,12 @@ joints:
 #                            point), 51.5°. Checked with the camera on 2026-10-06.
 #   margin                   the opening range stays this many steps inside the end stops
 #   speed                    goal speed (steps/s): the full stroke in about 0.6 s
-gripper: { id: 7, model: 0x070A, closed_step: 1462, open_step: 2048, margin: 15, speed: 1000 }
+#   torque                   0-1000, written at power-up and when the gripper is found to registers 16 (max torque),
+#                            28 (protection current) and 48 (torque limit). Elephant's values are 140 / 300 / 300
+#                            (30 %); soft objects (a plush head, a cup handle) held only at 1000 (2026-10-06).
+#                            Full capability by default: guard against heat, not with a low limit.
+#   hot_c, cool_c, hot_torque  thermal derating: above hot_c (°C) the torque limit drops to hot_torque, back to
+#                            torque below cool_c. At 1000 the servo stayed at 45-53 °C in 1-2 min holds. The
+#                            servo's own limit (register 13, 80 °C) stays as the last guard.
+gripper: { id: 7, model: 0x070A, closed_step: 1462, open_step: 2048, margin: 15, speed: 1000,
+           torque: 1000, hot_c: 70, cool_c: 60, hot_torque: 500 }

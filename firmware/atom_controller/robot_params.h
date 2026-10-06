@@ -16,4 +16,7 @@ const uint16_t GRIPPER_MODEL = 0x070A;
 const int GRIPPER_CLOSED_STEP = 1477;   // opening 0 (end stop 1462, the margin inside)
 const int GRIPPER_OPEN_STEP = 2033;   // opening 1000 (end stop 2048, the margin inside)
 const uint16_t GRIPPER_SPEED = 1000;   // goal speed (steps/s)
+const uint16_t GRIPPER_TORQUE = 1000;   // registers 16, 28 and 48 (0-1000), set when found
+const uint8_t GRIPPER_HOT_C = 70, GRIPPER_COOL_C = 60;   // derate above, restore below (°C)
+const uint16_t GRIPPER_HOT_TORQUE = 500;   // torque limit while derated
 }  // namespace robot

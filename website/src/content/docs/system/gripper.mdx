@@ -176,7 +176,8 @@ The opening maps linearly to servo steps (`servos.yaml`, key `gripper`):
 | Opening 0 (closed) | 1477 (15 steps inside the stop at 1462) |
 | Opening 1000 (open) | 2033 (15 steps inside the stop at 2048) |
 | Goal speed | 1000 steps/s: the full stroke in about 0.6 s |
-| Torque limit (register 48) | 300 (30 %), as set by Elephant; not changed |
+| Torque (registers 16, 28, 48) | **1000 (100 %)** from firmware 4.7, set by the ATOM when it finds the gripper (`servos.yaml`, key `gripper`, `torque`). Elephant's values: 140 / 300 / 300 (30 %). Register 28 (protection current) caps register 48. |
+| Thermal derating | Above 70 °C the torque limit drops to 500; below 60 °C it is 1000 again (firmware 4.7). Measured at 1000: 45–53 °C in 1–2 min holds. The servo's own limit (register 13) is 80 °C. |
 
 Checked with the camera on 2026-10-06: at 2033 the jaws are wide open, at 1477 the
 pads almost touch. The stock calibration point (2048) is the open end.

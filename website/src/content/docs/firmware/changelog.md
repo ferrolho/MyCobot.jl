@@ -14,6 +14,16 @@ UDP port 5005 shows it with the git commit of the build, for example
 `atom_controller v4.0.0 (bff4529)`. Each version has a git tag
 `atom-controller-vX.Y.Z` (local until the repository is pushed).
 
+## 4.7.0 — 2026-10-06
+
+- **Gripper at full torque.** When the ATOM finds the gripper (at power-up or when it is
+  plugged in), it writes registers 16 (max torque), 28 (protection current) and 48 (torque
+  limit) to `torque` in `servos.yaml` (1000 = 100 %). Elephant's values (140 / 300 / 300)
+  limited it to 30 %, and register 28 caps register 48. Soft objects held only at 100 %.
+- **Thermal derating.** The ATOM reads the gripper temperature about once a second. Above
+  70 °C the torque limit drops to 500, and below 60 °C it comes back to 1000. The status log
+  has `gripper_c=N` (and `gripper_derated` while derated).
+
 ## 4.6.1 — 2026-10-06
 
 - **WiFi watchdog.** After a drop, the ATOM joins the saved network again every 15 s

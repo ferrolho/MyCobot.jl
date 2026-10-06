@@ -113,8 +113,8 @@
 // PATCH for fixes. PING reports MAJOR as its u16 version, then MINOR and PATCH (3.1+).
 // History: docs (firmware/changelog). FW_GIT is set by the build (git describe).
 #define FW_MAJOR 4
-#define FW_MINOR 6
-#define FW_PATCH 1
+#define FW_MINOR 7
+#define FW_PATCH 0
 #define FW_VERSION FW_MAJOR
 #ifndef FW_GIT
 #define FW_GIT "unknown"
@@ -367,10 +367,31 @@ void publish_gripper(bool present, int16_t opening, int16_t load) {
 
 // Control loop (idle, MOVE_TO, JOG and TRACK; not PLAY): at most one bus transfer per call (about 0.3 ms): a
 // pending goal, else a read every 100 ms while present, else a probe every second.
+// Torque setup and thermal derating (4.7+): full torque by default (servos.yaml, key gripper); the
+// temperature is read about once a second, and the torque limit drops to GRIPPER_HOT_TORQUE above
+// GRIPPER_HOT_C and comes back below GRIPPER_COOL_C.
+volatile uint8_t gripper_temp_c = 0;
+volatile bool gripper_derated = false;
+int8_t gripper_setup = -1;   // next setup write (0-2), -1 = done
+
+bool gripper_write_u16(uint8_t addr, uint16_t v) {
+    uint8_t d[2] = {(uint8_t)(v & 0xFF), (uint8_t)(v >> 8)};
+    bool ok = reg_write_verified(robot::GRIPPER_ID, addr, d, 2);
+    delayMicroseconds(300);   // no request straight after a write (see bus.h)
+    return ok;
+}
+
 void gripper_tick() {
     static uint32_t next_ms = 0;
-    static uint8_t misses = 0;
+    static uint8_t misses = 0, polls = 0;
     uint32_t now = millis();
+    if (gripper_present && gripper_setup >= 0) {   // one register per call: 16, 28, then 48
+        static const uint8_t regs[3] = {REG_MAX_TORQUE, REG_PROTECTION_CURRENT, REG_TORQUE_LIMIT};
+        gripper_write_u16(regs[gripper_setup], robot::GRIPPER_TORQUE);
+        gripper_setup = gripper_setup < 2 ? gripper_setup + 1 : -1;
+        gripper_derated = false;
+        return;
+    }
     int32_t cmd = gripper_cmd;
     if (cmd >= 0 && gripper_present) {
         gripper_cmd = -1;
@@ -392,6 +413,16 @@ void gripper_tick() {
     if ((int32_t)(now - next_ms) < 0) return;
     if (gripper_present) {
         next_ms = now + 100;
+        if (++polls >= 10) {   // about once a second: the temperature instead of the position
+            polls = 0;
+            uint8_t t;
+            if (reg_read(robot::GRIPPER_ID, REG_PRESENT_TEMPERATURE, 1, &t)) {
+                gripper_temp_c = t;
+                if (!gripper_derated && t >= robot::GRIPPER_HOT_C) { gripper_write_u16(REG_TORQUE_LIMIT, robot::GRIPPER_HOT_TORQUE); gripper_derated = true; }
+                else if (gripper_derated && t <= robot::GRIPPER_COOL_C) { gripper_write_u16(REG_TORQUE_LIMIT, robot::GRIPPER_TORQUE); gripper_derated = false; }
+            }
+            return;
+        }
         uint8_t d[6];
         if (reg_read(robot::GRIPPER_ID, REG_PRESENT_POSITION, 6, d)) {
             misses = 0;
@@ -405,7 +436,7 @@ void gripper_tick() {
         next_ms = now + 1000;
         uint8_t m[2];
         if (reg_read(robot::GRIPPER_ID, 3, 2, m) && u16le(m) == robot::GRIPPER_MODEL) {
-            gripper_present = true; misses = 0; next_ms = now;
+            gripper_present = true; misses = 0; next_ms = now; gripper_setup = 0;
         }
     }
 }
@@ -857,9 +888,9 @@ void net_task(void*) {
         if (now - last_log >= 1000) {
             last_log = now;
             char line[256];
-            snprintf(line, sizeof(line), "atom_controller v%d.%d.%d (%s, %s) ip=%s rssi=%d state=%d plan=%lu@%uHz valid=%d imu=%d write_retries=%lu heap=%lu up=%lus wifi_drops=%lu%s",
+            snprintf(line, sizeof(line), "atom_controller v%d.%d.%d (%s, %s) ip=%s rssi=%d state=%d plan=%lu@%uHz valid=%d imu=%d write_retries=%lu heap=%lu up=%lus wifi_drops=%lu gripper_c=%u%s%s",
                      FW_MAJOR, FW_MINOR, FW_PATCH, FW_GIT, FW_VARIANT, WiFi.localIP().toString().c_str(), WiFi.RSSI(), state, (unsigned long)plan_n, plan_rate,
-                     plan_valid, imu_ok, (unsigned long)write_retries, (unsigned long)ESP.getFreeHeap(), (unsigned long)(now / 1000), (unsigned long)wifi_drops,
+                     plan_valid, imu_ok, (unsigned long)write_retries, (unsigned long)ESP.getFreeHeap(), (unsigned long)(now / 1000), (unsigned long)wifi_drops, (unsigned)gripper_temp_c, gripper_derated ? " gripper_derated" : "",
                      turn_unsure ? " TURN UNKNOWN: move J6 away from ±135° by hand, then HOLD" : "");
             wss.broadcastTXT(line);
             if (WiFi.status() == WL_CONNECTED) {
