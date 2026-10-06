@@ -46,6 +46,7 @@ FIRST_FRAME_S = 10.0   # a stream waits this long for the camera's first frame
 BOUNDARY = "frame"
 LOG_DIR = os.path.expanduser("~/myCobot/lab-logs")   # Control page session logs, one JSONL file per session
 LOG_MAX_BODY = 1 << 20
+SCENE = os.path.expanduser("~/myCobot/lab-scene.json")   # objects near the robot, for the 3D view (written by lab scripts)
 ATOM = "192.168.1.107"   # the ATOM's address on the home network (--atom)
 
 
@@ -177,6 +178,17 @@ class Handler(SimpleHTTPRequestHandler):
             return self.wfile.write(frame)
         if route == "/camera.mjpg":
             return self.stream(full=parse_qs(urlsplit(self.path).query).get("full") == ["1"])
+        if route == "/lab/scene.json":
+            try:
+                with open(SCENE, "rb") as f:
+                    body = f.read()
+            except OSError:
+                return self.send_error(HTTPStatus.NOT_FOUND, "No lab scene")
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            return self.wfile.write(body)
         if route == "/log.json":
             return self.json({"log": True})
         if route == "/atom.json":

@@ -11,6 +11,13 @@ const JOINTS = ['joint2_to_joint1', 'joint3_to_joint2', 'joint4_to_joint3', 'joi
 /** The actuated finger joint. The other five finger joints follow it (URDF `mimic`, which urdf-loader applies). */
 const GRIPPER_JOINT = 'gripper_controller';
 
+/**
+ * Objects near the robot, for the lab (served by the lab service as /lab/scene.json). Base frame,
+ * millimetres, z up. `yaw` turns the object about z (degrees).
+ */
+export type SceneObject = { name: string; shape: 'box' | 'ellipsoid'; center: number[]; size: number[]; yaw?: number; color?: string };
+export type Scene = { table_z?: number; objects: SceneObject[] };
+
 /** The solid arm (measured pose) and the see-through ghost (goal pose), from one URDF. */
 type Arm = { robot: URDFRobot; ghost: URDFRobot };
 
@@ -30,6 +37,8 @@ export class ArmView {
   private goal: number[] | null = null;
   private opening = 0;
   private goalOpening: number | null = null;
+  private grid: THREE.GridHelper;
+  private objects = new THREE.Group();
 
   /** `interactive: false` shows the arm only (no drag or zoom), so the page scrolls over it (the home page). */
   constructor(private el: HTMLElement, private urdfUrl: string, { interactive = true } = {}) {
@@ -50,7 +59,10 @@ export class ArmView {
     const grid = new THREE.GridHelper(0.6, 12, 0x888888, 0x888888);
     (grid.material as THREE.Material).opacity = 0.25;
     (grid.material as THREE.Material).transparent = true;
+    this.grid = grid;
     this.scene.add(grid);
+    this.objects.rotation.x = -Math.PI / 2; // base frame (z up) as for the robot
+    this.scene.add(this.objects);
 
     this.loadArm(urdfUrl)
       .then((arm) => {
@@ -223,6 +235,27 @@ export class ArmView {
     };
     set(this.robot, this.opening);
     set(this.ghost, this.goalOpening ?? this.opening);
+    this.needsRender = true;
+  }
+
+  /** Draw the objects of a lab scene (in place of the previous ones), and the grid at the table height. */
+  setScene(scene: Scene) {
+    for (const o of [...this.objects.children]) {
+      const m = o as THREE.Mesh;
+      m.geometry.dispose();
+      (m.material as THREE.Material).dispose();
+      this.objects.remove(o);
+    }
+    this.grid.position.y = (scene.table_z ?? 0) / 1000;
+    for (const o of scene.objects) {
+      const [sx, sy, sz] = o.size.map((v) => v / 1000);
+      const geometry = o.shape === 'box' ? new THREE.BoxGeometry(sx, sy, sz) : new THREE.SphereGeometry(0.5, 24, 16).scale(sx, sy, sz);
+      const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: o.color ?? '#999999', roughness: 0.9 }));
+      mesh.position.set(o.center[0] / 1000, o.center[1] / 1000, o.center[2] / 1000);
+      mesh.rotation.z = THREE.MathUtils.degToRad(o.yaw ?? 0);
+      mesh.name = o.name;
+      this.objects.add(mesh);
+    }
     this.needsRender = true;
   }
 }

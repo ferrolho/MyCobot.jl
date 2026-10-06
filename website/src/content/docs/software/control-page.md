@@ -196,6 +196,7 @@ the Pi's Tailscale address. It is the only program that opens `/dev/video0`.
 | `POST /log?session=ID` | Session log events (JSONL). The service appends them to `~/myCobot/lab-logs/ID.jsonl`. |
 | `/atom.json` | The ATOM's address and the relay path. The page tries the ATOM's address first, then the relay. |
 | `/atom/ws` | The relay: the ATOM's WebSocket (`ws://192.168.1.107/ws`, set with `--atom`), byte for byte. |
+| `/lab/scene.json` | Objects near the robot (see [Lab scene](#lab-scene)), from `~/myCobot/lab-scene.json`. 404 if the file does not exist. |
 
 The relay is for a browser away from home (see [At home and away from home](#at-home-and-away-from-home)).
 Only the Pi talks to the ATOM, on the home network. Thus a slow link does not fill the
@@ -221,6 +222,29 @@ site. It starts at boot (linger is on) and restarts if it stops.
 | Update the site | `cd ~/myCobot/lab-services && git pull --ff-only && cd website && npm ci && npm run build` (the service serves `website/dist`; no restart needed) |
 | After a change to `lab_service.py` | `systemctl --user restart lab-service` |
 | Install the unit | see the comments in `tools/pi/lab-service.service` |
+
+### Lab scene
+
+The 3D view shows objects near the robot when the lab service has a scene file
+(`~/myCobot/lab-scene.json` on the Pi). The page reads `/lab/scene.json` every 5 s, so a
+script can move the objects while the page is open. The page on GitHub Pages gets 404
+and shows only the arm.
+
+```json
+{
+  "table_z": -30,
+  "objects": [
+    {"name": "tissue box", "shape": "box", "center": [-10, -128, -13.5], "size": [165, 130, 33], "yaw": -17, "color": "#2b2b2e"},
+    {"name": "plush body", "shape": "ellipsoid", "center": [-172, -100, -8], "size": [70, 115, 44], "color": "#a67c45"}
+  ]
+}
+```
+
+- Base frame, millimetres, z up. `center` and `size` are the centre and the full
+  size (box edges, or ellipsoid diameters). `yaw` turns the object about z, in degrees.
+- `shape` is `box` or `ellipsoid`. `table_z` puts the grid at the table height (0 if absent).
+- The file is data from the lab, not part of the repository. Other keys are ignored
+  (for example `source`: how the values were measured).
 
 ### Session log
 

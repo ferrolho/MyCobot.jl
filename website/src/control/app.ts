@@ -215,6 +215,16 @@ export function start() {
     arm = new ArmView(armEl, armEl.dataset.urdf!);
     if (gripperShown) arm.setGripper(true); // found before the 3D view was ready
     dirty = true;
+    // Lab scene (objects near the robot): only the lab service on the Pi has it. Poll while it answers.
+    const loadScene = () =>
+      fetch('/lab/scene.json', { cache: 'no-store' })
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+        .then((scene) => {
+          arm?.setScene(scene);
+          setTimeout(loadScene, 5000);
+        })
+        .catch(() => {});
+    loadScene();
   });
   $('#arm-reset').addEventListener('click', () => arm?.resetView());
 
