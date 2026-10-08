@@ -14,7 +14,9 @@ tip_z(opening) = 115.0 - 18.0 * opening / 1000      # rough, the tip swings on a
 const BODY = [[x, y, z] for x in (-29.0, 29.0) for y in (-38.0, 13.0) for z in (2.0, 64.0)]
 fingers(opening) = [[x, y, tip_z(opening)] for x in (-36.0, 36.0) for y in (-2.0, 18.5)]
 
-const TABLE_Z = Ref(-30.0)          # measured 2026-10-06 by touch (IMU spike), fingertip model frame
+const TABLE_Z = Ref(-34.0)          # closed fingertip z (model) at table contact: touch_table! 2026-10-08 at (230, 20): -34.3 (measured q), -34.0 (commanded)
+const FLOOR = Ref(0.0)             # mm above TABLE_Z: no gripper point is commanded lower (zmin cannot go below it)
+const GUARD = (zone=30.0, dload=45.0, dacc=0.6)   # 2026-10-08: friction reversal at the start of a motion moves J2 load by up to 25; stick-slip jolts reach 0.36 g at 2 mm/s; the mount broke at 90   # guarded play below TABLE_Z + zone: stop on a J2/J3 load change or an IMU jolt
 const BOXES = Dict{String,Tuple{Vector{Float64},Vector{Float64}}}()   # name => (lo, hi) mm, base frame
 
 flange(q) = MyCobot.flange_transform(ST, q)
@@ -36,6 +38,7 @@ end
 "Problems with pose q (empty = ok). zmin: lowest allowed point height above TABLE_Z (mm)."
 function problems(q; opening=1000, zmin=40.0, ignore=String[])
     out = String[]
+    zmin = max(zmin, FLOOR[])
     all(LO .+ 2 .< q .< HI .- 2) || push!(out, "joint limits")
     for p in body_points(q; opening)
         p[3] < TABLE_Z[] + zmin && push!(out, @sprintf("low point z=%.0f", p[3]))
@@ -48,23 +51,173 @@ function problems(q; opening=1000, zmin=40.0, ignore=String[])
     end
     return unique(out)
 end
-path_problems(a, b; kw...) = unique(reduce(vcat, [problems(a .+ s .* (b .- a); kw...) for s in range(0, 1; length=60)]))
+# the start is where the arm is (measured, with its sag): check from the first step on
+path_problems(a, b; kw...) = unique(reduce(vcat, [problems(a .+ s .* (b .- a); kw...) for s in range(1 / 60, 1; length=60)]))
 
 state() = MyCobot.atom_state(L)
-"MOVES THE ROBOT. Joint-space minimum-jerk move with peak joint speed ≤ vmax °/s, after the checks."
-function move!(q; vmax=25.0, opening=1000, zmin=40.0, ignore=String[], dry=false)
+"Lowest gripper point (mm, base z) at pose q."
+gripper_low(q; opening=1000) = (T = flange(q); minimum(to_base(T, p)[3] for p in vcat(BODY, fingers(opening))))
+path_low(a, b; opening=1000) = minimum(gripper_low(a .+ s .* (b .- a); opening) for s in range(0, 1; length=30))
+
+"MOVES THE ROBOT. Joint-space minimum-jerk move with peak joint speed ≤ vmax °/s, after the checks.
+Near the table (guard=:auto) the move is guarded: at the first contact sign the ATOM stops, the arm retreats, and it is an error."
+function move!(q; vmax=25.0, opening=1000, zmin=40.0, ignore=String[], dry=false, guard=:auto)
     s = state(); s.ok || error("servo missing")
     pr = path_problems(s.q, q; opening, zmin, ignore)
     isempty(pr) || error("refused: " * join(pr, "; "))
     Δ = maximum(abs, q .- s.q)
     T = max(1.5, 1.875 * Δ / vmax)
-    @printf("move: max Δ %.1f°, %.1f s, tcp %s -> %s\n", Δ, T, round.(tcp(s.q; opening)), round.(tcp(q; opening)))
+    g = guard === :auto ? path_low(s.q, q; opening) < TABLE_Z[] + GUARD.zone : guard
+    @printf("move%s: max Δ %.1f°, %.1f s, tcp %s -> %s\n", g ? " (guarded)" : "", Δ, T, round.(tcp(s.q; opening)), round.(tcp(q; opening)))
     dry && return nothing
-    done = MyCobot.atom_move_to(L, q; duration=T, mechanism=M)
+    if g
+        done, _, hit = move_guarded!(s.q, q, T)
+        if hit !== nothing
+            retreat!(; opening)
+            error("contact: stopped and retreated")
+        end
+    else
+        done = MyCobot.atom_move_to(L, q; duration=T, mechanism=M)
+    end
     s2 = state()
     @printf("done: %s, err J%d %.2f°; q = %s; tcp = %s\n", done.result, done.joint, done.error_deg, round.(s2.q; digits=1), round.(tcp(s2.q; opening)))
     done.result == "done" || error("move ended: $(done.result)")
     return s2
+end
+
+"MOVES THE ROBOT. Minimum-jerk plan qa -> qb over T s, played with the contact guard. Returns (done, rec, hit)."
+function move_guarded!(qa, qb, T; linear=false, ramp=0.4, kw...)
+    minjerk(x) = (x = clamp(x, 0, 1); x^3 * (10 - 15x + 6x^2))
+    t = collect(0:0.004:T)
+    if linear   # constant speed with smooth ramps (no slow start: friction turns at once, not seconds later)
+        v = [min(1.0, minjerk(ti / ramp), minjerk((T - ti) / ramp)) for ti in t]
+        sp = cumsum(v); sp = (sp .- sp[1]) ./ (sp[end] - sp[1])
+    else
+        sp = minjerk.(t ./ T)
+    end
+    Q = reduce(vcat, permutedims(qa .+ si .* (qb .- qa)) for si in sp)
+    for k in 1:3
+        try
+            MyCobot.atom_upload_plan(L, t, Q, Q); break
+        catch e
+            k == 3 && rethrow(); println("upload retry: ", e); sleep(0.5)
+        end
+    end
+    return play_guarded!(; kw...)
+end
+
+"Play the uploaded plan and watch the telemetry: STOP at the first J2/J3 load change > dload or IMU jolt > dacc g,
+against the first 0.1 s (mean over the last 50 ms). With base_t > 0 the load baseline is taken again at base_t s
+(after the friction reversal at the start), and from then on dload applies; before it, GUARD.dload.
+Returns (done, rec, hit); hit === nothing: no contact."
+function play_guarded!(; dload=GUARD.dload, dacc=GUARD.dacc, base_t=0.0)
+    sz = 77
+    MyCobot.drain!(L)
+    MyCobot.send(L, vcat(0x07, MyCobot.le(UInt16(500)), MyCobot.le(UInt16(2000)),
+                         MyCobot.le(UInt16(round(Int, 20 * MyCobot.STEPS_PER_DEG))), MyCobot.le(UInt16(round(Int, 3 * MyCobot.STEPS_PER_DEG)))))
+    samples = Vector{Vector{UInt8}}(); hit = nothing; base = nothing
+    accn(r) = sqrt.(sum(r[:, 32:34] .^ 2; dims=2))[:]
+    deadline = time() + 120
+    while time() < deadline
+        isready(L.inbox) || (sleep(0.0005); continue)
+        m = take!(L.inbox); isempty(m) && continue
+        if m[1] == 0x83 && m[2] == 0x07
+            st = reinterpret(Int8, m[3]); (st == 0 || st == -3 || st == -4) || error("PLAY refused ($st)")
+        elseif m[1] == 0x84
+            for k in 0:m[6]-1
+                push!(samples, m[7+sz*k:6+sz*(k+1)])
+            end
+            (hit === nothing && length(samples) >= 50) || continue
+            if base === nothing
+                rb = MyCobot.decode_telemetry(samples[1:50]); any(isnan, rb[:, 26:31]) && continue
+                base = (ld=vec(sum(rb[:, 27:28]; dims=1)) ./ 50, acc=sort(accn(rb))[25])
+            end
+            r = MyCobot.decode_telemetry(samples[end-24:end]); any(isnan, r[:, 26:31]) && continue
+            nb = round(Int, base_t * 500)
+            if base_t > 0 && length(samples) >= nb + 50 && !haskey(base, :ld1)
+                rb = MyCobot.decode_telemetry(samples[nb+1:nb+50])
+                any(isnan, rb[:, 26:31]) || (base = merge(base, (ld1=vec(sum(rb[:, 27:28]; dims=1)) ./ 50,)))
+            end
+            late = haskey(base, :ld1)
+            d = abs.(vec(sum(r[:, 27:28]; dims=1)) ./ 25 .- (late ? base.ld1 : base.ld)); da = maximum(abs.(accn(r) .- base.acc))
+            if maximum(d) > (late || base_t == 0 ? dload : GUARD.dload) || da > dacc
+                MyCobot.atom_stop(L)
+                hit = (dload=d, dacc=da, t=r[end, 1] - MyCobot.decode_telemetry(samples[1:1])[1, 1])
+                @printf("CONTACT at %.2f s: Δload J2 %.0f J3 %.0f, IMU jolt %.2f g -> stop\n", hit.t, d..., da)
+            end
+        elseif m[1] == 0x85
+            done = (result=MyCobot.PLAY_RESULTS[m[2]+1], joint=Int(m[19]), error_deg=MyCobot.rd(Int16, m, 20) / MyCobot.STEPS_PER_DEG)
+            return done, MyCobot.decode_telemetry(samples), hit
+        end
+    end
+    MyCobot.atom_stop(L)
+    error("no DONE from the ATOM")
+end
+
+"MOVES THE ROBOT. Lift the TCP straight up by dz mm (same tool rotation). Not checked against the scene: use it to back away."
+function retreat!(; dz=20.0, opening=1000)
+    try
+        q0 = state().q; R = Matrix(RBD.rotation(flange(q0)))
+        q = ik_to(tcp(q0; opening) .+ [0, 0, dz], R; q0, opening, n=5)
+        q === nothing && (println("retreat: no IK"); return)
+        MyCobot.atom_move_to(L, q; duration=max(1.5, dz / 15), mechanism=M)
+        println("retreated ", dz, " mm: tcp ", round.(tcp(state().q; opening); digits=1))
+    catch e
+        println("retreat failed: ", e)
+    end
+end
+
+"After an error: back away if the gripper is near the table."
+function safe_retreat!()
+    try
+        g = stream(); q = state().q
+        gripper_low(q; opening=g.opening) < TABLE_Z[] + GUARD.zone && retreat!(; dz=25.0, opening=g.opening)
+    catch e
+        println("safe retreat skipped: ", e)
+    end
+end
+
+"MOVES THE ROBOT. Touch the table straight down with the closed fingertips at xy (2 mm/s, at most `over` mm past
+TABLE_Z), stop at the first contact sign, retreat, and return the tip z at the load onset (does not set TABLE_Z)."
+function touch_table!(xy; yaw, above=15.0, over=8.0, onset=6.0, tag="touch", dload=12.0, base_t=1.5, speed=2.0)
+    gripper!(0); sleep(0.8)
+    z0 = TABLE_Z[]
+    q = ik_best([xy..., z0 + above + 10], 0, yaw; opening=0); q === nothing && error("no IK above")
+    move!(q; opening=0, vmax=8, zmin=above - 3, guard=false)
+    q1 = ik_best([xy..., z0 - over + 10], 0, yaw; q0=state().q, opening=0); q1 === nothing && error("no IK low")
+    old = FLOOR[]; FLOOR[] = -over - 1
+    z_on = nothing
+    try
+        pr = path_problems(state().q, q1; opening=0, zmin=-over - 1); isempty(pr) || error("refused: " * join(pr, "; "))
+        done, rec, hit = move_guarded!(state().q, q1, (above + over) / speed; linear=true, dload, base_t)
+        open("/home/henrique/scratch/cutlery/$tag.csv", "w") do io
+            println(io, join(vcat(MyCobot.RECORDING_HEADER, MyCobot.IMU_HEADER), ","))
+            for i in 1:size(rec, 1); println(io, join(rec[i, :], ",")); end
+        end
+        nb = round(Int, base_t * 500)
+        # Contact signature (2026-10-08): the J4 tracking error (sag of the wrist, ~1.55°, noise 0.08°) falls as the
+        # table takes the weight; J2/J3 loads rise later and move as much with friction at the start of a motion.
+        e4 = rec[:, 11] .- rec[:, 17]; sm = [sum(e4[max(1, i-49):i]) / length(max(1, i-49):i) for i in 1:length(e4)]
+        b4 = sum(e4[nb+1:nb+250]) / 250
+        k4 = findfirst(i -> i > nb + 250 && sm[i] < b4 - 0.25, 1:length(sm))
+        k4 === nothing || @printf("J4 onset at %.2f s: tip z %.1f\n", rec[k4, 1] - rec[1, 1], tip(rec[k4, 14:19]; opening=0)[3])
+        ld = rec[:, 27:28]; b = vec(sum(ld[nb+1:nb+50, :]; dims=1)) ./ 50
+        dev = [i <= nb ? 0.0 : maximum(abs.(ld[i, :] .- b)) for i in 1:size(rec, 1)]
+        a = sqrt.(sum(rec[:, 32:34] .^ 2; dims=2))[:]; a0 = sort(a[1:50])[25]
+        kl = findfirst(>(onset), [sum(dev[max(1, i-24):i]) / length(max(1, i-24):i) for i in 1:length(dev)])
+        ka = findfirst(>(0.6), abs.(a .- a0))
+        for (name, k) in (("load", kl), ("IMU", ka))
+            k === nothing && (println(name, ": no onset"); continue)
+            @printf("%s onset at %.2f s: tip z %.1f\n", name, rec[k, 1] - rec[1, 1], tip(rec[k, 14:19]; opening=0)[3])
+        end
+        k = k4
+        k === nothing || (z_on = tip(rec[k, 14:19]; opening=0)[3])
+        @printf("TABLE_Z %.1f; %s at tip z %.1f\n", z0, hit === nothing ? "no stop" : "stopped", tip(state().q; opening=0)[3])
+    finally
+        FLOOR[] = old
+        retreat!(; dz=above + 10, opening=0)
+    end
+    return z_on
 end
 
 "IK for the TCP at p (mm, base) with the gripper pointing straight down; yaw (°) turns the finger axis."
@@ -235,28 +388,6 @@ BOXES["wall"] = ([-450.0, -700, -100], [-265.0, 700, 700])
 BOXES["tissue box"] = ([-115.0, -215, -40], [35.0, -75, 85])
 BOXES["plush"] = ([-235.0, -190, -40], [-100.0, -40, 45])
 
-"Touch probe: lower the closed fingertip at xy in steps; stop when the joints deviate from the free-air baseline. MOVES THE ROBOT."
-function probe!(xy; z_start=0.0, z_end=-70.0, step=4.0, yaw=atand(xy[2], xy[1]) + 90, thr=0.4, full=false)
-    base = nothing; q = state().q
-    for zt in z_start:-step:z_end
-        q = ik_best([xy[1], xy[2], zt + 10], 0, yaw; q0=q, opening=0)
-        q === nothing && error("no IK at tip z=$zt")
-        move!(q; vmax=8, opening=0, zmin=-100.0, ignore=["plush", "tissue box"])
-        sleep(0.6)
-        s = state(); e = s.q .- q
-        base === nothing && (base = e)
-        de = e .- base
-        @printf("tip z %6.1f  dev J2-J4 %s  load %s\n", zt, round.(de[2:4]; digits=2), round.(s.load[2:4]; digits=1))
-        snap("probe_$(Int(round(-zt)))")
-        if !full && maximum(abs, de[2:4]) > thr
-            println("CONTACT near tip z = $zt (deviation $(round.(de; digits=2)))")
-            q_up = ik_best([xy[1], xy[2], zt + 30], 0, yaw; q0=q, opening=0)
-            move!(q_up; vmax=8, opening=0, zmin=-100.0, ignore=["plush", "tissue box"])
-            return zt
-        end
-    end
-    return nothing
-end
 
 "MOVES THE ROBOT. Like move!, but plays the plan with telemetry (500 Hz: q, load, IMU). Returns (done, rec)."
 function move_rec!(q; vmax=8.0, opening=1000, zmin=40.0, ignore=String[], min_T=1.5)
@@ -284,38 +415,6 @@ function rest(n=20)
     S = [state() for _ in 1:n]
     return (q=sum(s.q for s in S) / n, load=sum(s.load for s in S) / n, imu=sum(s.imu for s in S) / n,
             load_sd=sqrt.(sum((s.load .- sum(x.load for x in S) / n) .^ 2 for s in S) / n))
-end
-"Recorded touch probe (IMU spike + static load). Prints one line per step; stops on a clear change. MOVES THE ROBOT."
-function probe2!(xy; yaw, z_start, z_end, step=3.0, nbase=3, k=4.0)
-    q = state().q; hist = []
-    for (i, zt) in enumerate(z_start:-step:z_end)
-        q = ik_best([xy[1], xy[2], zt + 10], 0, yaw; q0=q, opening=0)
-        q === nothing && error("no IK at tip z=$zt")
-        done, rec = move_rec!(q; vmax=6, opening=0, zmin=-100.0, ignore=["plush", "tissue box"])
-        acc = rec[:, 32:34]; a = sqrt.(sum(acc .^ 2; dims=2))[:]
-        spike = maximum(abs.(a .- sort(a)[div(end, 2)]))
-        gyro = maximum(abs, rec[:, 35:37])
-        trk = maximum(abs, rec[end-50:end, 8:13] .- rec[end-50:end, 14:19])
-        r = rest(20)
-        tip_meas = tip(r.q)[3]
-        push!(hist, (zt=zt, spike=spike, load=r.load, imu=r.imu))
-        @printf("tip cmd %6.1f meas %6.1f | spike %.3f g gyro %5.1f °/s trk %.2f° | load J2-J4 %s ±%s | acc %s\n",
-                zt, tip_meas, spike, gyro, trk, round.(r.load[2:4]; digits=1), round.(r.load_sd[2:4]; digits=1), round.(r.imu[1:3]; digits=3))
-        hist[end] = merge(hist[end], (lag=tip_meas - zt,))
-        snap("probe2_$(Int(round(-zt)))")
-        if i > nbase
-            b = hist[1:nbase]
-            lag0 = sum(h.lag for h in b) / nbase
-            a0 = sum(h.imu[1:2] for h in b) / nbase
-            dlag = tip_meas - zt - lag0; dacc = maximum(abs, r.imu[1:2] .- a0)
-            @printf("    lag change %.1f mm, tilt change %.3f g\n", dlag, dacc)
-            if dlag > 2.5 || dacc > 0.015
-                println("CHANGE at tip cmd $zt")
-                return hist
-            end
-        end
-    end
-    return hist
 end
 # Refined with the calibrated camera (cal3, f = 1272 px) and the table touch (z = -30), 2026-10-06.
 BOXES["tissue box"] = ([-90.0, -200, -40], [80.0, -30, 15])
@@ -547,12 +646,13 @@ function latest_stream()
     return (opening=ltoh(reinterpret(Int16, m[76:77])[1]), state=m[6])
 end
 "MOVES THE ROBOT. Close in one motion; lift the TCP by the measured fingertip extension. Returns the final opening."
-function grasp_smooth!(yaw; goal=0, vmax=60.0, timeout=4.0, free_lift=0.0, free_above=200)
+function grasp_smooth!(yaw; goal=0, vmax=60.0, timeout=4.0, free_lift=0.0, free_above=200, R=nothing)
     p0 = copy(P_CMD[])
     g0 = stream().opening
     lut = Vector{Vector{Float64}}(); q = state().q
-    for dz in 0:1.0:24
-        q = ik_best(p0 .+ [0, 0, dz], 0, yaw; q0=q); q === nothing && error("no IK at +$dz mm")
+    for dz in 0:1.0:24   # R given (tilted tool): back off along the tool axis, keep the rotation
+        q = R === nothing ? ik_best(p0 .+ [0, 0, dz], 0, yaw; q0=q) : ik1(p0 .- dz .* R[:, 3], R, q; opening=1000)
+        q === nothing && error("no IK at +$dz mm")
         push!(lut, q)
     end
     qat(dz) = (d = clamp(dz, 0, 24); i = min(floor(Int, d), 23); f = d - i; lut[i+1] .+ f .* (lut[i+2] .- lut[i+1]))
@@ -577,7 +677,7 @@ function grasp_smooth!(yaw; goal=0, vmax=60.0, timeout=4.0, free_lift=0.0, free_
     end
     MyCobot.send(L, vcat(0x0C, le16(UInt16(0))))
     sleep(0.4)                                                  # TRACK deadman: the arm brakes and holds
-    P_CMD[] = p0 .+ [0, 0, dz]
+    P_CMD[] = R === nothing ? p0 .+ [0, 0, dz] : p0 .- dz .* R[:, 3]
     g = stream().opening
     @printf("smooth close: opening %d -> %d, lifted %.1f mm (free lift %.1f) in %.1f s\n", g0, g, dz, extra, time() - t0)
     return g
@@ -657,8 +757,8 @@ function tool_R_tilt(a, u, theta)
     return hcat(x, cross(z, x), z)
 end
 
-const MUG = [192.8, -84.1]   # top centre (camera, 2026-10-06 22:50); rim z ≈ 65, opening ≈ 66 mm
-BOXES["mug"] = ([150.0, -127, -40], [236.0, -41, 65])
+const MUG = [67.9, 155.2]   # top centre (camera rim ellipse, 2026-10-08 run 2, after the push moved it 8 mm); rim z ≈ 65, outer ≈ 72 mm, opening ≈ 66 mm
+BOXES["mug"] = ([MUG[1] - 36, MUG[2] - 36, -40.0], [MUG[1] + 36, MUG[2] + 36, 65.0])   # outer rim ± 36 mm (2026-10-08 run 2)
 "Grasp a flat utensil at xy (fingers across, yaw), lift, carry over the mug, tilt it into the mug, release. MOVES THE ROBOT."
 function utensil_to_mug!(xy, yaw; tag, z_low=-11.0, head_dir=210.0, tilt=75.0, z_drop=140.0, z_release=z_drop)
     gripper!(1000); sleep(0.8)
@@ -895,43 +995,4 @@ function end_path_low(a, b, vt; opening, dmax=48.0)
     return worst
 end
 
-"Push radially outward along azimuth az with the closed fingertips at z, the tool tilted toward the base. MOVES THE ROBOT."
-function push_out!(az, r0, r1; z=-25.0, tilt=30.0, step=8.0, tag="push")
-    gripper!(0); sleep(0.8)
-    R = tool_R(tilt, az + 90; lean_az=az + 180)
-    pt(r, zz) = [r * cosd(az), r * sind(az), zz]
-    q = ik_best(pt(r0, 15.0), tilt, az + 90; opening=0, lean_az=az + 180); q === nothing && error("no IK above start")
-    move!(q; opening=0, vmax=8, zmin=-20)
-    R = Matrix(RBD.rotation(flange(state().q)))   # the yaw ik_best chose (it may be yaw + 180)
-    q = ik_to(pt(r0, z), R; q0=state().q, opening=0, n=10); q === nothing && error("no IK at start")
-    move!(q; opening=0, vmax=3, zmin=-20); snap("$(tag)_start")
-    println("start tcp ", round.(tcp(state().q; opening=0); digits=1))
-    for r in r0 + step:step:r1
-        q = ik_to(pt(r, z), R; q0=state().q, opening=0, n=5); q === nothing && (println("no IK at r $r"); break)
-        move!(q; opening=0, vmax=3, zmin=-20)
-    end
-    println("end tcp ", round.(tcp(state().q; opening=0); digits=1)); snap("$(tag)_end")
-    q = ik_to(tcp(state().q; opening=0) .+ [0, 0, 60.0], R; q0=state().q, opening=0, n=10)
-    q === nothing || move!(q; opening=0, vmax=6, zmin=-20)
-end
 
-"Lower the closed fingertip in 1 mm steps (fixed tool rotation) until the measured TCP lags the command by `lag` mm. Returns the commanded z at first contact. MOVES THE ROBOT."
-function probe_contact!(xy, tilt, yaw; lean_az=yaw + 90, z0=-10.0, z1=-45.0, lag=2.5)
-    gripper!(0); sleep(0.8)
-    q = ik_best([xy..., z0 + 30], tilt, yaw; opening=0, lean_az); q === nothing && error("no IK above")
-    move!(q; opening=0, vmax=8, zmin=-30)
-    R = Matrix(RBD.rotation(flange(state().q)))
-    q = ik_to([xy..., z0], R; q0=state().q, opening=0, n=10); move!(q; opening=0, vmax=3, zmin=-30)
-    first = nothing
-    for z in z0:-1.0:z1
-        q = ik_to([xy..., z], R; q0=state().q, opening=0, n=2); q === nothing && break
-        move!(q; opening=0, vmax=2, zmin=-30)
-        sleep(0.3)
-        m = tcp(state().q; opening=0); ld = state().load
-        e = m[3] - z
-        @printf("z cmd %6.1f meas %6.1f lag %4.1f  load J2 %5.0f J3 %5.0f\n", z, m[3], e, ld[2], ld[3])
-        e > lag && (first = z; break)
-    end
-    q = ik_to([xy..., z0 + 30], R; q0=state().q, opening=0, n=10); move!(q; opening=0, vmax=4, zmin=-30)
-    return first
-end
