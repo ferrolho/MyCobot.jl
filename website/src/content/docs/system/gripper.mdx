@@ -98,7 +98,14 @@ mount. The outlines of these meshes match the photos of this gripper. Our model:
 - **Pad gap in the model:** 6.0 mm closed, 43.4 mm open (the inner faces of the finger
   tips). This agrees with the gripper (a few millimetres closed, about 43 mm open).
 - **Body:** the back face of the body touches the flange face (1.7 mm along the J6 axis
-  from the flange frame). The 34 mm offset is not measured on this arm.
+  from the flange frame).
+- **Fingertips (checked on this arm, 2026-10-08):** along the J6 axis from the flange,
+  the model puts the fingertips at 114.7 mm closed and 96.9 mm open. A tape measure on
+  the arm gives 115 mm and 95 mm. This confirms the 34 mm mount offset to about 2 mm.
+- **Node transforms:** each mesh file places its parts with COLLADA `<matrix>` nodes.
+  Read the meshes with a loader that applies them (urdf-loader, pycollada
+  `scene.objects`). The raw vertex arrays alone put the closed fingertips at about
+  61 mm.
 
 ### Mount angle
 
