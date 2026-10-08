@@ -1,6 +1,6 @@
 import numpy as np, cv2
 S = '/private/tmp/claude-501/-Users-henrique-myCobot/4710b7bc-7da5-4616-a4fc-077e72318965/scratchpad'
-p = np.load(S + '/cam10_free.npy')   # 2026-10-06 22:50: base turned 180°, camera moved (12 pts, 9.2 px rms)
+p = np.load('/Users/henrique/myCobot/media/camera-calib/current_cam.npy')   # 2026-10-08: CAD screws + tape + fingertips (f 1457 px); re-registered from the base screws when the camera moves
 R, _ = cv2.Rodrigues(p[:3]); t = p[3:6]; f = p[6]; C = -R.T @ t
 K = np.array([[f, 0, p[7]], [0, f, p[8]], [0, 0, 1.0]])
 def project(P):

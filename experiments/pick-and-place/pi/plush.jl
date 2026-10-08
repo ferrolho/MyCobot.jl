@@ -8,8 +8,11 @@ const L = MyCobot.AtomLink("192.168.1.107")
 
 # Gripper geometry in the flange frame (mm), from the model meshes (gripper_base: roll 90°, 34 mm out).
 # Body: x ±29, y -38..13, z 2..64. Finger tips: z 97 (open) .. 115 (closed), y -2..18.5, x within ±36.
-const PAD_X = 0.3    # 2026-10-06 22:50: midpoint of two fits (6.7 and -6.1); the finger axis tolerates the rest
-const PAD_Y = 13.6
+# Closed fingertips meet here in the flange frame (mm): CAD model and a measurement on the arm, 2026-10-08
+# (pads 13 x 21 x 25 mm; the pad face on the servo side is flush with the J6 axis). The earlier camera fits
+# (0.3, 13.6) found the centre of the left pad, which the fingertip detector marked.
+const PAD_X = -0.6
+const PAD_Y = 8.2
 tip_z(opening) = 115.0 - 18.0 * opening / 1000      # rough, the tip swings on an arc
 const BODY = [[x, y, z] for x in (-29.0, 29.0) for y in (-38.0, 13.0) for z in (2.0, 64.0)]
 fingers(opening) = [[x, y, tip_z(opening)] for x in (-36.0, 36.0) for y in (-2.0, 18.5)]
@@ -425,7 +428,7 @@ function fingertips(q; opening=1000)
     T = flange(q)
     return [to_base(T, [PAD_X + s * (g / 2 + 5), PAD_Y, tip_z(opening)]) for s in (-1, 1)]
 end
-const CAM = [-278.0, -353, 449]   # camera centre in the base frame (cal3 fit, f = 1272 px), mm
+const CAM = [256.1, 400.3, 501.3]   # camera centre in the base frame (plate centred on J1; 2026-10-08 fit: CAD screws, tape, fingertips; f = 1457 px), mm
 "Horizontal unit vector from p toward the camera."
 to_cam(p) = normalize((CAM .- p)[1:2])
 "MOVES THE ROBOT. Move the TCP to p (gripper down, yaw), then re-command once with the measured error added (sag, play)."
