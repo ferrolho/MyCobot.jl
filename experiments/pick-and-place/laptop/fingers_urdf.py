@@ -1,7 +1,8 @@
 """Finger geometry from the gripper URDF: mesh vertices of every gripper link in the joint6_flange frame (mm),
 for a gripper opening (0..1000 -> gripper_controller -0.7..0.15 rad, mimic joints follow).
 Usage: fingers_urdf.py  -> prints the lowest finger points (largest flange z) per opening and writes a table."""
-import re, sys, json
+import sys, json
+import collada
 import numpy as np
 import xml.etree.ElementTree as ET
 
@@ -50,13 +51,11 @@ def link_T(link, theta):
 
 
 def mesh_vertices(fn):
-    s = open(D + fn).read()
-    unit = re.search(r'<unit[^>]*meter="([0-9.eE-]+)"', s)
-    arrs = re.findall(r'<float_array[^>]*id="([^"]*positions[^"]*)"[^>]*>([^<]*)</float_array>', s, re.I)
-    if not arrs:
-        arrs = re.findall(r'<float_array[^>]*id="([^"]*)"[^>]*>([^<]*)</float_array>', s)[:1]
-    V = np.concatenate([np.array(a[1].split(), float).reshape(-1, 3) for a in arrs])
-    return V, (float(unit.group(1)) if unit else 1.0)
+    """Vertices in the mesh file's units, with the COLLADA scene-node transforms applied (the gripper meshes
+    hold <matrix> nodes; the raw <float_array> positions without them put the fingertips at ~61 mm, not 115)."""
+    c = collada.Collada(D + fn)
+    V = np.concatenate([prim.vertex for g in c.scene.objects('geometry') for prim in g.primitives()])
+    return V, 1.0
 
 
 links = {}

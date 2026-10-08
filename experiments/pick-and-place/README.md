@@ -44,10 +44,10 @@ Pi clock). The task folders also have the snapshots of each attempt (`*.jpg`) an
 
 ## Open problems
 
-- **Fingertip model.** The helpers model the closed fingertip as a point 105–115 mm along the flange z axis
-  (fitted with the gripper pointing down). The gripper URDF puts the fingertips at about 61 mm. With the gripper
-  pointing down, the camera fit cannot see a tool length error. With a tilted gripper, the error is large.
-  Measure it before tilted moves near the table.
+- **Fingertip model.** Checked 2026-10-08: the gripper URDF is correct. Along the J6 axis from the flange, the
+  model puts the fingertips at 114.7 mm (closed) and 96.9 mm (open); a tape measure on the arm gives 115 mm and
+  95 mm. The helpers use the same values (`tip_z`). An earlier "61 mm" came from `fingers_urdf.py`, which read the
+  mesh vertices without the COLLADA node transforms (fixed).
 - **Contact.** Do not find contact by position lag: the gripper mount bends first. On 2026-10-07 a probe
   pressed the gripper into the table and the mount came apart. Stop at the first J2/J3 load change or IMU
   spike, with a small limit past the expected contact.
