@@ -130,7 +130,7 @@ export async function startSessionLog(link: AtomLink) {
     lastT = s.tMs;
     if (now - lastState >= STATE_EVERY_MS) {
       lastState = now;
-      log('state', { tMs: s.tMs, state: s.state, control: s.control, q: s.q.map(r2), dq: s.dq.map(r2), load: s.load.map(r2), temp: s.temp });
+      log('state', { tMs: s.tMs, state: s.state, control: s.control, q: s.q.map(r2), goal: s.goal.map(r2), dq: s.dq.map(r2), load: s.load.map(r2), temp: s.temp });
     }
   });
   setInterval(() => {

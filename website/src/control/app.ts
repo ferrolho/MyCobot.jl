@@ -15,9 +15,13 @@ let relay = ''; // the lab service's relay to the ATOM ("raspberrypi5:8280/atom/
 let direct = ''; // the ATOM's own address, when the Pi serves the page and this browser reaches the ATOM
 const WINDOW_S = 20; // plot window
 const MAX_POINTS = WINDOW_S * 50 + 10;
-const JOINT_NAMES = ['J1', 'J2', 'J3', 'J4', 'J5', 'J6'];
+// J7 is the gripper (firmware 5.0+): a strip, a series in the joint plots and a value in every joint
+// message while the ATOM finds it (link.joints is 7).
+const JOINT_NAMES = ['J1', 'J2', 'J3', 'J4', 'J5', 'J6', 'J7'];
+const N_JOINTS = JOINT_NAMES.length;
+const J7 = 6;
 
-// Six plots. Joint plots have one series per joint (colours J1-J6); the IMU plots have x, y, z.
+// Six plots. Joint plots have one series per joint (colours J1-J7); the IMU plots have x, y, z.
 type PlotKey = 'q' | 'dq' | 'load' | 'temp' | 'acc' | 'gyro';
 interface PlotDef {
   key: PlotKey;
@@ -74,6 +78,7 @@ class History {
   constructor(n: number) {
     this.cols = Array.from({ length: n }, () => []);
   }
+  /** One sample; a column without a value (J7 without the gripper) gets a gap. */
   push(t: number, values: number[]) {
     const last = this.t.at(-1);
     if (last !== undefined && t - last > GAP_S) {
@@ -81,7 +86,7 @@ class History {
       this.cols.forEach((c) => c.push(null));
     }
     this.t.push(t);
-    values.forEach((v, k) => this.cols[k].push(v));
+    this.cols.forEach((c, k) => c.push(values[k] ?? null));
     if (this.t.length > MAX_POINTS) {
       this.t.shift();
       this.cols.forEach((c) => c.shift());
@@ -114,8 +119,10 @@ class Plot {
   u: uPlot;
   private legend: HTMLElement;
   private values: HTMLElement[] = [];
+  private shown: boolean[];
   constructor(private def: PlotDef, private fig: HTMLElement, private hist: History) {
     this.legend = $('.p-legend', fig);
+    this.shown = def.names.map((_, k) => k < P.N_ARM); // J7 from showSeries, once the gripper is there
     this.legend.replaceChildren(
       ...def.names.map((name, k) => {
         const span = document.createElement('span');
@@ -124,6 +131,7 @@ class Plot {
         const b = document.createElement('b');
         this.values.push(b);
         span.append(key, `${name} `, b);
+        span.hidden = !this.shown[k];
         return span;
       }),
     );
@@ -157,6 +165,7 @@ class Plot {
             stroke: cssVar(`--series-${k + 1}`),
             width: 1.5,
             points: { show: false },
+            show: this.shown[k],
           })),
         ],
         hooks: { setCursor: [() => this.updateLegend()] },
@@ -168,6 +177,13 @@ class Plot {
   rebuild() {
     this.u.destroy();
     this.u = this.make();
+  }
+  /** Show or hide series k (J7 while the gripper is there) and its legend entry. */
+  showSeries(k: number, show: boolean) {
+    if (k >= this.shown.length || this.shown[k] === show) return;
+    this.shown[k] = show;
+    (this.legend.children[k] as HTMLElement).hidden = !show;
+    this.u.setSeries(k + 1, { show });
   }
   resize() {
     const area = this.u.root.parentElement as HTMLElement;
@@ -199,10 +215,10 @@ export function start(): Promise<ArmView> {
   const root = $('#ctl');
   startSessionLog(link); // only when the lab service on the Pi serves the page
   const hist: Record<PlotKey, History> = {
-    q: new History(6),
-    dq: new History(6),
-    load: new History(6),
-    temp: new History(6),
+    q: new History(N_JOINTS),
+    dq: new History(N_JOINTS),
+    load: new History(N_JOINTS),
+    temp: new History(N_JOINTS),
     acc: new History(3),
     gyro: new History(3),
   };
@@ -214,7 +230,7 @@ export function start(): Promise<ArmView> {
   const armEl = $('#arm-view');
   const armReady = import('./viewer3d').then(({ ArmView }) => {
     arm = new ArmView(armEl, armEl.dataset.urdf!);
-    if (gripperShown) arm.setGripper(true); // found before the 3D view was ready
+    if (nShown > J7) arm.setGripper(true); // found before the 3D view was ready
     dirty = true;
     // Lab scene (objects near the robot): only the lab service on the Pi has it. Poll while it answers.
     const loadScene = () =>
@@ -231,27 +247,42 @@ export function start(): Promise<ArmView> {
   $('#arm-reset').addEventListener('click', () => arm?.resetView());
 
   // Joint strips: name, angle, the fader (limits, measured position, goal), typed goal, jog, meta.
+  // J7 (the gripper) also shows its opening in % of its goal range, under its angle.
   const stripTpl = $<HTMLTemplateElement>('#strip');
   const strips = $('#strips');
   const faders: HTMLInputElement[] = [];
   const goalNums: HTMLInputElement[] = [];
-  const goal = [0, 0, 0, 0, 0, 0];
+  const angleTexts: Text[] = [];
+  const goal = [0, 0, 0, 0, 0, 0, 0];
+  let nShown = P.N_ARM; // joints shown: 7 while the ATOM finds the gripper
   // MOVE_TO and JOG both stay inside these. The limits need not be symmetric (J6: −225° to +135°).
-  const goalMin = (j: number) => P.LIMIT_MIN[j] + P.JOG_MARGIN;
-  const goalMax = (j: number) => P.LIMIT_MAX[j] - P.JOG_MARGIN;
+  const goalMin = (j: number) => P.LIMIT_MIN[j] + P.margin(j);
+  const goalMax = (j: number) => P.LIMIT_MAX[j] - P.margin(j);
   const clampGoal = (j: number, deg: number) => Math.round(Math.max(goalMin(j), Math.min(goalMax(j), deg)) * 10) / 10;
   // Fader track: LIMIT_MIN (bottom) to LIMIT_MAX (top), in % from the bottom.
   const pct = (j: number, deg: number) => Math.max(0, Math.min(1, (deg - P.LIMIT_MIN[j]) / (P.LIMIT_MAX[j] - P.LIMIT_MIN[j]))) * 100;
-  for (let j = 0; j < 6; j++) {
+  // J7's opening (%): 0 at its lowest goal (closed), 100 at its highest (open).
+  const j7Pct = (deg: number) => Math.round(Math.max(0, Math.min(1, (deg - goalMin(J7)) / (goalMax(J7) - goalMin(J7)))) * 100);
+  for (let j = 0; j < N_JOINTS; j++) {
     const s = stripTpl.content.firstElementChild!.cloneNode(true) as HTMLElement;
     const name = JOINT_NAMES[j];
     s.dataset.joint = String(j);
+    s.hidden = j >= P.N_ARM;
     s.style.setProperty('--key', `var(--series-${j + 1})`);
     $('.j-name', s).textContent = name;
-    const signed = (x: number) => (x > 0 ? `+${x}` : `−${-x}`);
+    if (j === J7) s.title = 'J7: the gripper';
+    const signed = (x: number) => {
+      const r = Math.round(x * 10) / 10;
+      return r > 0 ? `+${r}` : r < 0 ? `−${-r}` : '0';
+    };
     $('.f-top', s).textContent = signed(P.LIMIT_MAX[j]);
     $('.f-bot', s).textContent = signed(P.LIMIT_MIN[j]);
-    $('.f-zero', s).style.top = `${100 - pct(j, 0)}%`;
+    const zero = pct(j, 0);
+    $('.f-zero', s).style.top = `${100 - zero}%`;
+    $('.f-zero', s).hidden = zero <= 0 || zero >= 100; // J7: 0° is its open end stop
+    const angle = $('.j-angle', s);
+    angleTexts.push(angle.appendChild(document.createTextNode('')));
+    if (j === J7) angle.append(Object.assign(document.createElement('span'), { className: 'j-pct muted', title: 'Opening: 0 % closed, 100 % open' }));
     s.querySelectorAll<HTMLButtonElement>('.jog').forEach((b) =>
       b.setAttribute('aria-label', `Jog ${name} ${b.dataset.dir === '1' ? 'positive' : 'negative'} (hold)`),
     );
@@ -272,107 +303,6 @@ export function start(): Promise<ArmView> {
   }
   const stripEls = [...strips.querySelectorAll<HTMLElement>('.strip')];
 
-  // J7, the gripper (firmware 4.6+): shown while the ATOM finds it (servo ID 7). It works as the other
-  // joints: the fader and the typed value set the goal (Move sends it; in Live mode it goes at once), and
-  // ▼/▲ move it while held (not in Live mode). 0 % closed, 100 % open.
-  const gStrip = stripTpl.content.firstElementChild!.cloneNode(true) as HTMLElement;
-  gStrip.classList.add('gripper-strip');
-  gStrip.hidden = true;
-  gStrip.style.setProperty('--key', 'var(--sl-color-gray-3)');
-  $('.j-name', gStrip).textContent = 'J7';
-  gStrip.title = 'J7: the gripper';
-  $('.f-top', gStrip).textContent = '100'; // % open; words do not fit next to the fader
-  $('.f-bot', gStrip).textContent = '0';
-  $('.f-zero', gStrip).hidden = true;
-  $('.goal-field .sr-only', gStrip).textContent = 'Goal (%)';
-  const gFader = $<HTMLInputElement>('.goal-input', gStrip);
-  const gNum = $<HTMLInputElement>('.goal-num', gStrip);
-  for (const i of [gFader, gNum]) Object.assign(i, { min: '0', max: '100', step: '1', value: '0' });
-  gFader.setAttribute('aria-label', 'J7 (gripper) goal opening');
-  gFader.setAttribute('orient', 'vertical');
-  gNum.setAttribute('aria-label', 'J7 (gripper) goal opening, percent');
-  // ▼ closes and ▲ opens while held, as the jog buttons of the other joints: on release the goal
-  // becomes the measured opening, so the gripper stops where it is.
-  const [gClose, gOpen] = [...gStrip.querySelectorAll<HTMLButtonElement>('.jog')];
-  for (const [b, label] of [[gClose, 'Close J7 (hold)'], [gOpen, 'Open J7 (hold)']] as const) {
-    b.className = 'btn jog grip-btn needs-control not-live'; // .jog styling; the joint jog handlers skip .grip-btn
-    b.setAttribute('aria-label', label);
-  }
-  $('.j-meta', gStrip).replaceChildren(Object.assign(document.createElement('span'), { className: 'g-load', title: 'Servo load' }));
-  strips.append(gStrip);
-  let gripperShown = false;
-  let gGoal = 0; // %
-
-  // At most 20 GRIPPER messages a second; the last value is always sent.
-  let gTimer: number | undefined;
-  let gPending: { v: number | null } | null = null;
-  const sendGripper = (opening: number | null) => {
-    if (gTimer !== undefined) {
-      gPending = { v: opening };
-      return;
-    }
-    link.send(P.gripper(opening));
-    gTimer = window.setTimeout(() => {
-      gTimer = undefined;
-      const p = gPending;
-      gPending = null;
-      if (p) sendGripper(p.v);
-    }, 50);
-  };
-  const gMeasured = () => (link.last?.gripper ? Math.max(0, Math.min(1, link.last.gripper.opening)) * 100 : null);
-  const setGripperGoal = (pct: number, send: boolean) => {
-    gGoal = Math.round(Math.max(0, Math.min(100, pct)));
-    gFader.value = String(gGoal);
-    if (document.activeElement !== gNum) gNum.value = String(gGoal);
-    if (send && link.inControl) sendGripper(gGoal / 100);
-    updateGoals();
-  };
-  gFader.addEventListener('input', () => setGripperGoal(Number(gFader.value), live));
-  gNum.addEventListener('change', () => {
-    const v = Number(gNum.value.replace(',', '.'));
-    if (Number.isFinite(v) && gNum.value.trim() !== '') setGripperGoal(v, live);
-    gNum.value = String(gGoal);
-  });
-  for (const [b, end] of [[gClose, 0], [gOpen, 100]] as const) {
-    let held = false;
-    b.addEventListener('pointerdown', (e) => {
-      if (b.disabled) return;
-      b.setPointerCapture(e.pointerId);
-      held = true;
-      setGripperGoal(end, true);
-    });
-    const stop = () => {
-      if (!held) return;
-      held = false;
-      const m = gMeasured();
-      if (m !== null) setGripperGoal(m, true);
-    };
-    b.addEventListener('pointerup', stop);
-    b.addEventListener('pointercancel', stop);
-    b.addEventListener('lostpointercapture', stop);
-    b.addEventListener('contextmenu', (e) => e.preventDefault());
-  }
-
-  function renderGripper(g: P.Stream['gripper']) {
-    if (!!g !== gripperShown) {
-      gripperShown = !!g;
-      gStrip.hidden = !g;
-      arm?.setGripper(!!g);
-      if (g) setGripperGoal(g.opening * 100, false); // start from where it is: no jump to an old goal
-      updateControls();
-    }
-    if (!g) return;
-    const pctOpen = Math.max(0, Math.min(1, g.opening)) * 100;
-    $('.j-angle', gStrip).textContent = `${Math.round(pctOpen)}\u00a0%`;
-    $('.f-pos', gStrip).style.top = `${100 - pctOpen}%`;
-    const fill = $('.f-fill', gStrip);
-    fill.style.top = `${100 - pctOpen}%`;
-    fill.style.height = `${pctOpen}%`;
-    $('.g-load', gStrip).textContent = `${fmt(g.load)}\u00a0%`;
-    arm?.setGripperOpening(g.opening);
-    arm?.setGoalGripperOpening(Math.abs(gGoal - pctOpen) > 3 ? gGoal / 100 : null);
-  }
-
   // Plots
   const plotTpl = $<HTMLTemplateElement>('#plot');
   const plotGrid = $('#plot-grid');
@@ -384,6 +314,7 @@ export function start(): Promise<ArmView> {
   }
   requestAnimationFrame(() => {
     plotGrid.querySelectorAll<HTMLElement>('.plot').forEach((fig, k) => plots.push(new Plot(PLOTS[k], fig, hist[PLOTS[k].key])));
+    plots.forEach((p) => p.showSeries(J7, nShown > J7));
   });
   new ResizeObserver(() => plots.forEach((p) => p.resize())).observe(plotGrid);
 
@@ -392,6 +323,18 @@ export function start(): Promise<ArmView> {
     plots.forEach((p) => p.rebuild());
     dirty = true;
   }).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+  // The gripper found (J7) or gone: its strip, its plot series, the 3D model with or without it. A J7 that
+  // appears starts from the goal the ATOM holds for it: no jump to an old goal.
+  function showJoints(s: Stream) {
+    nShown = s.q.length;
+    const j7 = nShown > J7;
+    stripEls[J7].hidden = !j7;
+    plots.forEach((p) => p.showSeries(J7, j7));
+    arm?.setGripper(j7);
+    if (j7) setGoal(J7, s.goal[J7], false);
+    updateControls();
+  }
 
   function clearHistory() {
     for (const h of Object.values(hist)) h.clear();
@@ -542,6 +485,7 @@ export function start(): Promise<ArmView> {
       t0 = s.tMs;
     }
     const t = (s.tMs - t0) / 1000;
+    if (s.q.length !== nShown) showJoints(s);
     hist.q.push(t, s.q);
     hist.dq.push(t, s.dq);
     hist.load.push(t, s.load);
@@ -563,8 +507,9 @@ export function start(): Promise<ArmView> {
     if (!s) return;
     $('#robot-state').textContent = `Robot: ${P.STATES[s.state] ?? s.state}`;
     $('#robot-state').dataset.state = String(s.state);
-    stripEls.forEach((row, j) => {
-      $('.j-angle', row).textContent = `${fmt(s.q[j])}°`;
+    stripEls.slice(0, s.q.length).forEach((row, j) => {
+      angleTexts[j].data = `${fmt(s.q[j])}°`;
+      if (j === J7) $('.j-pct', row).textContent = `${j7Pct(s.q[j])}\u00a0% open`;
       $('.j-temp', row).textContent = `${s.temp[j]}\u00a0°C`; // no-break space: the unit stays with its number
       $('.j-volt', row).textContent = `${fmt(s.volt[j])}\u00a0V`;
       // The track runs from the min limit (bottom) to the max limit (top). The fill goes from zero to the angle.
@@ -576,7 +521,6 @@ export function start(): Promise<ArmView> {
       row.classList.toggle('servo-fault', s.status[j] !== 0);
     });
     arm?.setPose(s.q);
-    renderGripper(s.gripper);
     updateGoals();
     updateControls();
   }
@@ -632,7 +576,6 @@ export function start(): Promise<ArmView> {
       : 'Live: the arm follows the goals at once (up to the speed setting). Off: set the goals, then Move.';
     liveBox.checked = live;
     $<HTMLButtonElement>('#goal-current').disabled = !mine;
-    gFader.disabled = gNum.disabled = !mine;
   }
 
   controlBtn.addEventListener('click', () => {
@@ -659,15 +602,15 @@ export function start(): Promise<ArmView> {
     const v = Number(speed.value);
     let tSpeed = 0;
     let tMin = 0.2;
-    target.forEach((g, j) => {
-      const d = Math.abs(g - s.q[j]);
+    target.slice(0, s.goal.length).forEach((g, j) => {
+      const d = Math.abs(g - s.goal[j]); // the ATOM starts each joint from its goal (J7: a grasp)
       tSpeed = Math.max(tSpeed, (1.875 * d) / v);
       tMin = Math.max(tMin, (1.875 * d) / P.MOVE_VMAX, Math.sqrt((5.77 * d) / P.AMAX[j]));
     });
     return tSpeed > tMin * 1.02 ? Math.min(tSpeed, 65) : 0; // u16 ms on the wire
   }
   const moveToGoal = (target: number[]) => link.moveTo(target, moveDuration(target));
-  $('#zero-btn').addEventListener('click', () => moveToGoal([0, 0, 0, 0, 0, 0]));
+  $('#zero-btn').addEventListener('click', () => moveToGoal([0, 0, 0, 0, 0, 0])); // J1-J6; J7 holds
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && link.status === 'connected') stopAll();
   });
@@ -678,7 +621,7 @@ export function start(): Promise<ArmView> {
     $('#jog-speed-value').textContent = `${speed.value} °/s`;
     sendLive();
   });
-  strips.querySelectorAll<HTMLButtonElement>('.jog:not(.grip-btn)').forEach((b) => {
+  strips.querySelectorAll<HTMLButtonElement>('.jog').forEach((b) => {
     const j = Number((b.closest('.strip') as HTMLElement).dataset.joint);
     const dir = Number(b.dataset.dir);
     const end = () => link.setJog(j, 0);
@@ -706,26 +649,23 @@ export function start(): Promise<ArmView> {
   // differs from the measured pose, and its value turns blue. ---
   function updateGoals() {
     const s = link.last;
+    const n = s?.q.length ?? P.N_ARM;
     let differs = false;
-    stripEls.forEach((row, j) => {
+    stripEls.slice(0, n).forEach((row, j) => {
       const num = goalNums[j];
       if (document.activeElement !== num) num.value = goal[j].toFixed(1);
       const same = !s || Math.abs(goal[j] - s.q[j]) <= 1;
       num.toggleAttribute('data-same', same);
       differs ||= !same;
     });
-    const gm = gMeasured();
-    const gSame = !gripperShown || gm === null || Math.abs(gGoal - gm) <= 3;
-    gNum.toggleAttribute('data-same', gSame);
-    differs ||= !gSame;
-    arm?.setGoal(s && differs ? goal : null);
+    arm?.setGoal(s && differs ? goal.slice(0, n) : null);
   }
-  const setGoal = (j: number, deg: number) => {
+  function setGoal(j: number, deg: number, send = true) {
     goal[j] = clampGoal(j, deg);
     faders[j].value = String(goal[j]);
     updateGoals();
-    sendLive();
-  };
+    if (send) sendLive();
+  }
   faders.forEach((f, j) => f.addEventListener('input', () => setGoal(j, Number(f.value))));
   goalNums.forEach((num, j) => {
     const commit = () => {
@@ -747,19 +687,12 @@ export function start(): Promise<ArmView> {
   });
   const setGoals = (q: number[]) => q.forEach((x, j) => setGoal(j, x));
   updateGoals();
-  const gripperToCurrent = () => {
-    const m = gMeasured();
-    if (gripperShown && m !== null) setGripperGoal(m, false);
-  };
+  // "Current": the goals the ATOM holds. They are the measured pose, except J7 on an object: its goal
+  // stays closed past the object (the grasp), and Move keeps it so.
   $('#goal-current').addEventListener('click', () => {
-    if (link.last) setGoals(link.last.q);
-    gripperToCurrent();
+    if (link.last) setGoals(link.last.goal);
   });
-  $('#goal-move').addEventListener('click', () => {
-    moveToGoal(goal.slice());
-    const m = gMeasured();
-    if (gripperShown && m !== null && Math.abs(gGoal - m) > 1) sendGripper(gGoal / 100); // J7 with the joints
-  });
+  $('#goal-move').addEventListener('click', () => moveToGoal(goal.slice()));
 
   // --- Live mode (firmware 4.4+): the ATOM moves the joints to the goals at once (TRACK), at up to the
   // speed setting and the joints' acceleration limits, and stops on them. Never MOVE_TO. ---
@@ -769,8 +702,7 @@ export function start(): Promise<ArmView> {
     if (on === live) return;
     if (on) {
       if (!link.inControl || !link.last || !liveSupported()) return updateControls();
-      setGoals(link.last.q); // start from where the arm is: no jump to an old goal
-      gripperToCurrent();
+      setGoals(link.last.goal); // start from where the arm is: no jump to an old goal
       live = true;
       sendLive();
       toast('Live: the arm follows the faders and the typed goals. Esc stops.', 'warning');

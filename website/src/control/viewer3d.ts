@@ -6,10 +6,14 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import URDFLoader, { type URDFRobot } from 'urdf-loader';
+import { LIMIT_MIN, LIMIT_MAX } from './robot_params';
 
 const JOINTS = ['joint2_to_joint1', 'joint3_to_joint2', 'joint4_to_joint3', 'joint5_to_joint4', 'joint6_to_joint5', 'joint6output_to_joint6'];
-/** The actuated finger joint. The other five finger joints follow it (URDF `mimic`, which urdf-loader applies). */
+/** The actuated finger joint. The other five finger joints follow it (URDF `mimic`, which urdf-loader applies).
+ *  J7 (the gripper servo, 7th entry of a pose) sets it linearly: J7's limits (its end stops) map to the
+ *  joint's URDF limits (closed = lower, open = upper). Not calibrated: the URDF angle is not the servo angle. */
 const GRIPPER_JOINT = 'gripper_controller';
+const J7 = 6;
 
 /**
  * Objects near the robot, for the lab (served by the lab service as /lab/scene.json). Base frame,
@@ -29,17 +33,15 @@ export class ArmView {
   private robot: URDFRobot | null = null;
   private ghost: URDFRobot | null = null;
   private needsRender = true;
-  // The state, kept so that a swap between the URDFs keeps the pose, the goal and the opening.
+  // The state, kept so that a swap between the URDFs keeps the pose and the goal (with J7).
   private plainArm: Arm | null = null;
   private gripperArm: Promise<Arm> | null = null;
   private wantGripper = false;
   private q: number[] | null = null;
   private goal: number[] | null = null;
-  private opening = 0;
-  private goalOpening: number | null = null;
   private grid: THREE.GridHelper;
   private objects = new THREE.Group();
-  /** Goes up at each change of the measured arm (its pose, its opening, or a swap of the URDF). The camera overlay redraws then. */
+  /** Goes up at each change of the measured arm (its pose with J7, or a swap of the URDF). The camera overlay redraws then. */
   revision = 0;
 
   /** `interactive: false` shows the arm only (no drag or zoom), so the page scrolls over it (the home page). */
@@ -132,7 +134,7 @@ export class ArmView {
     });
   }
 
-  /** Put this arm in the scene in place of the present one, with the present pose, goal and opening. */
+  /** Put this arm in the scene in place of the present one, with the present pose and goal. */
   private show(arm: Arm) {
     if (this.robot === arm.robot) return;
     if (this.robot) this.scene.remove(this.robot);
@@ -143,7 +145,6 @@ export class ArmView {
     if (this.q) this.apply(this.robot, this.q);
     this.ghost.visible = !!this.goal;
     if (this.goal) this.apply(this.ghost, this.goal);
-    this.applyOpening();
     this.el.dataset.gripper = GRIPPER_JOINT in arm.robot.joints ? 'shown' : 'hidden';
     this.needsRender = true;
     this.revision++;
@@ -174,17 +175,23 @@ export class ArmView {
   private apply(r: URDFRobot | null, qDeg: number[]) {
     if (!r) return;
     JOINTS.forEach((name, j) => r.setJointValue(name, THREE.MathUtils.degToRad(qDeg[j])));
+    const g = r.joints[GRIPPER_JOINT];
+    if (g && qDeg.length > J7) {
+      const f = Math.max(0, Math.min(1, (qDeg[J7] - LIMIT_MIN[J7]) / (LIMIT_MAX[J7] - LIMIT_MIN[J7])));
+      const { lower, upper } = g.limit as { lower: number; upper: number };
+      g.setJointValue(lower + f * (upper - lower));
+    }
     this.needsRender = true;
   }
 
-  /** The measured pose, in degrees. */
+  /** The measured pose, in degrees: J1-J6, and J7 (the gripper) when it is there. */
   setPose(qDeg: number[]) {
     this.q = [...qDeg];
     this.apply(this.robot, qDeg);
     this.revision++;
   }
 
-  /** The goal pose (see-through), or null to hide it. */
+  /** The goal pose (see-through, J1-J6 and J7 as in setPose), or null to hide it. */
   setGoal(qDeg: number[] | null) {
     this.goal = qDeg ? [...qDeg] : null;
     if (!this.ghost) return;
@@ -217,35 +224,6 @@ export class ArmView {
         this.el.dataset.gripper = 'error';
         this.el.title = String(err);
       });
-  }
-
-  /**
-   * The measured gripper opening: 0 closed, 1 fully open (clamped). It sets the actuated finger joint
-   * linearly between its URDF limits (closed = lower, open = upper). Not calibrated yet: the fraction
-   * is not a pad distance, and it is not mapped to the servo position.
-   */
-  setGripperOpening(fraction: number) {
-    this.opening = Math.max(0, Math.min(1, fraction));
-    this.applyOpening();
-  }
-
-  /** The goal opening of the ghost (0 closed, 1 open), or null to show the measured opening. */
-  setGoalGripperOpening(fraction: number | null) {
-    this.goalOpening = fraction == null ? null : Math.max(0, Math.min(1, fraction));
-    this.applyOpening();
-  }
-
-  private applyOpening() {
-    const set = (r: URDFRobot | null, f: number) => {
-      const j = r?.joints[GRIPPER_JOINT];
-      if (!j) return;
-      const { lower, upper } = j.limit as { lower: number; upper: number };
-      j.setJointValue(lower + f * (upper - lower));
-    };
-    set(this.robot, this.opening);
-    set(this.ghost, this.goalOpening ?? this.opening);
-    this.needsRender = true;
-    this.revision++;
   }
 
   /** Draw the objects of a lab scene (in place of the previous ones), and the grid at the table height. */

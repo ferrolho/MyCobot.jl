@@ -37,8 +37,9 @@ tries it for 1.5 s:
 
 Both addresses are in the address list.
 
-Round trip of a command (a GRIPPER that the ATOM refuses at once), laptop at home,
-2026-10-06:
+Round trip of a command (a GRIPPER that the ATOM refuses at once; firmware 4.6), laptop at home,
+2026-10-06. With firmware 5.0, measure it with a MOVE_TO that the ATOM refuses at once
+(a goal outside the limits: ACK −11):
 
 | Path | No camera stream | Camera stream before the fix (1280×960, 30 fps) | Preview stream (640×480, 30 fps) |
 | --- | --- | --- | --- |
@@ -55,9 +56,10 @@ send buffer, the relay round trip is 36–48 ms.
 
 #### The camera is behind the 3D view
 
-The 3D view follows the arm's state stream (50 Hz; the gripper opening 10 times a
-second). The camera image is later. Measured in Chrome on the Control page, from a
-GRIPPER command to the first visible change, 2026-10-06:
+The 3D view follows the arm's state stream (50 Hz; J7 too from firmware 5.0, before
+that the gripper 10 times a second). The camera image is later. Measured in Chrome on
+the Control page, from a GRIPPER command (firmware 4.6) to the first visible change,
+2026-10-06:
 
 | Preview | 3D view data changes | Camera image changes |
 | --- | --- | --- |
@@ -91,7 +93,7 @@ On a screen of 1440 × 900 pixels or more, the page fits in one screen:
 | Camera (left) | The Pi camera or a camera on this computer (see [Camera](#camera)) |
 | 3D view (middle) | The measured pose (solid) and the goal pose (see-through blue). **Reset view** restores the camera. |
 | Joints (right) | One strip per joint: the angle, a vertical fader, the typed goal, jog buttons, the temperature and the voltage. Below: **Live**, the **Speed** setting, **Use current pose**, **Go to zero**, **Move**. |
-| Plots | The last 20 s: angle, speed, load, temperature (one line per joint), and the IMU acceleration and angular rate (x, y, z) |
+| Plots | The last 20 s: angle, speed, load, temperature (one line per joint, J7 too when the gripper is there), and the IMU acceleration and angular rate (x, y, z) |
 
 On a narrower screen, the areas are stacked and the page scrolls.
 
@@ -113,9 +115,10 @@ On a narrower screen, the areas are stacked and the page scrolls.
      goes from 0° to it. Drag the blue marker to set the goal of that joint. The
      see-through blue arm in the 3D view shows the goal pose. Then click **Move**.
    - **Typed goal** (the field under the fader): type an angle in degrees (0.1°
-     steps) and press **Enter**. The page keeps the goal 2° inside the joint limits.
+     steps) and press **Enter**. The page keeps the goal 2° inside the joint limits (J7, the gripper: within its end stops).
      The field is blue while the goal differs from the angle.
-   - **Use current pose**: set all goals to the measured pose.
+   - **Use current pose**: set all goals to the pose that the robot holds (the measured
+     pose; on an object, J7's goal stays the closed goal of the grasp).
    - **Go to zero**: move all joints to 0°.
    - **Speed** (5–90 °/s): the top speed of **Move**, **Go to zero** and Live mode.
      A move is smooth (minimum jerk): the joint that moves farthest reaches this
@@ -147,19 +150,26 @@ later.
 
 ### Gripper (J7)
 
-With firmware 4.6 or later, a **J7** strip appears next to J6 when the ATOM finds the
+With firmware 5.0 or later, a **J7** strip appears next to J6 when the ATOM finds the
 [gripper](/mycobot-280-lab/system/gripper/#control). It disappears when the gripper is
-disconnected. The 3D view then shows the arm with the gripper.
+disconnected. J7 then also has a line in the angle, speed, load and temperature plots,
+and the 3D view shows the arm with the gripper.
 
-J7 works as the other joints, with the opening in % (0 closed, 100 open):
+J7 is a joint like the others (the page has no gripper commands of its own):
 
-- The fader and the typed value set the goal. The ghost shows it. **Move** sends the
-  joints and J7 together. With **Live** on, J7 follows the goal at once.
-- Hold **▼** to close and **▲** to open. When you let go, the gripper stops where it
-  is. As the jog buttons, they are off in Live mode.
-- **Use current pose** and switching Live on set the J7 goal to the measured opening.
-- The strip shows the measured opening and the servo load (%).
+- Its angle and goal are in degrees: −51.5° (closed end stop) to 0° (open end stop).
+  Under the angle, the strip also shows the opening in %: 0 % at the lowest goal
+  (closed), 100 % at the highest (open).
+- The fader, the typed goal, **▼**/**▲** (jog), **Move**, **Live** and the ghost work
+  as for J1–J6. **Go to zero** moves J1–J6 only: J7 keeps its goal.
+- **Grasps:** on an object, J7 stops short of its goal and keeps squeezing. Its goal
+  stays blue (it differs from the measured angle). The robot keeps the goal through
+  **Hold**, **Stop** and the end of a move, and **Use current pose** and Live mode start
+  from it, so the grasp stays closed. To let go, set a goal that opens the gripper.
 - These controls need control, as the joints do.
+
+With firmware 4.6 or 4.7 the page shows J1–J6 only. Update the firmware on the
+[Setup](/mycobot-280-lab/setup/) page.
 
 :::danger
 **Stop** and the **Esc** key stop the robot through the software. They are not an
@@ -402,7 +412,7 @@ Pages has no lab service, so it records nothing.
 | `click`, `input`, `key` | The user's clicks, input changes (with the value) and Enter/Esc |
 | `tx`, `rx` | Commands sent (JOG only when its speeds change; not the lease renewals) and replies (ACK, DONE, PONG) |
 | `link`, `atom` | The connection status; the ATOM's status lines |
-| `state` | The stream at 10 Hz: ATOM time, state, control, angles, speeds, loads, temperatures |
+| `state` | The stream at 10 Hz: ATOM time, state, control, angles, goals (firmware 5.0+), speeds, loads, temperatures (6 or 7 joints) |
 | `gap` | Every pause in the stream over 100 ms, with the ATOM's own time step: a large `atomGapMs` means that the ATOM did not send; a normal one (20 ms) means that the network held the packets |
 | `stats`, `error` | Once a second, over the last 5 s: packets per second, the largest gap and the arrival jitter (95th percentile minus the smallest arrival delay); page errors |
 
@@ -445,7 +455,7 @@ The code is in `website/src/pages/control.astro` and `website/src/control/`:
 | --- | --- |
 | `protocol.ts` | Message codes, encoders, decoders and units |
 | `connection.ts` | The WebSocket: reconnect, SUBSCRIBE and CONTROL renewals, jog timer |
-| `app.ts` | The page: joint strips and faders, the six plots (uPlot), controls |
+| `app.ts` | The page: joint strips and faders (J1–J7), the six plots (uPlot), controls |
 | `viewer3d.ts` | The 3D view (three.js, urdf-loader) |
 | `camera.ts` | The camera panel |
 | `camera_overlay.ts` | The camera overlay: the arm, the base screws and the marks, through the camera model |

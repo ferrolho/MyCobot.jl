@@ -96,7 +96,7 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
             <output id="jog-speed-value" for="jog-speed" class="num">45 °/s</output>
           </div>
           <div class="btn-row">
-            <button id="goal-current" type="button" class="btn" title="Set the goal faders to the measured pose">Use current pose</button>
+            <button id="goal-current" type="button" class="btn" title="Set the goals to the pose that the robot holds">Use current pose</button>
             <button id="zero-btn" type="button" class="btn needs-control not-live">Go to zero</button>
             <button id="goal-move" type="button" class="btn primary needs-control not-live">Move</button>
           </div>
@@ -149,8 +149,8 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 </script>
 
 <style is:global>
-  /* Joint colours: the validated categorical palette, slots 1-6 (J1-J6), the same in the faders
-     and the plots. The IMU plots use slots 1-3 for x, y, z. Starlight's default theme is dark;
+  /* Joint colours: the validated categorical palette, slots 1-7 (J1-J7; J7 is the gripper), the same
+     in the faders and the plots. The IMU plots use slots 1-3 for x, y, z. Starlight's default theme is dark;
      data-theme="light" switches. */
   .ctl {
     --series-1: #3987e5;
@@ -159,6 +159,7 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
     --series-4: #c98500;
     --series-5: #d55181;
     --series-6: #008300;
+    --series-7: #9085e9;
     --grid: #2c2c2a;
     --axis: #898781;
     --good: #0ca30c;
@@ -176,6 +177,7 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
     --series-4: #eda100;
     --series-5: #e87ba4;
     --series-6: #008300;
+    --series-7: #4a3aa7;
     --grid: #e1e0d9;
     /* Starlight's light theme swaps the scale: --sl-color-black is the page (white), --sl-color-white the text. */
     --card: var(--sl-color-black);
@@ -335,7 +337,7 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 
   /* --- Joint strips: one vertical fader per joint --- */
   .ctl .strips { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 0.4rem; }
-  .ctl .strips:has(.gripper-strip:not([hidden])) { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+  .ctl .strips:has(.strip[data-joint='6']:not([hidden])) { grid-template-columns: repeat(7, minmax(0, 1fr)); }
   .ctl .strip[hidden] { display: none; }
 
   .ctl .strip {
@@ -353,7 +355,8 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
   .ctl .strip.servo-fault .j-name::after { content: ' ⚠'; color: var(--critical); }
   .ctl .s-head { display: flex; align-items: center; gap: 0.35rem; font-weight: 700; }
   .ctl .key { display: inline-block; width: 0.9rem; height: 0.2rem; border-radius: 2px; background: var(--key); }
-  .ctl .j-angle { font-size: clamp(0.95rem, 1.2vw, 1.25rem); font-weight: 600; }
+  .ctl .j-angle { font-size: clamp(0.95rem, 1.2vw, 1.25rem); font-weight: 600; text-align: center; }
+  .ctl .j-pct { display: block; font-size: 0.7rem; font-weight: 400; white-space: nowrap; }
   .ctl .jogs { display: flex; gap: 0.25rem; width: 100%; max-width: 6rem; }
   .ctl .jog { flex: 1; min-width: 0; height: 1.9rem; padding: 0; font-size: 0.85rem; line-height: 1; }
   .ctl .fader { position: relative; width: 100%; max-width: 4.5rem; min-height: 0; height: 100%; }
@@ -476,7 +479,7 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
   @media (max-width: 40rem) {
     .ctl .grid { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'joints' 'arm' 'camera' 'plots'; }
     .ctl .grid:has(#camera-card[hidden]) { grid-template-areas: 'joints' 'arm' 'plots'; }
-    .ctl .strips, .ctl .strips:has(.gripper-strip:not([hidden])) { grid-template-columns: repeat(3, minmax(0, 1fr)); height: auto; }
+    .ctl .strips, .ctl .strips:has(.strip[data-joint='6']:not([hidden])) { grid-template-columns: repeat(3, minmax(0, 1fr)); height: auto; }
     .ctl .strip { height: 17rem; }
     .ctl .plot-grid { grid-template-columns: minmax(0, 1fr); grid-auto-rows: 11rem; }
     .ctl .joints-foot { grid-template-columns: minmax(0, 1fr); }

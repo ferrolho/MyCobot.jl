@@ -1,10 +1,13 @@
 """
-A simulated ATOM that speaks the WebSocket API (draft for controller firmware 4.2). Use it to
-develop the Control page without the robot. Docs: website/src/content/docs/comms/websocket-api.md.
+A simulated ATOM that speaks the WebSocket API of controller firmware 5.0. Use it to develop the
+Control page without the robot. Docs: website/src/content/docs/comms/websocket-api.md.
 
     python3 tools/atom_sim.py [--host 127.0.0.1] [--port 8281] [--recording RECORDING.csv]
+                              [--no-gripper] [--object DEG]
 
-The arm is simulated: each joint follows its goal with a 0.12 s lag and a 90 °/s speed limit.
+The arm is simulated: each joint follows its goal with a 0.12 s lag and a 90 °/s speed limit. The
+gripper is J7 (as the firmware finds it); --no-gripper leaves it off (6 joints). --object DEG puts an
+object between the fingers: J7 cannot close past DEG (it stalls there, with load, as in a grasp).
 MOVE_TO, JOG and TRACK (with the 200 ms deadman), CONTROL, SUBSCRIBE/STREAM, HOLD, STOP, PING, STATE,
 REG_READ and REG_WRITE work as specified. PLAY and PLAY_SIGNAL play the recording (if given) as
 500 Hz telemetry with tools/atom_replay.py, and the simulated arm follows it.
@@ -26,11 +29,13 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import atom_replay  # noqa: E402
 import robot_params  # noqa: E402  (generated from mycobot_description/config)
 
-VERSION = (4, 6, 0)
+VERSION = (5, 0, 0)
 SIGN = robot_params.SIGN
 STEPS_PER_DEG = robot_params.STEPS_PER_DEG
 LIMIT_MIN = robot_params.LIMIT_MIN   # model joint limits (°)
 LIMIT_MAX = robot_params.LIMIT_MAX
+N_ARM = robot_params.N_ARM   # J1-J6; J7 (the gripper) is index 6
+J7 = N_ARM
 BOOTING, HOLDING, READY, PLAYING, ERROR, OTA, MOVING, JOGGING, TRACKING = range(9)
 STATE_NAMES = ("booting", "holding", "ready", "playing", "error", "ota", "moving", "jogging", "tracking")
 
@@ -41,7 +46,12 @@ MOVE_VMAX = robot_params.VMAX   # MOVE_TO speed limit (°/s)
 MOVE_AMAX = robot_params.AMAX   # MOVE_TO acceleration limits (°/s²)
 JOG_VMAX = 30.0       # °/s
 JOG_AMAX = 200.0      # °/s²
-JOG_MARGIN = 2.0      # stop this far inside the joint limits (°)
+JOG_MARGIN = 2.0      # J1-J6: stop this far inside the joint limits (°)
+
+
+def margin(j):
+    """As lim::margin: J7 (the gripper) has none, it uses its whole range, end stop to end stop."""
+    return JOG_MARGIN if j < N_ARM else 0.0
 DEADMAN = 0.2         # s
 LEASE = 2.0           # s
 SUB_TIMEOUT = 2.0     # s
@@ -53,16 +63,21 @@ def pos_raw(j, deg):
     return int(min(hi, max(0, round(2048 + SIGN[j] * deg * STEPS_PER_DEG))))
 
 
-def track_step(q, v, goal, vmax, stop):
+def jog_range(j, q):
+    """As motion::range_lo/hi: margin(j) inside the limits, widened to include the position."""
+    return min(LIMIT_MIN[j] + margin(j), q), max(LIMIT_MAX[j] - margin(j), q)
+
+
+def track_step(q, v, goal, vmax, stop, n):
     """One TRACK step, as motion::track_step in the firmware (motion.h): to the goal at up to vmax
     and MOVE_AMAX, braking to stop on it; with stop, brake to zero."""
     vmax = max(0.0, min(MOVE_VMAX, vmax))
-    for j in range(6):
+    for j in range(n):
         a = MOVE_AMAX[j]
         dv = a * DT
         stoppable = lambda d: 0.0 if d <= 0 else dv * (math.sqrt(0.25 + 2 * d / (a * DT * DT)) - 0.5)
-        lo, hi = LIMIT_MIN[j] + JOG_MARGIN, LIMIT_MAX[j] - JOG_MARGIN
-        g = max(lo, min(hi, goal[j]))
+        lo, hi = jog_range(j, q[j])
+        g = max(LIMIT_MIN[j] + margin(j), min(LIMIT_MAX[j] - margin(j), goal[j]))
         e = g - q[j]
         t = 0.0 if stop else math.copysign(min(vmax, stoppable(abs(e))), e)
         t = max(-stoppable(q[j] - lo), min(stoppable(hi - q[j]), t))
@@ -92,24 +107,23 @@ class Client:
 
 
 class Sim:
-    def __init__(self, recording):
+    def __init__(self, recording, gripper=True, object_deg=None):
         self.rec = atom_replay.Replay(atom_replay.load(recording)) if recording else None
         self.t0 = time.monotonic()
-        self.q = [0.0] * 6
-        self.dq = [0.0] * 6
-        self.goal = [0.0] * 6
-        self.jog_v = [0.0] * 6        # current jog velocity (ramped)
-        self.jog_cmd = [0.0] * 6      # requested jog velocity
+        self.n = N_ARM + 1 if gripper else N_ARM   # joints in use (J7 = the gripper, 5.0)
+        self.object_deg = object_deg               # J7 stalls here (a grasped object)
+        self.q = [0.0] * 6 + [-20.0]
+        self.dq = [0.0] * 7
+        self.goal = list(self.q)      # the goal each joint follows (the STREAM's goal)
+        self.jog_v = [0.0] * 7        # current jog velocity (ramped)
+        self.jog_cmd = [0.0] * 7      # requested jog velocity
         self.jog_last = 0.0
-        self.track_goal = [0.0] * 6   # TRACK (4.4): goal pose and speed cap
+        self.track_goal = [0.0] * 7   # TRACK (4.4): goal pose and speed cap
         self.track_vmax = 0.0
-        self.gripper = 0.5            # gripper (4.6): opening 0..1, its goal, and torque on
-        self.gripper_goal = 0.5
-        self.gripper_on = False
         self.state = HOLDING
         self.plan_samples = 0
         self.gains = {j: [32, 4, 16] if j <= 3 else [32, 8, 0] for j in range(1, 8)}
-        self.temp = [27.0, 29.0, 28.0, 26.0, 25.0, 25.0]
+        self.temp = [27.0, 29.0, 28.0, 26.0, 25.0, 25.0, 30.0]
         self.clients = set()
         self.controller = None
         self.move = None              # (start, goal, t_start, duration, client)
@@ -123,11 +137,17 @@ class Sim:
         s2 = math.sin(math.radians(self.q[1]))
         s23 = math.sin(math.radians(self.q[1] + self.q[2]))
         l = [0.0, -25 * s2 - 10 * s23, -10 * s23, 0.0, 0.0, 0.0]
-        return [x + random.gauss(0, 0.3) for x in l]
+        # J7 on an object: it pushes towards its goal (closing: negative), up to full load.
+        l.append(-min(100.0, 10 * max(0.0, self.q[J7] - self.goal[J7])) if self.grasping() else 0.0)
+        return [x + random.gauss(0, 0.3) for x in l[:self.n]]
+
+    def grasping(self):
+        return self.object_deg is not None and self.goal[J7] < self.object_deg and self.q[J7] <= self.object_deg + 0.5
 
     def raw(self):
-        p = [pos_raw(j, self.q[j]) for j in range(6)]
-        s = [atom_replay.sm15(SIGN[j] * self.dq[j] * STEPS_PER_DEG) for j in range(6)]
+        n = self.n
+        p = [pos_raw(j, self.q[j]) for j in range(n)]
+        s = [atom_replay.sm15(SIGN[j] * self.dq[j] * STEPS_PER_DEG) for j in range(n)]
         l = [atom_replay.load_raw(j, x) for j, x in enumerate(self.load())]
         acc = [int(round(random.gauss(0, 0.004) * 4096)), int(round(random.gauss(0, 0.004) * 4096)),
                int(round((1 + random.gauss(0, 0.004)) * 4096))]
@@ -135,26 +155,25 @@ class Sim:
         return p, s, l, acc, gyr
 
     def stream(self, client):
+        """STREAM (5.0): t_ms, state, ok, control, n, then pos, goal, spd, load, temp, volt, status of n joints, IMU."""
+        n = self.n
         p, s, l, acc, gyr = self.raw()
-        volt = [76, 76, 76, 66, 64, 64]
+        g = [pos_raw(j, self.goal[j]) for j in range(n)]
+        volt = [76, 76, 76, 66, 64, 64, 74][:n]
         ctrl = 0 if self.controller is None else (1 if self.controller is client else 2)
         t_ms = int((time.monotonic() - self.t0) * 1000) & 0xFFFFFFFF
-        g_load = 30 if self.gripper_on and abs(self.gripper - self.gripper_goal) < 1e-3 else 5
-        return struct.pack("<BIBB6H6H6H6B6B6B3h3hBBhh", 0x88, t_ms, self.state, 1, *p, *s, *l,
-                           *[int(round(t)) for t in self.temp], *volt, *([0] * 6), *acc, *gyr, ctrl,
-                           1, int(round(self.gripper * 1000)), g_load if self.gripper_on else 0)
+        return struct.pack(f"<BIBBBB{n}H{n}H{n}H{n}H{n}B{n}B{n}B3h3h", 0x88, t_ms, self.state, 1, ctrl, n, *p, *g, *s, *l,
+                           *[int(round(t)) for t in self.temp[:n]], *volt, *([0] * n), *acc, *gyr)
 
     def status_line(self):
         ctrl = "none" if self.controller is None else "taken"
         return (f"atom-sim {'.'.join(map(str, VERSION))} state={STATE_NAMES[self.state]} "
-                f"clients={len(self.clients)} control={ctrl} plan={self.plan_samples}")
+                f"clients={len(self.clients)} control={ctrl} plan={self.plan_samples} joints={self.n}")
 
     # --- Simulation ----------------------------------------------------------------------------
 
     def step(self, now):
-        if self.gripper_on:   # the full stroke in about 0.6 s
-            d = self.gripper_goal - self.gripper
-            self.gripper += max(-DT / 0.6, min(DT / 0.6, d))
+        n = self.n
         if self.controller is not None and now - self.controller.last_msg > LEASE:
             run = (self.state == PLAYING and self.play_client is self.controller) or \
                   (self.state == MOVING and self.move and self.move[4] is self.controller)
@@ -165,18 +184,18 @@ class Sim:
         if self.state == MOVING and self.move:
             start, goal, t_start, dur, client = self.move
             x = minjerk((now - t_start) / dur)
-            self.goal = [a + x * (b - a) for a, b in zip(start, goal)]
+            self.goal[:n] = [a + x * (b - a) for a, b in zip(start[:n], goal[:n])]
             if now - t_start >= dur:
                 self.move = None
                 self.state = HOLDING
                 self.done(client, 0)
         if self.state == JOGGING:
             if now - self.jog_last > DEADMAN:
-                self.jog_cmd = [0.0] * 6
-            for j in range(6):
+                self.jog_cmd = [0.0] * 7
+            for j in range(n):
                 dv = max(-JOG_AMAX * DT, min(JOG_AMAX * DT, self.jog_cmd[j] - self.jog_v[j]))
                 self.jog_v[j] += dv
-                lo, hi = LIMIT_MIN[j] + JOG_MARGIN, LIMIT_MAX[j] - JOG_MARGIN
+                lo, hi = jog_range(j, self.goal[j])
                 g = self.goal[j] + self.jog_v[j] * DT
                 if g >= hi or g <= lo:
                     g = hi if g >= hi else lo
@@ -186,15 +205,18 @@ class Sim:
                 self.state = HOLDING
         if self.state == TRACKING:
             stop = now - self.jog_last > DEADMAN
-            track_step(self.goal, self.jog_v, self.track_goal, self.track_vmax, stop)
+            track_step(self.goal, self.jog_v, self.track_goal, self.track_vmax, stop, n)
             if stop and not any(self.jog_v):
                 self.state = HOLDING
-        if self.state != PLAYING:
-            for j in range(6):
-                v = max(-SERVO_VMAX, min(SERVO_VMAX, (self.goal[j] - self.q[j]) / TAU))
-                self.q[j] += v * DT
-                self.dq[j] = v
-        for j in range(6):   # temperature: slowly towards 25 °C + 10 °C at full speed
+        for j in range(n):
+            if self.state == PLAYING and j < N_ARM:
+                continue   # the recording moves J1-J6
+            v = max(-SERVO_VMAX, min(SERVO_VMAX, (self.goal[j] - self.q[j]) / TAU))
+            q = self.q[j] + v * DT
+            if j == J7 and self.object_deg is not None and q < self.object_deg <= self.q[j]:
+                q, v = self.object_deg, 0.0   # the fingers stop on the object
+            self.q[j], self.dq[j] = q, v
+        for j in range(n):   # temperature: slowly towards 25 °C + 10 °C at full speed
             target = 25 + 10 * min(1.0, abs(self.dq[j]) / 60)
             self.temp[j] += (target - self.temp[j]) * DT / 60
 
@@ -205,9 +227,9 @@ class Sim:
         if self.state == MOVING and self.move:
             self.done(self.move[4], result)
         self.move = None
-        self.jog_cmd = [0.0] * 6
-        self.jog_v = [0.0] * 6
-        self.goal = list(self.q)
+        self.jog_cmd = [0.0] * 7
+        self.jog_v = [0.0] * 7
+        self.goal[:N_ARM] = self.q[:N_ARM]   # J7 keeps its goal (a grasp stays closed), as in the firmware
         if self.state != PLAYING:   # a cancelled play sets the state when it ends
             self.state = READY if self.plan_samples else HOLDING
 
@@ -238,7 +260,7 @@ class Sim:
         now = time.monotonic()
         c.last_msg = now
         code = b[0]
-        needs_control = code in (0x04, 0x05, 0x06, 0x07, 0x0A, 0x0B, 0x0E, 0x0F, 0x10, 0x11)
+        needs_control = code in (0x04, 0x05, 0x06, 0x07, 0x0A, 0x0B, 0x0E, 0x0F, 0x10)
         if needs_control and self.controller is None:
             self.controller = c       # nobody has control: the command takes it (as CONTROL 1)
         if needs_control and self.controller is not c:
@@ -249,7 +271,9 @@ class Sim:
         elif code == 0x02:
             if self.state != PLAYING:
                 p, s, l, acc, gyr = self.raw()
-                self.send(c, struct.pack("<BB6H6H6H3h3h", 0x82, 1, *p, *s, *l, *acc, *gyr))
+                n = self.n
+                g = [pos_raw(j, self.goal[j]) for j in range(n)]
+                self.send(c, struct.pack(f"<BBB{n}H{n}H{n}H{n}H3h3h", 0x82, 1, n, *p, *g, *s, *l, *acc, *gyr))
         elif code == 0x03:      # HOLD: also clears an error
             self.stop_motion(2)
             self.ack(c, 0x03, 0)
@@ -279,8 +303,10 @@ class Sim:
                 return self.send(c, bytes([0x86, sid, a, n, 0xFF]))
             regs = bytearray(128)
             regs[21:24] = bytes(self.gains.get(sid, [0, 0, 0]))
-            if 1 <= sid <= 6:
+            if 1 <= sid <= self.n:
                 regs[62], regs[63] = (76 if sid <= 3 else 65), int(round(self.temp[sid - 1]))
+            if sid == J7 + 1 and self.n > N_ARM:
+                regs[3:5] = struct.pack("<H", 0x070A)   # the gripper's model number
             self.send(c, bytes([0x86, sid, a, n, 0]) + bytes(regs[a:a + n]))
         elif code == 0x0A and len(b) >= 5:
             sid, a, n = b[1], b[2], b[3]
@@ -313,53 +339,57 @@ class Sim:
                 else:
                     self.controller = c
                     self.ack(c, 0x0D, 0)
-        elif code == 0x0E and len(b) >= 15:
-            vals = struct.unpack_from("<6hH", b, 1)
-            goal, dur_ms = [v / 100 for v in vals[:6]], vals[6]
+        elif code == 0x0E and len(b) in (15, 17):   # MOVE_TO: 6 goals, or 7 with J7 (5.0)
+            nj = (len(b) - 3) // 2
+            vals = struct.unpack_from(f"<{nj}hH", b, 1)
+            goal, dur_ms = [v / 100 for v in vals[:nj]], vals[nj]
+            if nj > self.n:
+                return self.ack(c, 0x0E, -7)
             if self.moving():
                 return self.ack(c, 0x0E, -1)
-            for j in range(6):
-                if not LIMIT_MIN[j] + JOG_MARGIN <= goal[j] <= LIMIT_MAX[j] - JOG_MARGIN:   # as motion::move_validate
+            for j in range(nj):
+                if not LIMIT_MIN[j] + margin(j) <= goal[j] <= LIMIT_MAX[j] - margin(j):   # as motion::move_validate
                     return self.ack(c, 0x0E, -10 - (j + 1))
-            start = list(self.q)
+            start = self.q[:N_ARM] + self.goal[N_ARM:]   # J7 starts from its goal
+            goal += start[nj:]                           # 6 goals: J7 holds
             t_min = max(max(1.875 * d / MOVE_VMAX, math.sqrt(5.77 * d / a))
-                        for d, a in ((abs(g - s), a) for g, s, a in zip(goal, start, MOVE_AMAX)))
+                        for d, a in ((abs(g - s), a) for g, s, a in zip(goal[:self.n], start, MOVE_AMAX)))
             dur = dur_ms / 1000 if dur_ms else max(0.2, t_min)
             if dur < t_min - 1e-6:
                 return self.ack(c, 0x0E, -1)
             self.move = (start, goal, now, dur, c)
             self.state = MOVING
             self.ack(c, 0x0E, 0)
-        elif code == 0x0F and len(b) >= 14:
-            frame = b[1]
-            vel = [v / 10 for v in struct.unpack_from("<6h", b, 2)]
+        elif code == 0x0F and len(b) in (14, 16):   # JOG: 6 velocities, or 7 with J7 (5.0)
+            frame, nj = b[1], (len(b) - 2) // 2
+            vel = [v / 10 for v in struct.unpack_from(f"<{nj}h", b, 2)] + [0.0] * (7 - nj)
+            if nj > self.n:
+                return self.ack(c, 0x0F, -7)
             if frame != 0 or self.state in (PLAYING, MOVING):
                 return self.ack(c, 0x0F, -1)
             self.jog_cmd = [max(-JOG_VMAX, min(JOG_VMAX, v)) for v in vel]
             self.jog_last = now
             if any(self.jog_cmd) and self.state != JOGGING:
-                self.goal = list(self.q)
+                self.goal[:N_ARM] = self.q[:N_ARM]   # J7 starts from its goal
                 self.state = JOGGING
-        elif code == 0x11 and len(b) >= 3:    # GRIPPER (4.6): opening (0.1 %) or 0xFFFF (torque off)
-            v = struct.unpack_from("<H", b, 1)[0]
-            if v > 1000 and v != 0xFFFF or self.state == PLAYING:
-                return self.ack(c, 0x11, -1)
-            self.gripper_on = v != 0xFFFF
-            if self.gripper_on:
-                self.gripper_goal = v / 1000
-        elif code == 0x10 and len(b) >= 15:   # TRACK (4.4): goal pose (0.01°) and speed cap (0.1°/s)
-            goal = [v / 100 for v in struct.unpack_from("<6h", b, 1)]
-            vmax = struct.unpack_from("<H", b, 13)[0] / 10
-            bad = [j for j in range(6) if not LIMIT_MIN[j] + JOG_MARGIN <= goal[j] <= LIMIT_MAX[j] - JOG_MARGIN]
+        elif code == 0x10 and len(b) in (15, 17):   # TRACK (4.4): goal pose (0.01°; 6 or 7 joints) and speed cap (0.1°/s)
+            nj = (len(b) - 3) // 2
+            goal = [v / 100 for v in struct.unpack_from(f"<{nj}h", b, 1)]
+            vmax = struct.unpack_from("<H", b, 1 + 2 * nj)[0] / 10
+            if nj > self.n:
+                return self.ack(c, 0x10, -7)
+            bad = [j for j in range(nj) if not LIMIT_MIN[j] + margin(j) <= goal[j] <= LIMIT_MAX[j] - margin(j)]
             if bad:
                 return self.ack(c, 0x10, -10 - (bad[0] + 1))
             if self.state not in (HOLDING, READY, TRACKING):
                 return self.ack(c, 0x10, -1)
-            self.track_goal, self.track_vmax, self.jog_last = goal, vmax, now
             if self.state != TRACKING:
-                self.goal = list(self.q)
-                self.jog_v = [0.0] * 6
+                self.goal[:N_ARM] = self.q[:N_ARM]   # J7 starts from its goal
+                self.jog_v = [0.0] * 7
+                self.track_goal[J7] = self.goal[J7]
                 self.state = TRACKING
+            self.track_goal[:nj] = goal              # 6 goals: J7 keeps its last goal
+            self.track_vmax, self.jog_last = vmax, now
 
     async def play(self, c):
         rec, seq, result = self.rec, 0, 0
@@ -382,7 +412,7 @@ class Sim:
         except asyncio.CancelledError:
             result = 2
         self.done(c, result)
-        self.goal = list(self.q)
+        self.goal[:N_ARM] = self.q[:N_ARM]
         self.state = READY if self.plan_samples else HOLDING
         self.play_task = None
 
@@ -439,8 +469,10 @@ def main():
     ap.add_argument("--host", default="127.0.0.1")   # or the Tailscale address; never the home network
     ap.add_argument("--port", type=int, default=8281)
     ap.add_argument("--recording", help="an ATOM recording for PLAY and PLAY_SIGNAL")
+    ap.add_argument("--no-gripper", action="store_true", help="no gripper: 6 joints")
+    ap.add_argument("--object", type=float, metavar="DEG", help="an object in the gripper: J7 stops at DEG when it closes")
     a = ap.parse_args()
-    asyncio.run(run(Sim(a.recording), a.host, a.port))
+    asyncio.run(run(Sim(a.recording, not a.no_gripper, a.object), a.host, a.port))
 
 
 if __name__ == "__main__":

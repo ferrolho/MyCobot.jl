@@ -27,9 +27,9 @@ export class AtomLink {
   private retryTimer = 0;
   private retries = 0;
   private wanted = false; // the user wants to be connected
-  private jogVel = [0, 0, 0, 0, 0, 0];
+  private jogVel = [0, 0, 0, 0, 0, 0, 0];
   private trackTimer = 0;
-  private trackGoal = [0, 0, 0, 0, 0, 0];
+  private trackGoal = [0, 0, 0, 0, 0, 0, 0];
   private trackVmax = 0;
   private trackSent = 0;
   address = '';
@@ -38,6 +38,11 @@ export class AtomLink {
   last: P.Stream | null = null;
   /** True while this client has control (from the ACKs; from the STREAM byte with firmware 4.2). */
   inControl = false;
+
+  /** The joints in use: 7 while the ATOM finds the gripper (J7, firmware 5.0+), else 6. JOG and TRACK send this many. */
+  get joints(): number {
+    return this.last?.q.length ?? P.N_ARM;
+  }
 
   on<K extends keyof AtomEvents>(type: K, fn: (e: AtomEvents[K]) => void) {
     this.target.addEventListener(type, (e) => fn((e as CustomEvent).detail));
@@ -175,8 +180,9 @@ export class AtomLink {
     this.send(P.hold());
   }
 
+  /** The goal of every joint in use (`joints`); with 6 values J7 holds its goal. */
   moveTo(goalDeg: number[], durationS = 0) {
-    this.send(P.moveTo(goalDeg, durationS));
+    this.send(P.moveTo(goalDeg.slice(0, this.joints), durationS));
   }
 
   /** Jog one joint at `vel` °/s (0 stops that joint). The deadman stops the robot if the page stops sending. */
@@ -184,12 +190,16 @@ export class AtomLink {
     this.jogVel[joint] = Math.max(-P.JOG_VMAX, Math.min(P.JOG_VMAX, vel));
     if (this.jogVel.some((x) => x)) {
       if (!this.jogTimer) {
-        this.send(P.jog(this.jogVel));
-        this.jogTimer = window.setInterval(() => this.send(P.jog(this.jogVel)), JOG_PERIOD_MS);
+        this.sendJog();
+        this.jogTimer = window.setInterval(() => this.sendJog(), JOG_PERIOD_MS);
       }
     } else {
       this.stopJog();
     }
+  }
+
+  private sendJog() {
+    this.send(P.jog(this.jogVel.slice(0, this.joints)));
   }
 
   /** Live mode (firmware 4.4+): the ATOM moves the joints to `goalDeg` at up to `vmaxDegS` and its
@@ -205,7 +215,7 @@ export class AtomLink {
 
   private sendTrack() {
     this.trackSent = performance.now();
-    this.send(P.track(this.trackGoal, this.trackVmax));
+    this.send(P.track(this.trackGoal.slice(0, this.joints), this.trackVmax));
   }
 
   /** Stop Live mode. With `send`, HOLD at once (the arm brakes now, not after the 200 ms deadman). */
@@ -221,7 +231,7 @@ export class AtomLink {
     const wasJogging = !!this.jogTimer;
     clearInterval(this.jogTimer);
     this.jogTimer = 0;
-    this.jogVel = [0, 0, 0, 0, 0, 0];
-    if (send && wasJogging) this.send(P.jog(this.jogVel));
+    this.jogVel = [0, 0, 0, 0, 0, 0, 0];
+    if (send && wasJogging) this.sendJog();
   }
 }
