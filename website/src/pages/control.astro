@@ -451,7 +451,9 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
   .ctl .p-legend { display: flex; flex-wrap: wrap; gap: 0 0.6rem; color: var(--sl-color-gray-2); }
   .ctl .p-legend span { white-space: nowrap; }
   .ctl .p-legend i { display: inline-block; width: 0.7rem; height: 2px; border-radius: 1px; margin-inline-end: 0.25rem; vertical-align: 0.2rem; }
-  .ctl .p-legend b { font-weight: 600; color: var(--sl-color-white); }
+  /* Each value in a box of fixed width (app.ts sets --value-width), right-aligned: a sign or another digit
+     does not change the width of the legend, so it does not wrap differently and the plot does not move. */
+  .ctl .p-legend b { font-weight: 600; color: var(--sl-color-white); display: inline-block; width: var(--value-width); text-align: end; }
   .ctl .p-area { flex: 1 1 auto; min-height: 3rem; position: relative; }
   .ctl .p-area > .uplot { position: absolute; inset: 0; }
 

@@ -28,16 +28,19 @@ interface PlotDef {
   title: string;
   unit: string;
   digits: number;
+  // The box of a legend value, in ch: 1 ch per digit of the widest value (tabular figures), plus 1.2 ch
+  // for the sign and the decimal point ("-168.0": 4 + 1.2).
+  width: number;
   minSpan: number; // smallest y range, so that noise does not fill the plot
   names: string[];
 }
 const PLOTS: PlotDef[] = [
-  { key: 'q', title: 'Angle', unit: '°', digits: 1, minSpan: 2, names: JOINT_NAMES },
-  { key: 'dq', title: 'Speed', unit: '°/s', digits: 1, minSpan: 2, names: JOINT_NAMES },
-  { key: 'load', title: 'Load', unit: '%', digits: 1, minSpan: 2, names: JOINT_NAMES },
-  { key: 'temp', title: 'Temperature', unit: '°C', digits: 0, minSpan: 2, names: JOINT_NAMES },
-  { key: 'acc', title: 'IMU acceleration', unit: 'g', digits: 2, minSpan: 0.2, names: ['x', 'y', 'z'] },
-  { key: 'gyro', title: 'IMU angular rate', unit: '°/s', digits: 1, minSpan: 2, names: ['x', 'y', 'z'] },
+  { key: 'q', title: 'Angle', unit: '°', digits: 1, width: 5.2, minSpan: 2, names: JOINT_NAMES },
+  { key: 'dq', title: 'Speed', unit: '°/s', digits: 1, width: 5.2, minSpan: 2, names: JOINT_NAMES },
+  { key: 'load', title: 'Load', unit: '%', digits: 1, width: 5.2, minSpan: 2, names: JOINT_NAMES },
+  { key: 'temp', title: 'Temperature', unit: '°C', digits: 0, width: 3, minSpan: 2, names: JOINT_NAMES },
+  { key: 'acc', title: 'IMU acceleration', unit: 'g', digits: 2, width: 4.2, minSpan: 0.2, names: ['x', 'y', 'z'] },
+  { key: 'gyro', title: 'IMU angular rate', unit: '°/s', digits: 1, width: 5.2, minSpan: 2, names: ['x', 'y', 'z'] },
 ];
 
 // --- Address history (per browser; it can be unavailable) ---------------------------------------
@@ -112,9 +115,14 @@ function padRange(lo: number, hi: number, minSpan: number): [number, number] {
   return [mid - span * 0.55, mid + span * 0.55];
 }
 
+/** A legend value: no "-0.0" (a value that rounds to zero has no sign). */
+const fmtLegend = (x: number | null, d: number) => fmt(x, d).replace(/^-(0(\.0*)?)$/, '$1');
+
 /** One small multiple: n series, a recessive grid, the time axis in seconds, a crosshair synced
  *  with the other plots. The legend above the plot shows the values at the crosshair (or the
- *  latest values) as text, so the colours never carry the numbers alone. */
+ *  latest values) as text, so the colours never carry the numbers alone. Each value has a box of
+ *  fixed width (def.width, tabular figures), so the legend never changes its width or
+ *  its lines and the plot never moves. */
 class Plot {
   u: uPlot;
   private legend: HTMLElement;
@@ -122,6 +130,7 @@ class Plot {
   private shown: boolean[];
   constructor(private def: PlotDef, private fig: HTMLElement, private hist: History) {
     this.legend = $('.p-legend', fig);
+    this.legend.style.setProperty('--value-width', `${def.width}ch`);
     this.shown = def.names.map((_, k) => k < P.N_ARM); // J7 from showSeries, once the gripper is there
     this.legend.replaceChildren(
       ...def.names.map((name, k) => {
@@ -197,7 +206,7 @@ class Plot {
     const idx = this.u.cursor.idx;
     const n = this.hist.t.length;
     const i = idx != null && idx >= 0 && idx < n ? idx : n - 1;
-    this.values.forEach((b, k) => (b.textContent = i >= 0 ? fmt(this.hist.cols[k][i], this.def.digits) : '–'));
+    this.values.forEach((b, k) => (b.textContent = i >= 0 ? fmtLegend(this.hist.cols[k][i], this.def.digits) : '–'));
   }
 }
 
@@ -321,7 +330,9 @@ export function start(): Promise<ArmView> {
     plotGrid.querySelectorAll<HTMLElement>('.plot').forEach((fig, k) => plots.push(new Plot(PLOTS[k], fig, hist[PLOTS[k].key])));
     plots.forEach((p) => p.showSeries(J7, nShown > J7));
   });
-  new ResizeObserver(() => plots.forEach((p) => p.resize())).observe(plotGrid);
+  // Each plot area: the canvas follows its box (also when the legend gets a line for J7).
+  const plotResize = new ResizeObserver(() => plots.forEach((p) => p.resize()));
+  plotGrid.querySelectorAll('.p-area').forEach((a) => plotResize.observe(a));
 
   // Repaint the plots when the theme changes (the colours are CSS variables).
   new MutationObserver(() => {
