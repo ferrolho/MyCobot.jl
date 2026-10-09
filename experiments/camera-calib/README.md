@@ -34,3 +34,30 @@ camera turns of 1.5–3° recovered within 1.1 mm everywhere in the workspace. N
 can hide some).
 
 Redo the tape fit only if the lens changes (zoom, focus, resolution).
+
+## Continuous tracking (2026-10-09)
+
+`tool/track_screws.py` runs on the Pi and keeps the camera model up to date while someone watches the camera:
+it rewrites `~/myCobot/lab-camera.json` (the lab service serves it as `/lab/camera.json`; the Control page's
+overlay reads it every 0.5 s) with the screws it found as `marks`.
+
+    ~/venvs/mycobot/bin/python experiments/camera-calib/tool/track_screws.py        # on the Pi (needs opencv-python-headless)
+    python3 tool/track_screws.py --replay IMG ...                                  # offline: the filter over images
+
+- Model: camera = M · T_accurate (the calibrated pose of the reference image), M = the camera's motion seen
+  through the screws (as `rereg_screws.relative`). A Kalman filter on M (rotation, translation): random walk;
+  each screw found near its predicted place is a measurement; a gate (chi-square) drops screws hidden by the
+  arm or matched to the wrong hole; an update needs 2+ screws that agree within 3 px.
+- A move: if fewer than 2 screws match, the filter searches again at once with a larger uncertainty and keeps
+  the result if 3+ screws agree; after 2 such frames, the full-image search (`rereg_screws.register`) finds the
+  plate again.
+- Tests (2026-10-09): 55 snapshots with the arm moving and hiding screws: a point in the gripper's workspace
+  (200, 100, 150) mm stays within 0.1–0.2 px (sd; range 1.3 px). Simulated camera turns (exact image warps of
+  one snapshot): a 1° pan followed within 2.3 px, 2° and 4° bumps followed in the same frame within 0.8–3.3 px.
+  About 10 ms per frame on the laptop.
+- Top screws: the six plate screws are in one plane, so they leave the camera's tilt and sideways shift poorly
+  determined. The tracker also uses the six screws on top of the base (J1 housing): light dots found by a
+  difference of Gaussians. They are not where the URDF mesh puts them: the real base has **6 screws 60° apart**
+  (two hexagon edges parallel to the front and back faces), the mesh has 8 screws 45° apart. Measured
+  (consistency scan over the snapshots, 1.17 px rms): radius 34.5 mm, height 73 mm, first screw at 31°.
+- The update drops the worst screw while its error is above 3 px and keeps the rest.
