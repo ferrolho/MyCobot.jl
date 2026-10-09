@@ -1,0 +1,82 @@
+{
+ "generated_by": "tools/gen_robot.py from mycobot_description/config/mycobot_280_arduino/calibration.yaml",
+ "joints": [
+  "joint2_to_joint1",
+  "joint3_to_joint2",
+  "joint4_to_joint3",
+  "joint5_to_joint4",
+  "joint6_to_joint5",
+  "joint6output_to_joint6"
+ ],
+ "encoder_correction": [
+  {
+   "sin": [
+    0.0,
+    0.0
+   ],
+   "cos": [
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "sin": [
+    0.0,
+    0.0
+   ],
+   "cos": [
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "sin": [
+    0.0,
+    0.0
+   ],
+   "cos": [
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "sin": [
+    0.0,
+    0.0
+   ],
+   "cos": [
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "sin": [
+    1.493,
+    0.598
+   ],
+   "cos": [
+    0.018,
+    -0.377
+   ]
+  },
+  {
+   "sin": [
+    0.0,
+    0.0
+   ],
+   "cos": [
+    0.0,
+    0.0
+   ]
+  }
+ ],
+ "zero_offset": [
+  1.08,
+  -0.2,
+  -1.57,
+  0.34,
+  -0.13,
+  0.64
+ ],
+ "rule": "true angle = encoder angle − Σ sin[k]·sin(k·q) − Σ cos[k]·(cos(k·q) − 1) + zero_offset (degrees)"
+}

@@ -42,3 +42,6 @@ const ENCODER_CORRECTION = (
     (sin = (1.493, 0.598), cos = (0.018, -0.377)),
     (sin = (0.0, 0.0), cos = (0.0, 0.0)),
 )
+
+"""Zero offset of each joint for this robot (degrees; from mycobot_description/config/mycobot_280_arduino/calibration.yaml): added to the true angle. See `encoder_error`."""
+const JOINT_ZERO_OFFSET = (1.08, -0.2, -1.57, 0.34, -0.13, 0.64)

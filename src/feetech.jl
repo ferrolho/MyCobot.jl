@@ -175,14 +175,15 @@ end
 """
     encoder_error(j, q)
 
-Error (degrees) of the encoder of joint `j` at encoder angle `q` (degrees), from
-`ENCODER_CORRECTION` (this robot's calibration.yaml): true angle = encoder angle − error.
-Zero at `q = 0`. Measured with the gyro (docs: results/imu-encoders).
+Error (degrees) of the encoder of joint `j` at encoder angle `q` (degrees), from this robot's
+calibration.yaml: true angle = encoder angle − error. The error is `ENCODER_CORRECTION` (zero at
+`q = 0`; measured with the gyro, docs: results/imu-encoders) minus `JOINT_ZERO_OFFSET` (measured with
+the camera, docs: results/kinematic-calibration).
 """
 function encoder_error(j::Integer, q::Real)
     j > length(ENCODER_CORRECTION) && return 0.0   # no correction measured (J7, the gripper)
     c = ENCODER_CORRECTION[j]
-    e = 0.0
+    e = -JOINT_ZERO_OFFSET[j]
     for k in eachindex(c.sin)
         e += c.sin[k] * sind(k * q) + c.cos[k] * (cosd(k * q) - 1)
     end

@@ -21,6 +21,8 @@ const J7 = 6;
  */
 export type SceneObject = { name: string; shape: 'box' | 'ellipsoid'; center: number[]; size: number[]; yaw?: number; color?: string };
 export type Scene = { table_z?: number; objects: SceneObject[] };
+/** This arm's joint calibration (calibration.json, served by the lab service as /lab/calibration.json). */
+export type Calibration = { encoder_correction: { sin: number[]; cos: number[] }[]; zero_offset: number[] };
 
 /** The solid arm (measured pose) and the see-through ghost (goal pose), from one URDF. */
 type Arm = { robot: URDFRobot; ghost: URDFRobot };
@@ -38,6 +40,7 @@ export class ArmView {
   private gripperArm: Promise<Arm> | null = null;
   private wantGripper = false;
   private q: number[] | null = null;
+  private calibration: Calibration | null = null;
   private goal: number[] | null = null;
   private grid: THREE.GridHelper;
   private objects = new THREE.Group();
@@ -174,7 +177,7 @@ export class ArmView {
 
   private apply(r: URDFRobot | null, qDeg: number[]) {
     if (!r) return;
-    JOINTS.forEach((name, j) => r.setJointValue(name, THREE.MathUtils.degToRad(qDeg[j])));
+    JOINTS.forEach((name, j) => r.setJointValue(name, THREE.MathUtils.degToRad(this.trueAngle(j, qDeg[j]))));
     const g = r.joints[GRIPPER_JOINT];
     if (g && qDeg.length > J7) {
       const f = Math.max(0, Math.min(1, (qDeg[J7] - LIMIT_MIN[J7]) / (LIMIT_MAX[J7] - LIMIT_MIN[J7])));
@@ -182,6 +185,31 @@ export class ArmView {
       g.setJointValue(lower + f * (upper - lower));
     }
     this.needsRender = true;
+  }
+
+  /**
+   * This arm's joint calibration (the lab service's /lab/calibration.json), or null: the view then draws the
+   * pose that the robot model gives for the calibrated angles. Only the drawing changes; the angles that the
+   * page shows and sends are the ATOM's.
+   */
+  setCalibration(c: Calibration | null) {
+    this.calibration = c;
+    if (this.q) this.apply(this.robot, this.q);
+    if (this.goal) this.apply(this.ghost, this.goal);
+    this.needsRender = true;
+    this.revision++;
+  }
+
+  /** The true angle of joint j (deg) for an ATOM angle: true = q − Σ sin[k]·sin(k·q) − Σ cos[k]·(cos(k·q) − 1) + zero offset. */
+  private trueAngle(j: number, q: number) {
+    const c = this.calibration;
+    if (!c || j >= c.zero_offset.length) return q;
+    const e = c.encoder_correction[j];
+    let err = 0;
+    const r = THREE.MathUtils.degToRad(q);
+    e.sin.forEach((a, k) => (err += a * Math.sin((k + 1) * r)));
+    e.cos.forEach((a, k) => (err += a * (Math.cos((k + 1) * r) - 1)));
+    return q - err + c.zero_offset[j];
   }
 
   /** The measured pose, in degrees: J1-J6, and J7 (the gripper) when it is there. */

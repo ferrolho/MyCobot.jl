@@ -1,7 +1,9 @@
 # Calibration of one robot: the lab's myCobot 280 for Arduino. Another arm needs its own values.
-# tools/gen_robot.py reads this file and writes ENCODER_CORRECTION in src/robot_params.jl.
-# Only the Julia package applies it. The firmware and the Control page serve every user's arm, so
-# they do not (that needs a calibration stored on each ATOM; see the roadmap).
+# tools/gen_robot.py reads this file and writes ENCODER_CORRECTION and JOINT_ZERO_OFFSET in
+# src/robot_params.jl, and calibration.json (the lab service serves it as /lab/calibration.json).
+# The Julia package applies it to every angle. The Control page draws the calibrated pose in its 3D
+# view and camera overlay only when the lab service serves this file. The firmware serves every
+# user's arm, so it does not (that needs a calibration stored on each ATOM; see the roadmap).
 #
 # encoder_correction: the error of a joint encoder against the true joint angle, in degrees:
 #   true angle = encoder angle − e(encoder angle)
@@ -14,3 +16,17 @@ encoder_correction:
   # 2026-10-06: two sweeps over ±148° with the J5 axis vertical (--base=0,-10,0,10,0,0 --amp=150),
   # gyro scale from these and the J1 sweep. 3.7° peak to peak; the runs agree to 0.06°.
   joint6_to_joint5: { sin: [1.493, 0.598], cos: [0.018, -0.377] }
+
+# zero_offset: a constant error of the joint's zero, in degrees: it adds to the true angle:
+#   true angle = encoder angle − e(encoder angle) + zero_offset
+zero_offset:
+  # 2026-10-09: 39 poses in free air, the camera registered on the base plate screws; the model's visible
+  # outline fitted to the background-subtracted edges of each snapshot (experiments/kinematic-calib on
+  # plush-pick). J1 is consistent across three batches (+0.9 to +1.3); J2-J6 are within about ±1.5° of
+  # these values. The IMU gives J2+J3+J4 = -1.0 (here -1.43). Fingertip change: 5 mm on average, 9 mm at most.
+  joint2_to_joint1: 1.08
+  joint3_to_joint2: -0.20
+  joint4_to_joint3: -1.57
+  joint5_to_joint4: 0.34
+  joint6_to_joint5: -0.13
+  joint6output_to_joint6: 0.64

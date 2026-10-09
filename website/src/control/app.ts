@@ -242,6 +242,11 @@ export function start(): Promise<ArmView> {
         })
         .catch(() => {});
     loadScene();
+    // This arm's joint calibration: only the lab service has it. The 3D view (and the camera overlay) draw the calibrated pose.
+    fetch('/lab/calibration.json', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((c) => c && Array.isArray(c.zero_offset) && arm?.setCalibration(c))
+      .catch(() => {});
     return arm;
   });
   $('#arm-reset').addEventListener('click', () => arm?.resetView());

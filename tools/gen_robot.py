@@ -20,6 +20,7 @@ Writes:
     src/robot_params.jl                                                     Julia package
 """
 import math
+import json
 import os
 import sys
 
@@ -71,6 +72,9 @@ def params():
     corr = (calib or {}).get("encoder_correction") or {}
     if set(corr) - set(names):
         sys.exit(f"calibration.yaml: unknown joints {sorted(set(corr) - set(names))}")
+    zero = (calib or {}).get("zero_offset") or {}
+    if set(zero) - set(names):
+        sys.exit(f"calibration.yaml: unknown joints {sorted(set(zero) - set(names))}")
     g = servos["gripper"]
     if g["id"] != len(names) + 1:
         sys.exit("servos.yaml: the gripper (J7) must have the bus ID after the last joint")
@@ -79,6 +83,7 @@ def params():
     pad = lambda xs: [float(x) for x in xs] + [0.0] * (n_terms - len(xs))
     return {
         "encoder_correction": [(pad(corr.get(n, {}).get("sin", [])), pad(corr.get(n, {}).get("cos", []))) for n in names],
+        "zero_offset": [float(zero.get(n, 0.0)) for n in names],
         "names": names,
         "limit_min": [round(d, 4) for d in limit_min],
         "limit_max": [round(d, 4) for d in limit_max],
@@ -163,7 +168,18 @@ def jl_correction(p):
     rows = ",\n".join(f"    (sin = {tup(s)}, cos = {tup(c)})" for s, c in p["encoder_correction"])
     return ("\n\"\"\"Encoder correction of each joint for this robot (degrees; from " + CALIBRATION + "):\n"
             "true angle = encoder angle − Σ sin[k]·sin(k·q) − Σ cos[k]·(cos(k·q) − 1). See `encoder_error`.\"\"\"\n"
-            f"const ENCODER_CORRECTION = (\n{rows},\n)\n")
+            f"const ENCODER_CORRECTION = (\n{rows},\n)\n"
+            "\n\"\"\"Zero offset of each joint for this robot (degrees; from " + CALIBRATION + "): added to the true angle. See `encoder_error`.\"\"\"\n"
+            f"const JOINT_ZERO_OFFSET = {tup(p['zero_offset'])}\n")
+
+
+def json_calibration(p):
+    """This robot's calibration for the lab service (/lab/calibration.json): the Control page draws the calibrated pose."""
+    return json.dumps({"generated_by": "tools/gen_robot.py from " + CALIBRATION, "joints": p["names"],
+                       "encoder_correction": [{"sin": s, "cos": c} for s, c in p["encoder_correction"]],
+                       "zero_offset": p["zero_offset"],
+                       "rule": "true angle = encoder angle − Σ sin[k]·sin(k·q) − Σ cos[k]·(cos(k·q) − 1) + zero_offset (degrees)"},
+                      indent=1, ensure_ascii=False) + "\n"
 
 
 def jl_params(p):
@@ -203,6 +219,7 @@ def outputs():
         "website/src/control/robot_params.ts": ts_params(p),
         "tools/robot_params.py": py_params(p),
         "src/robot_params.jl": jl_params(p),
+        CALIBRATION.replace(".yaml", ".json"): json_calibration(p),
     }
 
 

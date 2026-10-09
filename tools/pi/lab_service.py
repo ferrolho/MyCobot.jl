@@ -16,6 +16,8 @@ that opens the camera.
     /atom/ws               the ATOM's WebSocket (ws://ATOM/ws), relayed byte for byte
     /lab/scene.json        ~/myCobot/lab-scene.json: objects near the robot, for the 3D view (404 if missing)
     /lab/camera.json       ~/myCobot/lab-camera.json: the camera model, for the camera overlay (404 if missing)
+    /lab/calibration.json  this arm's joint calibration (calibration.json in mycobot_description): the 3D view and
+                           the camera overlay draw the calibrated pose
 
 The relay lets a browser away from home reach the ATOM over Tailscale. Only the Pi talks to the
 ATOM, on the home network, so a slow link (for example a phone hotspot) does not fill the ATOM's
@@ -55,6 +57,8 @@ LOG_MAX_BODY = 1 << 20
 LAB_FILES = {
     "/lab/scene.json": os.path.expanduser("~/myCobot/lab-scene.json"),     # objects near the robot, for the 3D view
     "/lab/camera.json": os.path.expanduser("~/myCobot/lab-camera.json"),   # the camera model, for the camera overlay
+    # this arm's joint calibration (generated from calibration.yaml): the page draws the calibrated pose
+    "/lab/calibration.json": os.path.join(ROOT, "mycobot_description/config/mycobot_280_arduino/calibration.json"),
 }
 ATOM = "192.168.1.107"   # the ATOM's address on the home network (--atom)
 ALLOW = ("127.0.0.0/8", "100.64.0.0/10")   # clients always served: loopback and Tailscale (more with --allow)

@@ -51,16 +51,17 @@ end
     @test MyCobot.decode_signed15(0x8064) == -100
     @test MyCobot.decode_signed15(0x0064) == 100
     @test MyCobot.decode_load(0x0421) ≈ -3.3        # bit 10 = direction, 0.1 % units
-    @test all(MyCobot.angle_to_position(j, 0.0) == 2048 for j in 1:6)
-    # Readings taken at the same pose: direct servo positions vs the ATOM's get_angles
-    @test MyCobot.position_to_angle(1, 2134) ≈ -7.47 atol = 0.1
-    @test MyCobot.position_to_angle(3, 3790) ≈ 153.1 atol = 0.1
+    # Step 2048 is the encoder's 0°: the true angle there is the zero offset (calibration.yaml).
+    @test all(MyCobot.angle_to_position(j, MyCobot.JOINT_ZERO_OFFSET[j]) == 2048 for j in 1:6)
+    # Readings taken at the same pose: direct servo positions vs the ATOM's get_angles (plus the zero offset)
+    @test MyCobot.position_to_angle(1, 2134) ≈ -7.47 + MyCobot.JOINT_ZERO_OFFSET[1] atol = 0.1
+    @test MyCobot.position_to_angle(3, 3790) ≈ 153.1 + MyCobot.JOINT_ZERO_OFFSET[3] atol = 0.1
     for j in 1:6, deg in (-90.0, -12.3, 0.0, 45.6)
         @test MyCobot.position_to_angle(j, MyCobot.angle_to_position(j, deg)) ≈ deg atol = 360 / 4096
     end
-    # Encoder correction (calibration.yaml): zero at 0°; the servo position moves by the error.
+    # Encoder correction (calibration.yaml): minus the zero offset at 0°; the servo position moves by the error.
     for j in 1:6
-        @test MyCobot.encoder_error(j, 0.0) == 0
+        @test MyCobot.encoder_error(j, 0.0) == -MyCobot.JOINT_ZERO_OFFSET[j]
         for deg in (-140.0, -60.0, 75.0, 150.0)
             q_enc = deg + MyCobot.encoder_error(j, deg + MyCobot.encoder_error(j, deg))
             @test MyCobot.angle_to_position(j, deg) == round(Int, 2048 + MyCobot.JOINT_SIGN[j] * q_enc * MyCobot.STEPS_PER_DEG)
@@ -145,7 +146,7 @@ allocs_sample(out, t, q, x, lag) = @allocated MyCobot.sample_trajectory!(out, t,
     allocs_read(b, io); allocs_write(b, io, q)
     @test allocs_read(b, io) == 0
     @test allocs_write(b, io, q) == 0
-    @test b.ok && maximum(abs, b.q) < 0.1
+    @test b.ok && maximum(abs, b.q .- collect(MyCobot.JOINT_ZERO_OFFSET)) < 0.1   # step 2048: the zero offsets
     t_plan = collect(0:0.01:1.0); q_plan = rand(length(t_plan), 6); out = zeros(6); lag = fill(0.05, 6)
     allocs_sample(out, t_plan, q_plan, 0.3, lag)
     @test allocs_sample(out, t_plan, q_plan, 0.3, lag) == 0

@@ -96,6 +96,7 @@ export default defineConfig({
             { label: 'Iterative learning control', slug: 'results/ilc' },
             { label: 'Onboard control and vibration', slug: 'results/onboard' },
             { label: 'IMU calibration and encoder errors', slug: 'results/imu-encoders' },
+            { label: 'Kinematic calibration', slug: 'results/kinematic-calibration' },
           ],
         },
         {
