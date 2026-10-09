@@ -12,6 +12,8 @@ const float VMAX_DPS = 90;   // speed limit (°/s)
 const float AMAX_DPS2[N_JOINTS] = {400, 400, 400, 2000, 2000, 2000, 2000};   // acceleration limits (°/s²)
 const int8_t JOINT_SIGN[N_JOINTS] = {-1, -1, 1, -1, -1, -1, 1};   // angle = sign × (step − 2048) × 360 / 4096
 const uint8_t GAINS[N_JOINTS][3] = {{32, 4, 16}, {32, 4, 16}, {32, 4, 16}, {32, 8, 0}, {32, 8, 0}, {32, 8, 0}, {150, 150, 0}};   // P, D, I (registers 21, 22, 23)
+const uint8_t START_FORCE[N_ARM] = {0, 20, 20, 20, 0, 0};   // register 24 (minimum starting force), J1-J6
+const uint8_t DEAD_ZONE[N_ARM] = {3, 1, 1, 1, 3, 3};   // registers 26/27 (dead zone, steps), J1-J6
 const uint16_t GRIPPER_MODEL = 0x070A;   // J7 (registers 3-4)
 const uint16_t GRIPPER_TORQUE = 1000;   // registers 16, 28 and 48 (0-1000), set when found
 const uint8_t GRIPPER_HOT_C = 70, GRIPPER_COOL_C = 60;   // derate above, restore below (°C)

@@ -116,8 +116,27 @@ on the sine recordings (see [Servo response](/mycobot-280-lab/results/servo-resp
 | J5 | 0 ms | 40 ms | 40 ms | 10 / 0 / 1 |
 | J6 | 4 ms | 25 ms | 28 ms | 10 / 0 / 1 |
 
-The joints also stick for 0.2–0.5 s after a reversal (static friction). The dead
-zone (registers 26/27) is 3 steps on every joint.
+The joints also stick for 0.2–0.5 s after a reversal (static friction). The factory dead
+zone (registers 26/27) is 3 steps on every joint, and the minimum starting force (register 24)
+is 0.
+
+### Slow motions: starting force and dead zone
+
+At slow speed, J2 and J3 move in steps. The servo does nothing until its error passes the
+dead zone and the friction, then it jumps. Test on 2026-10-09: a vertical descent of the
+fingertips at 4 mm/s in free air (J2 about 0.5°/s), recorded at 500 Hz.
+
+| J2–J4 registers 24 / 26–27 | J2: measured − plan | J3: measured − plan | J2 motion |
+| --- | --- | --- | --- |
+| 0 / 3 (factory) | −0.62 to +0.70° | −1.76 to −0.97° | steps of about 1° |
+| 0 / 1 | −0.53 to +0.53° | −1.67 to −0.79° | smaller steps |
+| 20 / 1 | −0.35 to +0.44° | −1.41 to −0.53° | smooth |
+
+Our firmware (5.0.1+) writes `start_force` (register 24) and `dead_zone` (26/27) from
+`servos.yaml` at power-up, with the gains: 20 and 1 on J2–J4, the factory values on J1, J5 and
+J6. A starting force of 40 made the arm vibrate more (gyro, 99th percentile: 19 °/s instead of
+13 °/s). The EEPROM lock (register 55) stays 1, so the servos go back to the factory values at
+power-off.
 
 :::caution[Register names]
 Elephant's documentation calls register 22 "I" and register 23 "D". This is wrong:

@@ -123,7 +123,7 @@
 // History: docs (firmware/changelog). FW_GIT is set by the build (git describe).
 #define FW_MAJOR 5
 #define FW_MINOR 0
-#define FW_PATCH 0
+#define FW_PATCH 1
 #define FW_VERSION FW_MAJOR
 #ifndef FW_GIT
 #define FW_GIT "unknown"
@@ -229,7 +229,13 @@ volatile bool gains_ok = false;
 
 bool write_gains() {
     bool ok = true;
-    for (int j = 0; j < N_ARM; j++) ok &= reg_write_verified(j + 1, 21, GAINS[j], 3);   // J7: when found
+    for (int j = 0; j < N_ARM; j++) {
+        ok &= reg_write_verified(j + 1, 21, GAINS[j], 3);   // J7: when found
+        // Minimum starting force (24) and dead zone (26/27) (5.0.1): with 20 and 1 on J2-J4, slow motions
+        // follow the plan instead of moving in steps of about 1° (the factory 0 and 3).
+        uint8_t dz[2] = {robot::DEAD_ZONE[j], robot::DEAD_ZONE[j]};
+        ok &= reg_write_verified(j + 1, 24, &robot::START_FORCE[j], 1) && reg_write_verified(j + 1, 26, dz, 2);
+    }
     return ok;
 }
 

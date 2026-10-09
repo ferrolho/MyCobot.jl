@@ -14,6 +14,13 @@ UDP port 5005 shows it with the git commit of the build, for example
 `atom_controller v4.0.0 (bff4529)`. Each version has a git tag
 `atom-controller-vX.Y.Z` (local until the repository is pushed).
 
+## 5.0.1 — 2026-10-09
+
+- **Smoother slow motions:** at power-up the ATOM also writes each joint's minimum starting force
+  (register 24) and dead zone (registers 26/27) from `servos.yaml`: 20 and 1 on J2–J4 (factory: 0
+  and 3). In a 4 mm/s descent J2 then follows its plan within ±0.4° instead of moving in steps of
+  about 1°. See [Servos](/mycobot-280-lab/system/servos/#slow-motions-starting-force-and-dead-zone).
+
 ## 5.0.0 — 2026-10-09
 
 Breaking: STREAM, STATE, MOVE_TO, JOG and TRACK change; GRIPPER is removed. Update the

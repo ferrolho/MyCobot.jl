@@ -14,16 +14,20 @@
 #               2026-10-06; docs: system/servos)
 #   wn, zeta                    second-order model of the position loop (rad/s, -), fitted on
 #                               2026-10-04 inside the acceleration limit (docs: results/servo-dynamics)
+#   start_force, dead_zone      registers 24 (minimum starting force) and 26/27 (dead zone, steps) that our
+#                               firmware writes at power-up. J2-J4 (2026-10-09): 20 and 1 instead of the
+#                               factory 0 and 3. At slow speed (a 4 mm/s descent) J2 then follows its plan
+#                               within ±0.4° instead of moving in ~1° steps (±0.7°) (docs: system/servos).
 
 steps_per_turn: 4096
 center_step: 2048
 joints:
-  joint2_to_joint1:      { id: 1, sign: -1, model: 0x0809, gains: [32, 4, 16], max_acceleration_register: 50,  wn: 14.8, zeta: 0.82 }
-  joint3_to_joint2:      { id: 2, sign: -1, model: 0x0809, gains: [32, 4, 16], max_acceleration_register: 50,  wn: 14.7, zeta: 0.75 }
-  joint4_to_joint3:      { id: 3, sign: 1,  model: 0x0809, gains: [32, 4, 16], max_acceleration_register: 50,  wn: 14.2, zeta: 0.78 }
-  joint5_to_joint4:      { id: 4, sign: -1, model: 0x0709, gains: [32, 8, 0],  max_acceleration_register: 250, wn: 34.4, zeta: 0.65 }
-  joint6_to_joint5:      { id: 5, sign: -1, model: 0x0209, gains: [32, 8, 0],  max_acceleration_register: 250, wn: 52.4, zeta: 0.77 }
-  joint6output_to_joint6: { id: 6, sign: -1, model: 0x0209, gains: [32, 8, 0],  max_acceleration_register: 250, wn: 54.9, zeta: 0.83, multi_turn: true }
+  joint2_to_joint1:      { id: 1, sign: -1, model: 0x0809, gains: [32, 4, 16], max_acceleration_register: 50,  wn: 14.8, zeta: 0.82, start_force: 0,  dead_zone: 3 }
+  joint3_to_joint2:      { id: 2, sign: -1, model: 0x0809, gains: [32, 4, 16], max_acceleration_register: 50,  wn: 14.7, zeta: 0.75, start_force: 20, dead_zone: 1 }
+  joint4_to_joint3:      { id: 3, sign: 1,  model: 0x0809, gains: [32, 4, 16], max_acceleration_register: 50,  wn: 14.2, zeta: 0.78, start_force: 20, dead_zone: 1 }
+  joint5_to_joint4:      { id: 4, sign: -1, model: 0x0709, gains: [32, 8, 0],  max_acceleration_register: 250, wn: 34.4, zeta: 0.65, start_force: 20, dead_zone: 1 }
+  joint6_to_joint5:      { id: 5, sign: -1, model: 0x0209, gains: [32, 8, 0],  max_acceleration_register: 250, wn: 52.4, zeta: 0.77, start_force: 0,  dead_zone: 3 }
+  joint6output_to_joint6: { id: 6, sign: -1, model: 0x0209, gains: [32, 8, 0],  max_acceleration_register: 250, wn: 54.9, zeta: 0.83, start_force: 0,  dead_zone: 3, multi_turn: true }
 
 # J7: the adaptive gripper (myCobot_gripper_ag; docs: system/gripper), on the same bus. Our firmware (5.0+)
 # finds it by its model number and then treats it as a seventh joint: J7, after J6 in every message.
@@ -32,7 +36,7 @@ joints:
 #   closed_step, open_step   the two end stops found by a slow scan at 15 % torque (2026-10-06):
 #                            the fingers stall at 1462 (closed) and 2048 (open, the stock calibration
 #                            point), 51.5°. Checked with the camera on 2026-10-06. They are the J7 limits:
-#                            −51.5° (closed) to 0° (open). Goals stay 2° inside, as for every joint.
+#                            −51.5° (closed) to 0° (open). J7 goals use the whole range (no margin, 5.0).
 #   max_acceleration         the planning limit of our firmware (°/s²), as J4–J6 (joint_limits.yaml)
 #   torque                   0-1000, written when the gripper is found to registers 16 (max torque),
 #                            28 (protection current) and 48 (torque limit). Elephant's values are 140 / 300 / 300
