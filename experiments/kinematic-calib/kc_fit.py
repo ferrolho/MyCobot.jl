@@ -20,6 +20,7 @@ import trimesh
 from scipy.ndimage import map_coordinates
 from scipy.optimize import least_squares
 
+import kc_holes
 import kc_model as K
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -145,10 +146,30 @@ def imu_residuals(x, robot, poses):
     return np.concatenate(out)
 
 
+HOLES_W = 0.0   # set by --holes: weight of the palm holes (kc_holes.py) against the outline of the same pose
+
+
+def hole_residuals(x, robot, cam, poses):
+    """The palm holes: model minus found (px), each pose's holes together weighted as HOLES_W outline points."""
+    Ph, _ = kc_holes.holes_link(robot)
+    out = [np.zeros(0)]
+    for p in poses:
+        if len(p.get("holes", {})) >= 4:
+            T = transforms(robot, p, x)["gripper_base"]
+            uv = cam.project(Ph @ T[:3, :3].T + T[:3, 3])
+            e = np.concatenate([uv[k] - z for k, z in p["holes"].items()])
+            out.append(e * HOLES_W / np.sqrt(len(p["holes"])))
+    return np.concatenate(out)
+
+
 def residuals(x, robot, cam, poses):
+    xc = x[:-3] if IMU_W else x
+    r = camera_residuals(xc, robot, cam, poses)
+    if HOLES_W:
+        r = np.r_[r, hole_residuals(xc, robot, cam, poses)]
     if IMU_W:
-        return np.r_[camera_residuals(x[:-3], robot, cam, poses), imu_residuals(x, robot, poses)]
-    return camera_residuals(x, robot, cam, poses)
+        r = np.r_[r, imu_residuals(x, robot, poses)]
+    return r
 
 
 def camera_residuals(x, robot, cam, poses):
@@ -204,9 +225,10 @@ def main():
     ap.add_argument("--eval", help="only score these parameters (comma-separated) against zero")
     ap.add_argument("--sag", action="store_true", help="also fit a gravity sag of J2 and J3")
     ap.add_argument("--imu", type=float, default=0.0, help="also fit the IMU (gravity direction), with this weight (px per rad)")
+    ap.add_argument("--holes", type=float, default=0.0, help="also fit the palm holes, with this weight (outline points per pose)")
     args = ap.parse_args()
-    global SAG, IMU_W
-    SAG, IMU_W = args.sag, args.imu
+    global SAG, IMU_W, HOLES_W
+    SAG, IMU_W, HOLES_W = args.sag, args.imu, args.holes
     robot = K.Robot(links=STATIC + ARM_LINKS + FINGERS, simplify=0.3)
     cam = K.Camera(model=load_camera(args.camera))
     poses = load(args.data, args.tags)
@@ -224,11 +246,19 @@ def main():
         return
     for k in range(args.rounds):
         build(robot, cam, poses, x, links)
+        if HOLES_W:   # find the holes again near the current prediction
+            kc_holes.detect(robot, cam, poses, params(x[:-3] if IMU_W else x)[0])
+            print(f"palm holes: {sum(len(p['holes']) >= 4 for p in poses)} poses, {sum(len(p['holes']) for p in poses)} holes")
         r = least_squares(residuals, x, args=(robot, cam, poses), diff_step=0.02, loss="soft_l1", f_scale=3.0, max_nfev=300)
         x = r.x
         s = score(robot, cam, poses, x, links)
         print(f"round {k + 1}: offsets {np.round(x[:6], 2)}" + (f" extra {np.round(x[6:], 3)}" if len(x) > 6 else "") +
               f"; mean {np.mean([v[0] for v in s]):.2f} px, within 3 px {np.mean([v[1] for v in s]):.2f}")
+        if HOLES_W:
+            h = hole_residuals(x[:-3] if IMU_W else x, robot, cam, poses)
+            n = [len(p["holes"]) for p in poses if len(p.get("holes", {})) >= 4]
+            e = np.concatenate([h[2 * sum(n[:i]):2 * sum(n[:i + 1])] * np.sqrt(m) / HOLES_W for i, m in enumerate(n)]).reshape(-1, 2)
+            print(f"  palm holes rms {np.sqrt((e ** 2).sum(1).mean()):.1f} px")
     json.dump(dict(offsets_deg=x[:6].tolist(), fingers=x[6:].tolist(), tags=args.tags, names=[p["name"] for p in poses],
                    before=s0, after=s), open(args.out, "w"), indent=1)
     os.makedirs(os.path.join(args.data, "fit"), exist_ok=True)

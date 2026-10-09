@@ -12,7 +12,7 @@ import numpy as np
 import trimesh
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-URDF = os.path.join(REPO, "mycobot_description/urdf/mycobot_280_arduino/mycobot_280_arduino_gripper.urdf")
+URDF = os.environ.get("KC_URDF") or os.path.join(REPO, "mycobot_description/urdf/mycobot_280_arduino/mycobot_280_arduino_gripper.urdf")
 ARM_JOINTS = ["joint2_to_joint1", "joint3_to_joint2", "joint4_to_joint3", "joint5_to_joint4",
               "joint6_to_joint5", "joint6output_to_joint6"]
 
