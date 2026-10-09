@@ -39,6 +39,8 @@ export class ArmView {
   private goalOpening: number | null = null;
   private grid: THREE.GridHelper;
   private objects = new THREE.Group();
+  /** Goes up at each change of the measured arm (its pose, its opening, or a swap of the URDF). The camera overlay redraws then. */
+  revision = 0;
 
   /** `interactive: false` shows the arm only (no drag or zoom), so the page scrolls over it (the home page). */
   constructor(private el: HTMLElement, private urdfUrl: string, { interactive = true } = {}) {
@@ -144,6 +146,12 @@ export class ArmView {
     this.applyOpening();
     this.el.dataset.gripper = GRIPPER_JOINT in arm.robot.joints ? 'shown' : 'hidden';
     this.needsRender = true;
+    this.revision++;
+  }
+
+  /** The solid arm (measured pose), or null before it is loaded. Its root frame is the robot base frame (metres, z up). */
+  get measured(): URDFRobot | null {
+    return this.robot;
   }
 
   /** The default camera: front-right, a little above, the whole arm in view. */
@@ -173,6 +181,7 @@ export class ArmView {
   setPose(qDeg: number[]) {
     this.q = [...qDeg];
     this.apply(this.robot, qDeg);
+    this.revision++;
   }
 
   /** The goal pose (see-through), or null to hide it. */
@@ -236,6 +245,7 @@ export class ArmView {
     set(this.robot, this.opening);
     set(this.ghost, this.goalOpening ?? this.opening);
     this.needsRender = true;
+    this.revision++;
   }
 
   /** Draw the objects of a lab scene (in place of the previous ones), and the grid at the table height. */

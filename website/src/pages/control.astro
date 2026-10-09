@@ -109,6 +109,9 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
           <div class="btn-row">
             <label class="sr-only" for="camera-source">Camera source</label>
             <select id="camera-source"></select>
+            <label id="camera-overlay-switch" class="overlay-switch" hidden title="Draw the robot model through the calibrated camera model. If the drawing sits on the robot, the calibration is correct.">
+              <input id="camera-overlay" type="checkbox" role="switch" /> Overlay
+            </label>
             <button id="camera-start" type="button" class="btn small-btn">Start</button>
           </div>
         </header>
@@ -142,8 +145,7 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 <script>
   import { start } from '../control/app';
   import { setupCamera } from '../control/camera';
-  start();
-  setupCamera();
+  setupCamera(start());
 </script>
 
 <style is:global>
@@ -315,6 +317,21 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
   .ctl .camera-view { flex: 1 1 auto; min-height: 8rem; border-radius: 0.45rem; background: #000; overflow: hidden; display: grid; place-items: center; position: relative; }
   .ctl .camera[data-running='false'] .camera-view::after { content: 'Camera off'; color: var(--sl-color-gray-3); }
   .ctl .camera-view img, .ctl .camera-view video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+  /* Camera overlay: exactly over the image (camera_overlay.ts sets its box), the legend at the bottom left. */
+  .ctl .camera-overlay { position: absolute; pointer-events: none; }
+  .ctl .camera-overlay canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .ctl .overlay-legend {
+    position: absolute; left: 0.3rem; bottom: 0.3rem; max-width: calc(100% - 0.6rem);
+    display: flex; flex-wrap: wrap; gap: 0.1rem 0.6rem; padding: 0.15rem 0.45rem; border-radius: 0.3rem;
+    background: rgb(0 0 0 / 0.6); color: #fff; font-size: 0.7rem; line-height: 1.35;
+  }
+  .ctl .overlay-legend span { white-space: nowrap; }
+  .ctl .overlay-legend i { display: inline-block; width: 0.7rem; height: 0.2rem; border-radius: 1px; margin-inline-end: 0.3rem; vertical-align: 0.2rem; }
+  .ctl .overlay-legend .overlay-date { color: #ddd; }
+  .ctl .overlay-legend .overlay-warn { color: var(--warning); font-weight: 600; white-space: normal; }
+  .ctl .overlay-switch { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.8rem; font-weight: 600; padding: 0.1rem 0.45rem; border-radius: 0.4rem; border: 1px solid var(--sl-color-gray-4); cursor: pointer; }
+  .ctl .overlay-switch input { margin: 0; accent-color: var(--sl-color-accent); }
+  .ctl .overlay-switch:has(input:checked) { border-color: var(--sl-color-accent); }
 
   /* --- Joint strips: one vertical fader per joint --- */
   .ctl .strips { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 0.4rem; }

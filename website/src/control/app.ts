@@ -193,7 +193,8 @@ const versionAtLeast = (v: string, major: number, minor: number) => {
   return a > major || (a === major && b >= minor);
 };
 
-export function start() {
+/** Start the page. It returns the 3D view when it is ready (the camera overlay draws its arm). */
+export function start(): Promise<ArmView> {
   const link = new AtomLink();
   const root = $('#ctl');
   startSessionLog(link); // only when the lab service on the Pi serves the page
@@ -211,7 +212,7 @@ export function start() {
   // 3D view: loaded after the page, because three.js and the meshes are large.
   let arm: ArmView | null = null;
   const armEl = $('#arm-view');
-  import('./viewer3d').then(({ ArmView }) => {
+  const armReady = import('./viewer3d').then(({ ArmView }) => {
     arm = new ArmView(armEl, armEl.dataset.urdf!);
     if (gripperShown) arm.setGripper(true); // found before the 3D view was ready
     dirty = true;
@@ -225,6 +226,7 @@ export function start() {
         })
         .catch(() => {});
     loadScene();
+    return arm;
   });
   $('#arm-reset').addEventListener('click', () => arm?.resetView());
 
@@ -802,4 +804,5 @@ export function start() {
 
   updateControls();
   if (params.get('atom')) form.requestSubmit();
+  return armReady;
 }

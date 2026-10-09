@@ -181,6 +181,104 @@ The camera panel shows one of two sources:
   The browser asks for permission first. A web page cannot reach a camera that is
   connected to another computer.
 
+### Camera overlay
+
+The overlay draws the robot model on the Pi camera image, through the calibrated
+camera model. Use it to check the camera calibration at a glance: if the drawing sits
+on the real robot, the calibration and the robot model agree. If they do not agree,
+you see the offset.
+
+The **Overlay** switch is in the camera panel. It shows only when the source is the Pi
+camera and the lab service has a camera model ([Lab camera model](#lab-camera-model)).
+A camera on this computer has no calibration, so it has no overlay. The switch is off
+at first. The browser keeps your choice (local storage).
+
+| Colour | Content |
+| --- | --- |
+| Orange lines | The outline of the robot model at the measured pose: where its surface turns away from the camera |
+| Magenta lines | The crease edges of the robot model at the measured pose: edges where two faces meet at more than 30° |
+| Green circles A–F | The six brass screws on the top face of the base plate |
+| Cyan crosses | The `marks` of the camera model: points that a calibration tool found in the image |
+
+The orange and magenta lines use the meshes and the joint angles of the 3D view,
+with the base and the gripper. The overlay removes hidden lines: a line behind a
+part of the model does not show.
+
+- **Crease edges (magenta)** show sharp corners, holes and steps. They do not show
+  the sides of a round part, because a smooth surface has no crease there.
+- **The outline (orange)** changes with the view. It shows the sides of the round
+  links, of the cylinders and of the round base. Use it to compare the model with the
+  edges of the real robot in the image.
+- Each edge has one colour. An edge on the outline is orange only, also when it is
+  a crease.
+
+How the overlay finds the outline: it uses the mesh edges that have one face
+toward the camera and one face away from the camera (silhouette edges). The overlay
+computes them on the CPU for each mesh, again only when that mesh moves or the camera
+model changes. In the same pass it takes the crease edges that are not on the
+outline. Then it draws both with the same line shader.
+Thus:
+
+- The outline is the exact outline of the mesh, not an approximation in screen
+  space. Its error is the error of the mesh (the facets of a round part).
+- The line shader applies the distortion `k1`, as for the crease edges.
+- It costs little. On the laptop (2026-10-09, Chrome), the first frame
+  builds the edge lists of all meshes in about 80 ms (once). After that, a
+  frame with the arm in motion takes about 1–2 ms for all meshes (about 240 000
+  edges). With the arm stopped, the overlay does not compute the outline again.
+
+Other methods are possible: an inverted hull (a back-face copy of each mesh, made a
+little larger) or a screen-space pass on depth and normals. An inverted hull puts
+the line outside the true outline, by an amount that changes with the distance. A
+screen-space pass needs more render passes at each frame, and its precision depends
+on the pixels of the depth image. The silhouette edges are on the true outline, and
+they use the same 1.5 px lines as the crease edges.
+
+A legend at the bottom left gives the colours and the date of the camera model
+(`updated`). The base frame positions of the screws (mm, top face of the plate at z = 0):
+
+| Screw | A | B | C | D | E | F |
+| --- | --- | --- | --- | --- | --- | --- |
+| x, y | 65, −56 | 47, −50 | 47, 30 | 65, 36 | −47, 30 | −65, 36 |
+
+They are the CAD holes of the `G_base` mesh, (±65, ±46) and (±47, ±40) in the mesh
+frame, moved by the mesh origin in the URDF (0, −10, −32) mm. The overlay draws the
+mesh holes and the screw circles on the same points.
+
+How the overlay draws (`camera_overlay.ts`):
+
+- It projects base frame points with the OpenCV pinhole model of the file. The arm
+  uses a three.js camera with the same intrinsics and pose, and the radial
+  distortion `k1` in its vertex shaders.
+- The model is for a `width`×`height` image (1280×960). The page shows the 640×480
+  preview. The overlay covers the shown image exactly, so it scales the intrinsics to
+  any display size. If the image does not have the aspect ratio of the model, the
+  legend shows a warning.
+- While the overlay is on, the page reads `/lab/camera.json` again every 5 s.
+
+Check on 2026-10-08, on the laptop (still images from the lab webcam in place of the
+stream, the simulated arm at the parked pose): the projected screws were 0–5 px from
+the screw heads in the 1280×960 image (A: about 4 px, the others 0–3 px). The
+gripper of the model was about 13 px lower and 5 px more to the right than the real
+gripper (about 5 mm). Not verified with the live stream yet.
+
+Check of the outline on 2026-10-09, on the laptop: the same still images, the camera
+model of 2026-10-08T23:10 (k1 = 0), the simulated arm at q = (−17.7, 1.0, −83.8,
+−7.2, −0.6, −151.8)° with the gripper open. Offsets are in pixels of the 1280×960
+image (at the base, 1 mm is about 2.2 px):
+
+| Part | Outline vs. the edge in the image |
+| --- | --- |
+| Round base (black), left side and bottom | 0–2 px |
+| Upper links, left side | 0–3 px |
+| Upper links, right side | 2–4 px inside the real edge |
+| Gripper fingers (`status_now.jpg`) | about 2 px |
+| Gripper body, lower curve | about 5 px higher than the real curve |
+| Base plate, front edges | 4–6 px lower than the real edges (about 2–3 mm) |
+
+With k1 = −0.5 (a test value), the outline stayed on the crease edges and the
+screw circles stayed on the mesh holes. Not verified with the live stream yet.
+
 ## The lab service (Raspberry Pi)
 
 `tools/pi/lab_service.py` serves the built site, the webcam and a relay to the ATOM on
@@ -209,6 +307,7 @@ That computer opens `http://192.168.1.92:8280/mycobot-280-lab/control/`.
 | `/atom.json` | The ATOM's address and the relay path. The page tries the ATOM's address first, then the relay. |
 | `/atom/ws` | The relay: the ATOM's WebSocket (`ws://192.168.1.107/ws`, set with `--atom`), byte for byte. |
 | `/lab/scene.json` | Objects near the robot (see [Lab scene](#lab-scene)), from `~/myCobot/lab-scene.json`. 404 if the file does not exist. |
+| `/lab/camera.json` | The camera model (see [Lab camera model](#lab-camera-model)), from `~/myCobot/lab-camera.json`. 404 if the file does not exist. |
 
 The relay is for a browser away from home (see [At home and away from home](#at-home-and-away-from-home)).
 Only the Pi talks to the ATOM, on the home network. Thus a slow link does not fill the
@@ -246,8 +345,8 @@ and shows only the arm.
 {
   "table_z": -30,
   "objects": [
-    {"name": "tissue box", "shape": "box", "center": [-10, -128, -13.5], "size": [165, 130, 33], "yaw": -17, "color": "#2b2b2e"},
-    {"name": "plush body", "shape": "ellipsoid", "center": [-172, -100, -8], "size": [70, 115, 44], "color": "#a67c45"}
+    {"name": "box", "shape": "box", "center": [0, -150, -15], "size": [120, 80, 30], "yaw": 15, "color": "#2b2b2e"},
+    {"name": "ball", "shape": "ellipsoid", "center": [-150, -100, 0], "size": [60, 60, 60], "color": "#a67c45"}
   ]
 }
 ```
@@ -257,6 +356,38 @@ and shows only the arm.
 - `shape` is `box` or `ellipsoid`. `table_z` puts the grid at the table height (0 if absent).
 - The file is data from the lab, not part of the repository. Other keys are ignored
   (for example `source`: how the values were measured).
+
+### Lab camera model
+
+The [camera overlay](#camera-overlay) needs the camera model of the Pi camera:
+`~/myCobot/lab-camera.json` on the Pi, served as `/lab/camera.json`. The calibration
+writes it. The page on GitHub Pages gets 404 and shows no **Overlay** switch.
+
+```json
+{
+  "updated": "2026-10-08T23:00",
+  "source": "how it was measured (free text)",
+  "width": 1280, "height": 960,
+  "rvec": [0.378544667, 2.92041344, -1.06418754],
+  "tvec": [195.518580, -27.1227843, 655.958944],
+  "f": 1457.18550, "cx": 640.0, "cy": 480.0,
+  "k1": 0.0,
+  "marks": [{"name": "A", "u": 0, "v": 0}]
+}
+```
+
+- OpenCV pinhole model: X<sub>cam</sub> = R(`rvec`) · X<sub>base</sub> + `tvec`.
+  `rvec` is a Rodrigues vector (radians), `tvec` is in millimetres. The camera looks
+  along +z, with x to the right and y down.
+- Pixels: x′ = x/z, y′ = y/z, d = 1 + `k1`·(x′² + y′²), u = `f`·x′·d + `cx`,
+  v = `f`·y′·d + `cy`, in a `width`×`height` image. Pixel (0, 0) is the centre of the
+  top left pixel.
+- The base frame is the frame of the URDF and the 3D view: millimetres, z up, origin on
+  the J1 axis at the top face of the base plate.
+- `k1` is optional (0 if absent). `marks` is optional: points found in the image
+  (pixels of the `width`×`height` image). The overlay draws them as they are.
+- `updated` and `source` are free text. The legend shows `updated`.
+- The file is data from the lab, not part of the repository.
 
 ### Session log
 
@@ -317,6 +448,7 @@ The code is in `website/src/pages/control.astro` and `website/src/control/`:
 | `app.ts` | The page: joint strips and faders, the six plots (uPlot), controls |
 | `viewer3d.ts` | The 3D view (three.js, urdf-loader) |
 | `camera.ts` | The camera panel |
+| `camera_overlay.ts` | The camera overlay: the arm, the base screws and the marks, through the camera model |
 
 ### 3D model
 

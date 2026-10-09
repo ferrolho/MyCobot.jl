@@ -14,6 +14,8 @@ that opens the camera.
     POST /log?session=ID   JSONL events from the Control page, appended to LOG_DIR/ID.jsonl
     /atom.json             {"atom": ADDRESS, "ws": "/atom/ws"}: the page connects through the relay if this exists
     /atom/ws               the ATOM's WebSocket (ws://ATOM/ws), relayed byte for byte
+    /lab/scene.json        ~/myCobot/lab-scene.json: objects near the robot, for the 3D view (404 if missing)
+    /lab/camera.json       ~/myCobot/lab-camera.json: the camera model, for the camera overlay (404 if missing)
 
 The relay lets a browser away from home reach the ATOM over Tailscale. Only the Pi talks to the
 ATOM, on the home network, so a slow link (for example a phone hotspot) does not fill the ATOM's
@@ -49,7 +51,11 @@ FIRST_FRAME_S = 10.0   # a stream waits this long for the camera's first frame
 BOUNDARY = "frame"
 LOG_DIR = os.path.expanduser("~/myCobot/lab-logs")   # Control page session logs, one JSONL file per session
 LOG_MAX_BODY = 1 << 20
-SCENE = os.path.expanduser("~/myCobot/lab-scene.json")   # objects near the robot, for the 3D view (written by lab scripts)
+# Lab data files, served as they are (written by lab scripts; not in the repository).
+LAB_FILES = {
+    "/lab/scene.json": os.path.expanduser("~/myCobot/lab-scene.json"),     # objects near the robot, for the 3D view
+    "/lab/camera.json": os.path.expanduser("~/myCobot/lab-camera.json"),   # the camera model, for the camera overlay
+}
 ATOM = "192.168.1.107"   # the ATOM's address on the home network (--atom)
 ALLOW = ("127.0.0.0/8", "100.64.0.0/10")   # clients always served: loopback and Tailscale (more with --allow)
 
@@ -190,12 +196,12 @@ class Handler(SimpleHTTPRequestHandler):
             return self.wfile.write(frame)
         if route == "/camera.mjpg":
             return self.stream(full=parse_qs(urlsplit(self.path).query).get("full") == ["1"])
-        if route == "/lab/scene.json":
+        if route in LAB_FILES:
             try:
-                with open(SCENE, "rb") as f:
+                with open(LAB_FILES[route], "rb") as f:
                     body = f.read()
             except OSError:
-                return self.send_error(HTTPStatus.NOT_FOUND, "No lab scene")
+                return self.send_error(HTTPStatus.NOT_FOUND, f"No {os.path.basename(LAB_FILES[route])}")
             self.send_response(HTTPStatus.OK)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
