@@ -264,7 +264,8 @@ How the overlay draws (`camera_overlay.ts`):
   preview. The overlay covers the shown image exactly, so it scales the intrinsics to
   any display size. If the image does not have the aspect ratio of the model, the
   legend shows a warning.
-- While the overlay is on, the page reads `/lab/camera.json` again every 5 s.
+- While the overlay is on, the page reads `/lab/camera.json` again every 0.5 s. A camera tracker on the Pi
+  can update the model several times a second when the camera moves (`marks`: the screws it found).
 
 Check on 2026-10-08, on the laptop (still images from the lab webcam in place of the
 stream, the simulated arm at the parked pose): the projected screws were 0–5 px from

@@ -10,7 +10,7 @@ const $ = <T extends HTMLElement>(sel: string, root: ParentNode = document) => r
 
 const PI = 'pi';
 const OVERLAY_KEY = 'mycobot-control.camera-overlay';
-const CAMERA_MODEL_POLL_MS = 5000;
+const CAMERA_MODEL_POLL_MS = 500; // a camera tracker on the Pi can move the model several times a second
 
 const getJson = (url: string) =>
   fetch(url, { cache: 'no-store' })
