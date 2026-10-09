@@ -57,7 +57,17 @@ end
 # the start is where the arm is (measured, with its sag): check from the first step on
 path_problems(a, b; kw...) = unique(reduce(vcat, [problems(a .+ s .* (b .- a); kw...) for s in range(1 / 60, 1; length=60)]))
 
-state() = MyCobot.atom_state(L)
+"The ATOM's state (firmware 5.0) with the joint vectors of J1-J6 (the arm, for the kinematics), and J7 (the
+gripper, °) as j7 and j7_goal (NaN without the gripper)."
+function state()
+    s = MyCobot.atom_state(L)
+    j7 = length(s.q) > 6
+    return (ok=s.ok, q=s.q[1:6], goal=s.goal[1:6], dq=s.dq[1:6], load=s.load[1:6], imu=s.imu,
+            j7=j7 ? s.q[7] : NaN, j7_goal=j7 ? s.goal[7] : NaN)
+end
+"Where a plan starts (firmware 5.0.1): the goals the joints hold, or the measured position where a goal is more than
+3° away, as the ATOM does. Plans from the measured (sagged) pose let the loaded joints sag at each move."
+plan_start(s) = [abs(s.goal[j] - s.q[j]) <= 3 ? s.goal[j] : s.q[j] for j in 1:6]
 "Lowest gripper point (mm, base z) at pose q."
 gripper_low(q; opening=1000) = (T = flange(q); minimum(to_base(T, p)[3] for p in vcat(BODY, fingers(opening))))
 path_low(a, b; opening=1000) = minimum(gripper_low(a .+ s .* (b .- a); opening) for s in range(0, 1; length=30))
@@ -74,7 +84,7 @@ function move!(q; vmax=25.0, opening=1000, zmin=40.0, ignore=String[], dry=false
     @printf("move%s: max Δ %.1f°, %.1f s, tcp %s -> %s\n", g ? " (guarded)" : "", Δ, T, round.(tcp(s.q; opening)), round.(tcp(q; opening)))
     dry && return nothing
     if g
-        done, _, hit = move_guarded!(s.q, q, T)
+        done, _, hit = move_guarded!(plan_start(s), q, T)
         if hit !== nothing
             retreat!(; opening)
             error("contact: stopped and retreated")
@@ -192,7 +202,7 @@ function touch_table!(xy; yaw, above=15.0, over=8.0, onset=6.0, tag="touch", dlo
     z_on = nothing
     try
         pr = path_problems(state().q, q1; opening=0, zmin=-over - 1); isempty(pr) || error("refused: " * join(pr, "; "))
-        done, rec, hit = move_guarded!(state().q, q1, (above + over) / speed; linear=true, dload, base_t)
+        done, rec, hit = move_guarded!(plan_start(state()), q1, (above + over) / speed; linear=true, dload, base_t)
         open("/home/henrique/scratch/cutlery/$tag.csv", "w") do io
             println(io, join(vcat(MyCobot.RECORDING_HEADER, MyCobot.IMU_HEADER), ","))
             for i in 1:size(rec, 1); println(io, join(rec[i, :], ",")); end
@@ -233,20 +243,37 @@ function ik_down(p, yaw; q0=state().q, opening=1000, d=tip_z(opening) - 10)
 end
 
 le16(x) = reinterpret(UInt8, [htol(x)])
-"Gripper goal 0 (closed) .. 1000 (open)."
-function gripper!(opening)
-    MyCobot.drain!(L); MyCobot.send(L, vcat(0x11, le16(UInt16(opening))))
-    m = MyCobot.receive(L, 0x83; timeout=0.3)
-    m !== nothing && m[2] == 0x11 && error("GRIPPER refused: $(reinterpret(Int8, m[3]))")
+# The opening 0 (closed) .. 1000 (open) of these helpers is servo steps 1477 .. 2033, as firmware 4.6-4.7 mapped
+# it (tip_z and the recordings use it). Firmware 5.0 moves the gripper as joint J7 in degrees, end stop to
+# end stop (no margin on J7): steps 1477 + 0.556·opening, and opening 0 / 1000 go to the end stops themselves
+# (-51.5° / 0°): force-mode grasps drive the jaws against the object or the stops (the jaws meet at -50.9°).
+function j7_deg(opening)
+    lo, hi = MyCobot.JOINT_LIMITS_DEG[7]
+    opening <= 0 && return lo
+    opening >= 1000 && return hi
+    return clamp((1477 + 0.556 * opening - 2048) * 360 / 4096, lo, hi)
 end
-"One STREAM message: (state, gripper present, opening, load, voltages)."
+j7_opening(deg) = round(Int, (deg * 4096 / 360 + 2048 - 1477) / 0.556)
+"MOVES THE GRIPPER. Gripper goal 0 (closed) .. 1000 (open): a MOVE_TO of J7 while J1-J6 keep their goals.
+Waits for the end of the move (about 1 s for the full stroke). On an object the gripper stops and squeezes."
+function gripper!(opening)
+    s = state()
+    isnan(s.j7) && error("no gripper (J7) found")
+    _, done = MyCobot.atom_move!(L, vcat(s.goal, j7_deg(opening)))
+    done.result == "done" || error("gripper move ended: $(done.result)")
+end
+"One STREAM message (firmware 5.0): state, control, gripper found, its opening (0..1000 as above) and load (0.1 %),
+the voltages and temperatures of J1-J6, and J7's temperature."
 function stream()
     MyCobot.drain!(L); MyCobot.send(L, vcat(0x0C, le16(UInt16(20))))
     m = MyCobot.receive(L, 0x88; timeout=1.0)
     MyCobot.send(L, vcat(0x0C, le16(UInt16(0))))
     m === nothing && error("no STREAM")
-    rdi(i) = ltoh(reinterpret(Int16, m[i+1:i+2])[1])
-    return (state=m[6], control=m[74], gripper=m[75], opening=rdi(75), load=rdi(77), volt=Int.(m[50:55]), temp=Int.(m[44:49]))
+    n = Int(m[9]); j7 = n > 6
+    u16(k, j) = MyCobot.rd(UInt16, m, 10 + 2n * k + 2(j - 1))   # k: 0 pos, 1 goal, 2 speed, 3 load
+    return (state=m[6], control=m[8], gripper=Int(j7), opening=j7 ? j7_opening(MyCobot.position_to_angle(7, u16(0, 7))) : 0,
+            load=j7 ? round(Int, 10 * MyCobot.decode_load(u16(3, 7))) : 0,
+            volt=Int.(m[10+9n:15+9n]), temp=Int.(m[10+8n:15+8n]), temp7=j7 ? Int(m[16+8n]) : -1)
 end
 function report()
     s = state(); g = stream()
@@ -400,7 +427,8 @@ function move_rec!(q; vmax=8.0, opening=1000, zmin=40.0, ignore=String[], min_T=
     T = max(min_T, 1.875 * maximum(abs, q .- s.q) / vmax)
     minjerk(x) = (x = clamp(x, 0, 1); x^3 * (10 - 15x + 6x^2))
     t = collect(0:0.004:T + 0.5)        # 0.5 s hold at the end
-    Q = reduce(vcat, permutedims(s.q .+ minjerk(ti / T) .* (q .- s.q)) for ti in t)
+    q0 = plan_start(s)
+    Q = reduce(vcat, permutedims(q0 .+ minjerk(ti / T) .* (q .- q0)) for ti in t)
     for k in 1:3
         try
             MyCobot.atom_upload_plan(L, t, Q, Q); break
@@ -633,20 +661,23 @@ function run_cork(k, c, fy; open=1000, shift=12.0, tag="r2cork$k")
 end
 
 # ---- Smooth grasp (the user's idea, 2026-10-06): one gripper close; the arm lifts by the measured fingertip
-# extension while it closes (closed loop on the gripper's present position), with TRACK at 50 Hz.
+# extension while it closes (closed loop on the gripper's present position), with TRACK at 50 Hz. Firmware 5.0:
+# the same TRACK closes the gripper (J7), at up to vmax.
 "Julia angle (encoder-corrected) -> firmware angle (raw encoder), degrees."
 fw_deg(j, q) = MyCobot.JOINT_SIGN[j] * (MyCobot.angle_to_position(j, q) - 2048) / MyCobot.STEPS_PER_DEG
-send_track(q; vmax=60.0) = MyCobot.send(L, vcat(0x10, reduce(vcat, [le16(Int16(round(100 * fw_deg(j, q[j])))) for j in 1:6]), le16(UInt16(round(10 * vmax)))))
-"Latest STREAM message in the inbox (or nothing): (opening, state)."
+"TRACK the arm to q (J1-J6) and, with j7 (°), the gripper too."
+send_track(q; vmax=60.0, j7=nothing) = MyCobot.send(L, vcat(0x10, reduce(vcat, [le16(Int16(round(100 * fw_deg(j, q[j])))) for j in 1:6]),
+                                                              j7 === nothing ? UInt8[] : le16(Int16(round(100 * fw_deg(7, j7)))), le16(UInt16(round(10 * vmax)))))
+"Latest STREAM message (firmware 5.0) in the inbox (or nothing): (opening, state)."
 function latest_stream()
     m = nothing
     while isready(L.inbox)
         x = take!(L.inbox)
-        (!isempty(x) && x[1] == 0x88 && length(x) >= 79) && (m = x)
+        (!isempty(x) && x[1] == 0x88 && length(x) > 79 && x[9] == 7) && (m = x)
         (!isempty(x) && x[1] == 0x83 && x[2] == 0x10) && println("TRACK refused: ", reinterpret(Int8, x[3]))
     end
     m === nothing && return nothing
-    return (opening=ltoh(reinterpret(Int16, m[76:77])[1]), state=m[6])
+    return (opening=j7_opening(MyCobot.position_to_angle(7, MyCobot.rd(UInt16, m, 10 + 2 * 6))), state=m[6])
 end
 "MOVES THE ROBOT. Close in one motion; lift the TCP by the measured fingertip extension. Returns the final opening."
 function grasp_smooth!(yaw; goal=0, vmax=60.0, timeout=4.0, free_lift=0.0, free_above=200, R=nothing)
@@ -662,7 +693,7 @@ function grasp_smooth!(yaw; goal=0, vmax=60.0, timeout=4.0, free_lift=0.0, free_
     MyCobot.drain!(L)
     MyCobot.send(L, vcat(0x0C, le16(UInt16(50))))           # STREAM at 50 Hz
     t0 = time(); last_sub = t0; last_change = t0; g_last = g0; dz = 0.0; extra = 0.0
-    gripper!(goal)
+    j7_goal = j7_deg(goal)   # J7 closes in the same TRACK as the arm (firmware 5.0)
     while time() - t0 < timeout
         s = latest_stream()
         if s !== nothing
@@ -673,7 +704,7 @@ function grasp_smooth!(yaw; goal=0, vmax=60.0, timeout=4.0, free_lift=0.0, free_
         stuck = time() - t0 > 0.35 && time() - last_change > 0.25 && g_last > free_above   # still, but wider than the object
         stuck && extra < free_lift && (extra += 0.2)
         dz = max(dz, extra)
-        send_track(qat(dz); vmax)
+        send_track(qat(dz); vmax, j7=j7_goal)
         time() - last_sub > 0.5 && (MyCobot.send(L, vcat(0x0C, le16(UInt16(50)))); last_sub = time())
         time() - last_change > 0.3 && time() - t0 > 0.5 && !(g_last > free_above && extra < free_lift) && break   # still: stalled or closed
         sleep(0.02)
@@ -761,7 +792,7 @@ function tool_R_tilt(a, u, theta)
 end
 
 const MUG = [67.9, 155.2]   # top centre (camera rim ellipse, 2026-10-08 run 2, after the push moved it 8 mm); rim z ≈ 65, outer ≈ 72 mm, opening ≈ 66 mm
-BOXES["mug"] = ([MUG[1] - 36, MUG[2] - 36, -40.0], [MUG[1] + 36, MUG[2] + 36, 65.0])   # outer rim ± 36 mm (2026-10-08 run 2)
+# BOXES["mug"] = ([MUG[1] - 36, MUG[2] - 36, -40.0], [MUG[1] + 36, MUG[2] + 36, 65.0])   # outer rim ± 36 mm (2026-10-08 run 2)
 "Grasp a flat utensil at xy (fingers across, yaw), lift, carry over the mug, tilt it into the mug, release. MOVES THE ROBOT."
 function utensil_to_mug!(xy, yaw; tag, z_low=-11.0, head_dir=210.0, tilt=75.0, z_drop=140.0, z_release=z_drop)
     gripper!(1000); sleep(0.8)

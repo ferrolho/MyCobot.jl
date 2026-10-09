@@ -208,6 +208,12 @@ the fingertip extension that the gripper's measured position gives:
    interpolated joint goal with TRACK (the firmware takes GRIPPER during TRACK, not during PLAY).
 4. Stop when the opening has not changed for 0.3 s (holding or closed).
 
+These runs used firmware 4.6 and its GRIPPER command. With firmware 5.0 the gripper is joint
+[J7](/mycobot-280-lab/comms/websocket-api/#joints-j1j6-and-j7-50): `grasp_smooth!` sends J7's
+goal in the same TRACK messages as the arm, and `gripper!` moves J7 with MOVE_TO. The helpers
+keep the opening scale of these runs (0 closed to 1000 open, servo steps 1477–2033). Not tested
+on the robot yet.
+
 A close takes 1.1–1.4 s and lifts the arm 12–13 mm. Results:
 
 | Cork | Tries | Note |
