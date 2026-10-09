@@ -95,7 +95,7 @@ The package supports real-time robot visualization:
 ## Where things run
 
 - The Raspberry Pi 5 next to the robot (`ssh raspberrypi5`) hosts the lab service (site, camera, session logs) and runs scripts that use the robot: repository `~/myCobot/mycobot-280-lab`, Julia `~/.juliaup/bin/julia` (not on `PATH` for non-interactive SSH), Python `~/venvs/mycobot/bin/python`, `~/bin/arduino-cli`. Recordings stay on the Pi.
-- The Pi's USB-C supply gives only 3 A (`/proc/device-tree/chosen/power/max_current` = 3000): heavy jobs (Chromium/Playwright, big `npm` builds, dev servers) crashed it on 2026-10-05. Until it has a 5 A supply, keep its load light.
+- The Pi has a 5 A supply since 2026-10-09 (iRasptek 27 W USB-C PD, 5.1 V 5 A; `/proc/device-tree/chosen/power/max_current` = 5000). With the old 3 A supply, heavy jobs (Chromium/Playwright, big `npm` builds, dev servers) crashed it on 2026-10-05. Site builds and browser tests still run on the laptop by habit; the Pi can take them now if needed.
 - Browser and site work run on the laptop: a temporary dev server and `tools/atom_sim.py` on `127.0.0.1` only, stopped afterwards (the laptop does not keep serving the docs). Build the site on the laptop and copy `website/dist/` to `raspberrypi5:myCobot/lab-services/website/dist/` to update the lab site.
 - The laptop can build and flash the ATOM over USB (`arduino-cli`, `esptool`; see firmware/build-flash.md). OTA updates work from either machine.
 - The Pi hub (`raspberrypi5:git/mycobot-280-lab.git`, remote `pi`) is git storage; push branches there. Push to GitHub (`origin`) only when the user says so.

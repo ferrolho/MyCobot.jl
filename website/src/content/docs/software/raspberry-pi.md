@@ -15,6 +15,7 @@ connected to it, so the arm can be controlled and watched remotely.
 | Repository | `~/myCobot/mycobot-280-lab` (working copy) and `~/git/mycobot-280-lab.git` (hub) |
 | Julia | 1.11 with juliaup: `~/.juliaup/bin/julia` (only login shells have it on `PATH`) |
 | Kernel | `kernel8.img`, **4 KB memory pages** (since 2026-10-04) |
+| Power | iRasptek 27 W USB-C PD supply, 5.1 V 5 A (since 2026-10-09). The Pi reads 5000 mA (`/proc/device-tree/chosen/power/max_current`), 5.10 V on EXT5V, `throttled=0x0`. Until then a 3 A supply: heavy jobs (Chromium, big `npm` builds) made the Pi restart on 2026-10-05. |
 | Tools | Python `~/venvs/mycobot`, `~/bin/arduino-cli` (ESP32 core 3.3.10), Node `~/.local/opt/node`, Go `~/.local/opt/go`, `/usr/local/bin/git-lfs-transfer` |
 
 ## Kernel: 4 KB pages
