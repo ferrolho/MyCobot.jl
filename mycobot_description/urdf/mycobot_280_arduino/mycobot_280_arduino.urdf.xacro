@@ -47,7 +47,7 @@
     </joint>
   </xacro:macro>
 
-  <xacro:mesh_link name="g_base" mesh="G_base" xyz="0 -0.01 -0.032" rpy="0 0 0" scale="0.001 0.001 0.001" />
+  <xacro:mesh_link name="g_base" mesh="G_base" xyz="0 0 -0.032" rpy="0 0 0" scale="0.001 0.001 0.001" />
   <xacro:mesh_link name="joint1" mesh="joint1" xyz="0 0 0" rpy="0 0 -3.14159" scale="0.001 0.001 0.001" />
   <xacro:mesh_link name="joint2" mesh="joint2" xyz="0 0 -0.06096" rpy="0 0 -1.5708" />
   <xacro:mesh_link name="joint3" mesh="joint3" xyz="0 0 0.03256" rpy="0 -1.5708 0" />

@@ -239,10 +239,10 @@ A legend at the bottom left gives the colours and the date of the camera model
 
 | Screw | A | B | C | D | E | F |
 | --- | --- | --- | --- | --- | --- | --- |
-| x, y | 65, −56 | 47, −50 | 47, 30 | 65, 36 | −47, 30 | −65, 36 |
+| x, y | 65, −46 | 47, −40 | 47, 40 | 65, 46 | −47, 40 | −65, 46 |
 
 They are the CAD holes of the `G_base` mesh, (±65, ±46) and (±47, ±40) in the mesh
-frame, moved by the mesh origin in the URDF (0, −10, −32) mm. The overlay draws the
+frame, moved by the mesh origin in the URDF (0, 0, −32) mm. The overlay draws the
 mesh holes and the screw circles on the same points.
 
 How the overlay draws (`camera_overlay.ts`):

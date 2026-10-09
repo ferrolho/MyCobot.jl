@@ -29,14 +29,14 @@ export type CameraModel = {
   marks?: { name: string; u: number; v: number }[];
 };
 
-/** The brass screws on the top face of the base plate: base frame, mm. CAD holes of G_base (mesh frame) + (0, −10, −32). */
+/** The brass screws on the top face of the base plate: base frame, mm. CAD holes of G_base (mesh frame) + (0, 0, −32). */
 export const BASE_SCREWS: [string, number, number, number][] = [
-  ['A', 65, -56, 0],
-  ['B', 47, -50, 0],
-  ['C', 47, 30, 0],
-  ['D', 65, 36, 0],
-  ['E', -47, 30, 0],
-  ['F', -65, 36, 0],
+  ['A', 65, -46, 0],
+  ['B', 47, -40, 0],
+  ['C', 47, 40, 0],
+  ['D', 65, 46, 0],
+  ['E', -47, 40, 0],
+  ['F', -65, 46, 0],
 ];
 
 // Colours that show on a white arm and a light wooden table.

@@ -100,7 +100,8 @@ file. The generator converts them to degrees for the firmware and the Control pa
 | Gains, ωn, ζ | [Servo dynamics](/mycobot-280-lab/results/servo-dynamics/) (2026-10-04). |
 | Gripper meshes and finger joints | Elephant's `mycobot_280m5_with_gripper_parallel.urdf` (mycobot_ros), with the finger joints on the body moved 7.5 mm ([Gripper](/mycobot-280-lab/system/gripper/#model-urdf)). |
 | Gripper mount angle | The user's report of the mount on this arm (2026-10-06). |
-| Base plate (`g_base`) | Elephant's mesh, turned 90° about z (2026-10-06): on this robot the round base is mounted on the plate 90° from Elephant's model. The 150 mm side is along x, and the plate is 10 mm toward −y (checked with the calibrated lab camera). |
+| Base plate (`g_base`) | Elephant's mesh, turned 90° about z (2026-10-06): on this robot the round base is mounted on the plate 90° from Elephant's model. The 150 mm side is along x, and the plate is centred on the J1 axis. On 2026-10-08 the outline of the round base, fitted to the camera image with the camera registered on the plate screws, was within 2 mm of the plate centre. The 2026-10-06 model had the plate 10 mm toward −y, from a less accurate camera model; that offset moved every camera measurement 10 mm. Caliper check (2026-10-09): plate 149–150 × 109 × 32 mm (CAD 150 × 110 × 32); gaps from the plate edges to the round base 7 mm left and right (model 7), 26.7–26.8 mm at the front (model 27); so J1 is within 0.3 mm of the plate centre. |
+| Connector face of the round base | **Differs from the mesh by about 2.5 mm.** The flat face with the connectors is about 62 mm from the J1 axis (13 mm from the back edge of the plate, caliper, 2026-10-09); the `joint1` mesh has it at 59.5 mm (cover outside at 67.3 mm). Only the drawing is affected. |
 | Masses and inertias | **Not in the description yet** (arm and gripper). |
 
 The generated URDF gives the same forward kinematics as the URDF before 2026-10-06

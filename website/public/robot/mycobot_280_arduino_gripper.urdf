@@ -18,13 +18,13 @@
       <geometry>
         <mesh filename="G_base.glb" scale="0.001 0.001 0.001"/>
       </geometry>
-      <origin rpy="0 0 0" xyz="0 -0.01 -0.032"/>
+      <origin rpy="0 0 0" xyz="0 0 -0.032"/>
     </visual>
     <collision>
       <geometry>
         <mesh filename="G_base.glb" scale="0.001 0.001 0.001"/>
       </geometry>
-      <origin rpy="0 0 0" xyz="0 -0.01 -0.032"/>
+      <origin rpy="0 0 0" xyz="0 0 -0.032"/>
     </collision>
   </link>
   <link name="joint1">
