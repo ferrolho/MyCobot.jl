@@ -170,6 +170,6 @@
     <limit effort="0.0" lower="-3.926991" upper="2.356194" velocity="1.570796"/>
     <parent link="joint6"/>
     <child link="joint6_flange"/>
-    <origin rpy="-1.5708 0.7854 0" xyz="0 0.0456 0"/>
+    <origin rpy="-1.5708 0.7854 0" xyz="0 0.0432 0"/>
   </joint>
 </robot>

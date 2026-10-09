@@ -84,7 +84,7 @@ mount. The outlines of these meshes match the photos of this gripper. Our model:
 | Item | Our model | Elephant's model |
 | --- | --- | --- |
 | Meshes | `gripper_base.dae`, `gripper_left1–3.dae`, `gripper_right1–3.dae` (millimetres, scale 0.001) | The same |
-| Mount | Fixed joint `joint6output_to_gripper_base`, 34 mm along the J6 axis, roll 90°, then the mount angle (below) | 34 mm, roll 1.579 rad |
+| Mount | Fixed joint `joint6output_to_gripper_base`, 34 mm along the J6 axis and 1.2 mm to the side (from the camera), roll 90°, then the mount angle (below) | 34 mm, roll 1.579 rad |
 | Actuated joint | `gripper_controller`, −0.70 rad (closed) to +0.15 rad (open) | −0.78 or −0.7 to +0.15 rad |
 | Other finger joints | Five joints that follow `gripper_controller` (`mimic`, multiplier ±1). Their limits are the range that the mimic gives. | Limits narrower than the mimic range (urdf-loader then stops the fingers) |
 | Finger joints on the body | 7.5 mm nearer the flange than in Elephant's model | — |
@@ -99,9 +99,15 @@ mount. The outlines of these meshes match the photos of this gripper. Our model:
   tips). This agrees with the gripper (a few millimetres closed, about 43 mm open).
 - **Body:** the back face of the body touches the flange face (1.7 mm along the J6 axis
   from the flange frame).
-- **Fingertips (checked on this arm, 2026-10-08):** along the J6 axis from the flange,
-  the model puts the fingertips at 114.7 mm closed and 96.9 mm open. A tape measure on
-  the arm gives 115 mm and 95 mm. This confirms the 34 mm mount offset to about 2 mm.
+- **Body position (measured with the camera, 2026-10-09):** the 9 holes in the palm, in
+  10 snapshots, put the body 2.4 mm nearer J6 than Elephant's model and 1.2 mm to the side
+  (flange y). The body sits on the flange face, so the model moves the flange 2.4 mm nearer
+  J6 (see [Robot model](/mycobot-280-lab/system/robot/)) and the body 1.2 mm to the side.
+  Error of the holes: 5.9 px before, 2.1 px after. See
+  [Kinematic calibration](/mycobot-280-lab/results/kinematic-calibration/).
+- **Fingertips (measured 2026-10-08 and 2026-10-09):** from the body's back face, 115 mm
+  closed and 95 mm open. The model gives 113.0 mm and 95.2 mm. The 2 mm difference when
+  closed is not resolved; the camera agrees with the model's closed finger angle.
 - **Node transforms:** each mesh file places its parts with COLLADA `<matrix>` nodes.
   Read the meshes with a loader that applies them (urdf-loader, pycollada
   `scene.objects`). The raw vertex arrays alone put the closed fingertips at about

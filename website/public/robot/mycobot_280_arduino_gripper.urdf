@@ -170,7 +170,7 @@
     <limit effort="0.0" lower="-3.926991" upper="2.356194" velocity="1.570796"/>
     <parent link="joint6"/>
     <child link="joint6_flange"/>
-    <origin rpy="-1.5708 0.7854 0" xyz="0 0.0456 0"/>
+    <origin rpy="-1.5708 0.7854 0" xyz="0 0.0432 0"/>
   </joint>
   <link name="gripper_base">
     <visual>
@@ -270,11 +270,13 @@
       <origin rpy="0 0 0" xyz="-0.012 0.0025 -0.012"/>
     </collision>
   </link>
-  <!-- The body's back face on the flange, the fingers along the J6 axis. Elephant's roll is 1.579; π/2 here. -->
+  <!-- The body's back face on the flange face, the fingers along the J6 axis. Elephant's roll is 1.579; π/2 here.
+         The camera puts the body 1.2 mm to the side of Elephant's position (flange y; 2026-10-09, the 9 palm holes
+         in 10 snapshots, experiments/kinematic-calib); the flange position is in joint6output_to_joint6. -->
   <joint name="joint6output_to_gripper_base" type="fixed">
     <parent link="joint6_flange"/>
     <child link="gripper_base"/>
-    <origin rpy="1.5707963267948966 0 0.0" xyz="0 0 0.034"/>
+    <origin rpy="1.5707963267948966 0 0.0" xyz="-0.0002 0.0012 0.034"/>
   </joint>
   <joint name="gripper_controller" type="revolute">
     <axis xyz="0 0 1"/>

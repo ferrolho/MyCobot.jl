@@ -19,7 +19,7 @@ const norm = MyCobot.LinearAlgebra.norm
                           ([3.07, -139.57, 153.1, -153.1, 87.01, -30.05], [96.8, -12.6, 90.0])]
         @test norm(MyCobot.flange_position_mm(state, q) - atom_xyz) < 12
     end
-    @test MyCobot.flange_position_mm(state, zeros(6)) ≈ [45.6, -64.6, 411.1] atol = 0.1
+    @test MyCobot.flange_position_mm(state, zeros(6)) ≈ [43.2, -64.6, 411.1] atol = 0.1
 
     # IK recovers a known pose from a different starting guess
     q_true = [10.0, -25, -70, 95, -8, 5]

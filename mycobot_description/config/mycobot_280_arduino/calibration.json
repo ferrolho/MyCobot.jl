@@ -71,12 +71,12 @@
   }
  ],
  "zero_offset": [
-  1.08,
-  -0.2,
-  -1.57,
-  0.34,
-  -0.13,
-  0.64
+  0.95,
+  -1.54,
+  0.67,
+  -0.43,
+  0.25,
+  1.63
  ],
  "rule": "true angle = encoder angle − Σ sin[k]·sin(k·q) − Σ cos[k]·(cos(k·q) − 1) + zero_offset (degrees)"
 }

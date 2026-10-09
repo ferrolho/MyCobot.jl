@@ -66,7 +66,9 @@
   <xacro:arm_joint name="joint4_to_joint3" parent="joint3" child="joint4" xyz="-0.1104 0 0" rpy="0 0 0" />
   <xacro:arm_joint name="joint5_to_joint4" parent="joint4" child="joint5" xyz="-0.096 0 0.06462" rpy="0 0 -1.5708" />
   <xacro:arm_joint name="joint6_to_joint5" parent="joint5" child="joint6" xyz="0 -0.07318 0" rpy="1.5708 -1.5708 0" />
-  <xacro:arm_joint name="joint6output_to_joint6" parent="joint6" child="joint6_flange" xyz="0 0.0456 0" rpy="-1.5708 0.7854 0" />
+  <!-- The flange face is 2.4 mm nearer J6 than in Elephant's model (0.0456): the camera puts the gripper body
+       (its palm holes and back-face screws) there, and the body sits on the flange face (2026-10-09). -->
+  <xacro:arm_joint name="joint6output_to_joint6" parent="joint6" child="joint6_flange" xyz="0 0.0432 0" rpy="-1.5708 0.7854 0" />
 
   <!-- Adaptive gripper (myCobot_gripper_ag), from Elephant's mycobot_280m5_with_gripper_parallel.urdf
        (mycobot_ros; the same meshes and joints as urdf/adaptive_gripper/). Meshes gripper_*.dae are in
@@ -92,11 +94,13 @@
     <xacro:mesh_link name="gripper_right2" mesh="gripper_right2" xyz="-0.005 -0.0195 -0.012" rpy="0 0 0" scale="0.001 0.001 0.001" />
     <xacro:mesh_link name="gripper_right3" mesh="gripper_right3" xyz="-0.012 0.0025 -0.012" rpy="0 0 0" scale="0.001 0.001 0.001" />
 
-    <!-- The body's back face on the flange, the fingers along the J6 axis. Elephant's roll is 1.579; π/2 here. -->
+    <!-- The body's back face on the flange face, the fingers along the J6 axis. Elephant's roll is 1.579; π/2 here.
+         The camera puts the body 1.2 mm to the side of Elephant's position (flange y; 2026-10-09, the 9 palm holes
+         in 10 snapshots, experiments/kinematic-calib); the flange position is in joint6output_to_joint6. -->
     <joint name="joint6output_to_gripper_base" type="fixed">
       <parent link="joint6_flange" />
       <child link="gripper_base" />
-      <origin xyz="0 0 0.034" rpy="${pi / 2} 0 ${radians(gripper_mount_deg)}" />
+      <origin xyz="-0.0002 0.0012 0.034" rpy="${pi / 2} 0 ${radians(gripper_mount_deg)}" />
     </joint>
 
     <!-- A finger joint about its z axis. multiplier 0: the actuated joint; otherwise it follows

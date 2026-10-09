@@ -151,4 +151,16 @@ The arm can rest outside them, for example when it is folded by hand while limp.
 ## Zero pose
 
 At 0° on every joint the arm is upright, and the flange points forward (+x).
-The flange is at (45.6, −64.6, 411.1) mm in the URDF base frame.
+The flange is at (43.2, −64.6, 411.1) mm in the URDF base frame (45.6 in Elephant’s model; see [Kinematic calibration](/mycobot-280-lab/results/kinematic-calibration/)).
+
+## Where the model differs from this arm
+
+Found with the lab camera and by hand (2026-10-09). The first two are in the model.
+
+| Part | This arm | Elephant's model | Effect |
+| --- | --- | --- | --- |
+| Flange face | 2.4 mm nearer J6 (43.2 mm) | 45.6 mm | In the model. The gripper and the fingertips are 2.4 mm nearer J6. |
+| Gripper body on the flange | 1.2 mm to the side (flange y) | Centred | In the model. |
+| Screws on top of the base (J1 housing) | 6 screws, 60° apart; two edges of the hexagon are parallel to the front and back faces. Radius 34.5 mm, 73 mm above the base frame, first screw at 31°. | 8 screws, 45° apart | Mesh not changed. The camera tracker uses the real positions. |
+| End of the J6 housing (the ATOM end) | Reaches further from the J5 axis: about 4–6 mm (estimate from the snapshots, not measured) | — | Mesh not changed: only the 3D view and the camera overlay. The kinematics are not affected: a fit that lets the J6 axis move from J5 does not improve the error on new snapshots (palm holes: 2.8 px, 3.2 px with the J6 axis free). |
+| Closed fingertips | 115 mm from the body's back face to the end of the plastic finger (middle of the inner edge) | 113.0 mm | Not resolved. Open: 95 mm and 95.2 mm. Fully closed, the foam pads do not touch (a small gap), as in the model. |
