@@ -11,7 +11,7 @@ import SystemDiagram from '../../../components/SystemDiagram.astro';
 
 | Part | Function |
 | --- | --- |
-| **Servos J1–J6** | Feetech STS bus servos, IDs 1–6, on one half-duplex bus at 1 Mbaud. Each servo runs its own position controller. |
+| **Servos J1–J6** | Feetech STS bus servos, IDs 1–6, on one half-duplex bus at 1 Mbaud. Each servo runs its own position controller. The [gripper](/mycobot-280-lab/system/gripper/) servo (ID 7) is on the same bus; our firmware uses it as joint J7. |
 | **Base** | Holds the 12 V input and an Arduino-style header. It bridges a UART on header pins 13/14 to the servo bus. The circuit inside is not known. |
 | **FT232R adapter** | USB-serial adapter on the base pins. It gives the laptop direct access to the servo bus. |
 | **ATOM** | M5Stack ATOM Matrix (ESP32-PICO-D4) at the end of the arm. It is on the servo bus (G19/G22). It has WiFi, a 5×5 LED matrix, a button and an IMU. |
@@ -42,7 +42,8 @@ works while the ATOM is idle. Do not run both at the same time.
 - **Joint angles** are in degrees, with the same signs and zeros as the stock
   firmware's `get_angles`. 0° on every joint is the upright pose.
 - **Servo positions** are in steps: 4096 steps per turn, 0° = step 2048.
-  `angle = sign × (step − 2048) × 360 / 4096`, with sign `[−1, −1, +1, −1, −1, −1]` for J1–J6.
+  `angle = sign × (step − 2048) × 360 / 4096`, with sign `[−1, −1, +1, −1, −1, −1]` for J1–J6
+  and +1 for J7 (the gripper).
 - **Cartesian positions** are in millimetres in the base frame of the URDF.
 
 ## Repository layout

@@ -13,6 +13,7 @@ The full register dump is in the [register map](/mycobot-280-lab/reference/regis
 | J1–J3 | `0x0809` (2057) | 3.9 | ~7.6 V |
 | J4 | `0x0709` (1801) | 3.9 | ~6.5 V |
 | J5–J6 | `0x0209` (521) | 3.9 | ~6.4 V |
+| J7 (the [gripper](/mycobot-280-lab/system/gripper/#control)) | `0x070A` (1802) | 3.40 | not measured |
 
 The common STS3215 reports `0x0309` and the STS3250 `0x0B09`. These three model
 numbers are not in any public table found so far. They can be custom versions made

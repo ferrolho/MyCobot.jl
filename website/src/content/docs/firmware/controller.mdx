@@ -40,7 +40,7 @@ Rules that keep the loop deterministic:
 | `BOOTING` | blue | Starting. |
 | `HOLDING` | green | Holding the pose (torque on, goal speed 0). No plan. |
 | `READY` | yellow | Holding, with a valid plan. |
-| `PLAYING` | cyan + progress bar | Playing a plan. |
+| `PLAYING` | cyan spiral (progress) | Playing a plan. |
 | `ERROR` | red | Bus error or tracking error. Press the button to clear it and hold. |
 | `OTA` | magenta | Receiving a firmware update. |
 
@@ -57,6 +57,13 @@ See [LED matrix signals](/mycobot-280-lab/firmware/led-signals/).
    (`GAINS`, registers 21–23) to every servo and read them back (up to 5 tries
    per servo, 5 rounds). PING reports the result as `gains_ok` (version 3+).
 6. Go to `HOLDING`, or to `ERROR` if a servo does not reply.
+
+After power-up the ATOM keeps the goals it holds (5.0). A run (plan, MOVE_TO, JOG, TRACK) starts
+from them, a JOG or TRACK ends on its last goals, and HOLD writes them again. Only power-up and
+errors set the goals to the present position. A joint that gravity loads sits a little below its
+goal (its position error). Each reset of the goal to the present position let it sag by that
+error again: about 1° on J4 and J5, and several degrees after a few jogs. A goal more than 3° from
+the position (the arm was moved by hand) starts from the position.
 
 The button only acknowledges: in any state except `PLAYING`, a press holds the
 current pose and clears an error. It is not an emergency stop.

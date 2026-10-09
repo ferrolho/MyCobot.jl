@@ -14,6 +14,56 @@ UDP port 5005 shows it with the git commit of the build, for example
 `atom_controller v4.0.0 (bff4529)`. Each version has a git tag
 `atom-controller-vX.Y.Z` (local until the repository is pushed).
 
+## 5.0.0 — 2026-10-09
+
+Breaking: STREAM, STATE, MOVE_TO, JOG and TRACK change; GRIPPER is removed. Update the
+clients with the firmware (the Control page reads both STREAM layouts).
+
+- **The gripper is joint J7.** While the ATOM finds it, every joint message has 7 joints
+  (J1–J6, then J7) in the same units (degrees, same formula; limits −51.5° closed to 0°
+  open, the end stops). Without it, 6. See [J7](/mycobot-280-lab/comms/websocket-api/#joints-j1j6-and-j7-50).
+- J7 is in every bus read and write of the joints (the group read takes about 0.2 ms
+  more), so it streams at the same rate as J1–J6 (it was read 10 times a second), with
+  speed, temperature, voltage and status.
+- **MOVE_TO, JOG and TRACK take 6 or 7 values** (the length tells). With 6, J7 holds its
+  goal; 7 without a gripper is refused with −7. J7 follows the same minimum-jerk and
+  TRACK profiles as the other joints (90 °/s, 2000 °/s²), so it arrives with them.
+- **J7 has no margin:** its goals, JOG and TRACK use the whole range, end stop to end stop
+  (J1–J6 keep 2° inside their limits). Grasps drive the jaws against the object or the stops,
+  and a closed gripper at rest (about −50.9°) can hold its goal.
+- **GRIPPER (`0x11`) is removed**, and with it the torque-off value (`0xFFFF`).
+- **No sag after a run, JOG, TRACK or HOLD.** Runs start from the goals the joints hold,
+  not from the present position (a goal more than 3° from the position, after the arm was
+  moved by hand, starts from the position). A JOG or TRACK that stops normally keeps its last
+  goals, and HOLD writes the held goals again. Only power-up and errors hold at the present
+  position. Before: each reset of a goal to the present position let a joint that gravity
+  loads sag by its position error (on 2026-10-09: J4 and J5 about 1° per jog, 3–4° over a
+  few tests). Clients should also start plans from the held goals (Julia `atom_move_to` does).
+- **LED progress as a cyan spiral:** over a dark matrix, the pixels come on one at a time
+  from the centre out to the top-left corner (25 steps, each halfway through its part of the
+  motion; full during the 0.5 s of settling; 0 at the start of each run). Before: 5 white
+  pixels in the bottom row, behind the motion. See [LED matrix signals](/mycobot-280-lab/firmware/led-signals/).
+- **Grasps:** J7 has no following-error check, and a hold (HOLD, STOP, end or abort of a
+  run) keeps its goal. Runs start J7 from its goal. A grasp stays closed.
+- **STREAM** has per-joint arrays of n and the goal of each joint: 21 + 11·n bytes (87 or
+  98), control byte at offset 7, n at offset 8. **STATE** has `u8 n` after `ok`.
+- Temperature, voltage and status: one joint every 1/n s (each joint once a second),
+  also during runs (before: idle only, all joints at once). While idle the ATOM reads
+  them only while someone subscribes or J7 is there (for the thermal derating).
+- JOG and TRACK move a joint that starts outside its range (moved by hand, or J7 on its
+  open end stop) back in smoothly. Before, it jumped onto the range edge in one step.
+- When it finds the gripper, the ATOM also writes its position-loop gains (150/150/0, the
+  values found on it) and holds it where it is (before: torque off until the first
+  GRIPPER).
+- Status log: `joints=6|7` (and `j7_derated` while derated) instead of `gripper_c=N`
+  (J7's temperature is in the STREAM).
+- **Plans** have 6 or 7 joints: PLAN_BEGIN has an optional `u8 joints` (default 6), and PLAN_DATA
+  samples have that many. PLAY of a 7-joint plan without a gripper is refused with −7. With a
+  6-joint plan or PLAY_SIGNAL (J1–J6), J7 holds its goal.
+- **TELEM** samples have the joints of the run's command (17 + 10·n bytes): a 6-joint plan or
+  MOVE_TO gets the 77-byte samples as before; 7 joints give 87 bytes (16 per packet).
+- **STATE** has the goal of each joint after the positions (as the STREAM).
+
 ## 4.7.0 — 2026-10-06
 
 - **Gripper at full torque.** When the ATOM finds the gripper (at power-up or when it is
@@ -40,7 +90,7 @@ UDP port 5005 shows it with the git commit of the build, for example
   New command **GRIPPER** (`0x11`): u16 opening in 0.1 % (0 closed, 1000 open), or
   `0xFFFF` for torque off. It needs control and works also during MOVE_TO, JOG and
   TRACK.
-  See [GRIPPER](/mycobot-280-lab/comms/websocket-api/#gripper-46).
+  Removed in 5.0 (J7 moves with MOVE_TO, JOG and TRACK).
 - STREAM has 5 more bytes (79): gripper found, opening (0.1 %), load (0.1 %).
   Older clients read the first 74 bytes and still work.
 - The opening maps to the servo end stops in `servos.yaml` (key `gripper`; generated

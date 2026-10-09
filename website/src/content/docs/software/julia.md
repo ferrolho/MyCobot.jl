@@ -53,7 +53,8 @@ tests add methods for a simulated bus.
 | --- | --- | --- |
 | `play_trajectory(io, t, q; lag, q_cmd, rate, …)` | yes | Laptop player. Returns `(recording, aborted)`. |
 | `atom_play_trajectory(link, t, q; …)` | yes | Same contract, played on the ATOM. Returns `(recording, done)`. |
-| `move_to(io, q_goal)` / `atom_move_to(link, q_goal)` | yes | Minimum-jerk move from the present pose. |
+| `move_to(io, q_goal)` / `atom_move_to(link, q_goal)` | yes | Minimum-jerk move from the present pose. `atom_move_to` takes 6 goals, or 7 with J7 (the gripper, firmware 5.0+). |
+| `atom_move!(link, q_goal; duration=0)` | yes | MOVE_TO computed on the ATOM (4.2+), 6 or 7 goals; no upload. |
 | `check_plan(t, q, mechanism)` | no | Start/end at zero, limit margin, speed limit. |
 | `read_plan_csv`, `write_plan_csv`, `write_recording_csv`, `write_atom_recording_csv` | no | Files. |
 

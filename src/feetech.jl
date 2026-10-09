@@ -180,6 +180,7 @@ Error (degrees) of the encoder of joint `j` at encoder angle `q` (degrees), from
 Zero at `q = 0`. Measured with the gyro (docs: results/imu-encoders).
 """
 function encoder_error(j::Integer, q::Real)
+    j > length(ENCODER_CORRECTION) && return 0.0   # no correction measured (J7, the gripper)
     c = ENCODER_CORRECTION[j]
     e = 0.0
     for k in eachindex(c.sin)

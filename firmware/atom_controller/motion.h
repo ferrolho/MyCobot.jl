@@ -1,4 +1,5 @@
-// motion.h — MOVE_TO and JOG (firmware 4.2+). Plain C++: tested by tools/firmware-tests/.
+// motion.h — MOVE_TO, JOG and TRACK (firmware 4.2+). Plain C++: tested by tools/firmware-tests/.
+// n: the number of joints in use, 6 (J1-J6) or 7 (with J7, the gripper; firmware 5.0+).
 #pragma once
 #include <math.h>
 #include "motion_limits.h"
@@ -8,17 +9,17 @@ namespace motion {
 inline float clampf(float x, float a, float b) { return x < a ? a : (x > b ? b : x); }
 
 // 0 = goal ok, otherwise 1 + the index of the first joint outside its limit.
-inline int move_validate(const float goal[6]) {
-    for (int j = 0; j < 6; j++)
-        if (!(goal[j] >= lim::MODEL_MIN_DEG[j] + lim::JOG_MARGIN && goal[j] <= lim::MODEL_MAX_DEG[j] - lim::JOG_MARGIN)) return j + 1;
+inline int move_validate(const float goal[], int n) {
+    for (int j = 0; j < n; j++)
+        if (!(goal[j] >= lim::MODEL_MIN_DEG[j] + lim::margin(j) && goal[j] <= lim::MODEL_MAX_DEG[j] - lim::margin(j))) return j + 1;
     return 0;
 }
 
 // Shortest minimum-jerk duration (s) that keeps every joint within MOVE_VMAX and AMAX_DPS2:
 // peak speed 1.875·d/T, peak acceleration 5.77·d/T².
-inline float move_min_duration(const float start[6], const float goal[6]) {
+inline float move_min_duration(const float start[], const float goal[], int n) {
     float T = 0.2f;
-    for (int j = 0; j < 6; j++) {
+    for (int j = 0; j < n; j++) {
         float d = fabsf(goal[j] - start[j]);
         T = fmaxf(T, fmaxf(1.875f * d / lim::MOVE_VMAX, sqrtf(5.77f * d / lim::AMAX_DPS2[j])));
     }
@@ -30,17 +31,23 @@ inline float minjerk(float x) {
     return x * x * x * (10 - 15 * x + 6 * x * x);
 }
 
-struct Jog { float q[6]; float v[6]; };
+struct Jog { float q[robot::N_JOINTS]; float v[robot::N_JOINTS]; };
+
+// The range that JOG and TRACK keep a joint in: margin(j) inside its limits, widened to include the
+// joint's position. A joint outside the range (moved there by hand)
+// can only move back in, smoothly: without the widening it would jump onto the range in one step.
+inline float range_lo(const Jog& s, int j) { return fminf(lim::MODEL_MIN_DEG[j] + lim::margin(j), s.q[j]); }
+inline float range_hi(const Jog& s, int j) { return fmaxf(lim::MODEL_MAX_DEG[j] - lim::margin(j), s.q[j]); }
 
 // One JOG step of dt seconds: each joint's velocity goes toward its target (clamped to JOG_VMAX)
 // at JOG_AMAX, brakes in time to stop JOG_MARGIN inside its limit, and the position integrates.
-inline void jog_step(Jog& s, const float target[6], float dt) {
+inline void jog_step(Jog& s, const float target[], int n, float dt) {
     const float a = lim::JOG_AMAX, dv_max = a * dt;
     // The fastest speed that can still stop within distance d, braking at a in steps of dt
     // (discrete form of sqrt(2·a·d); the continuous form leaves a speed step at the limit).
     auto stoppable = [&](float d) { return d <= 0 ? 0.0f : dv_max * (sqrtf(0.25f + 2 * d / (a * dt * dt)) - 0.5f); };
-    for (int j = 0; j < 6; j++) {
-        const float lo = lim::MODEL_MIN_DEG[j] + lim::JOG_MARGIN, hi = lim::MODEL_MAX_DEG[j] - lim::JOG_MARGIN;
+    for (int j = 0; j < n; j++) {
+        const float lo = range_lo(s, j), hi = range_hi(s, j);
         float t = clampf(target[j], -lim::JOG_VMAX, lim::JOG_VMAX);
         float up = stoppable(hi - s.q[j]);
         float dn = stoppable(s.q[j] - lo);
@@ -58,13 +65,13 @@ inline void jog_step(Jog& s, const float target[6], float dt) {
 // JOG_MARGIN inside its limit) at up to vmax (≤ MOVE_VMAX) and its own AMAX_DPS2, and brakes to stop
 // exactly on it. A goal that jumps closer than the braking distance makes the joint overshoot and
 // come back, but never past its limit. With stop (deadman, STOP, HOLD): brake to zero at AMAX_DPS2.
-inline void track_step(Jog& s, const float goal[6], float vmax, bool stop, float dt) {
+inline void track_step(Jog& s, const float goal[], int n, float vmax, bool stop, float dt) {
     vmax = clampf(vmax, 0, lim::MOVE_VMAX);
-    for (int j = 0; j < 6; j++) {
+    for (int j = 0; j < n; j++) {
         const float a = lim::AMAX_DPS2[j], dv_max = a * dt;
         auto stoppable = [&](float d) { return d <= 0 ? 0.0f : dv_max * (sqrtf(0.25f + 2 * d / (a * dt * dt)) - 0.5f); };
-        const float lo = lim::MODEL_MIN_DEG[j] + lim::JOG_MARGIN, hi = lim::MODEL_MAX_DEG[j] - lim::JOG_MARGIN;
-        const float g = clampf(goal[j], lo, hi), e = g - s.q[j];
+        const float lo = range_lo(s, j), hi = range_hi(s, j);
+        const float g = clampf(goal[j], lim::MODEL_MIN_DEG[j] + lim::margin(j), lim::MODEL_MAX_DEG[j] - lim::margin(j)), e = g - s.q[j];
         float t = stop ? 0.0f : copysignf(fminf(vmax, stoppable(fabsf(e))), e);
         t = clampf(t, -stoppable(s.q[j] - lo), stoppable(hi - s.q[j]));
         const float v0 = s.v[j];
@@ -78,8 +85,8 @@ inline void track_step(Jog& s, const float goal[6], float vmax, bool stop, float
     }
 }
 
-inline bool jog_stopped(const Jog& s) {
-    for (int j = 0; j < 6; j++) if (fabsf(s.v[j]) > 1e-3f) return false;
+inline bool jog_stopped(const Jog& s, int n) {
+    for (int j = 0; j < n; j++) if (fabsf(s.v[j]) > 1e-3f) return false;
     return true;
 }
 

@@ -9,7 +9,10 @@
 #define BUS_RX    19
 #define BUS_TX    22
 #define BUS_BAUD  1000000
-#define N_SERVOS  6
+// Joints on the bus: J1-J6 (IDs 1-6), and J7, the gripper (ID 7), while it is found (firmware 5.0+).
+// The functions below take n, the number of joints in use (IDs 1..n).
+const int N_ARM = robot::N_ARM, MAX_JOINTS = robot::N_JOINTS;
+inline uint8_t all_mask(int n) { return (1 << n) - 1; }
 
 #define REG_MIN_ANGLE          9      // min (9-10) and max (11-12) angle limit
 #define REG_PHASE             18
@@ -36,7 +39,7 @@ inline uint8_t ft_checksum(const uint8_t* body, int n) {
 // servo reads and takes positions in sign-magnitude (bit 15 = sign), and counts from its one-turn
 // reading at power-up, so it can be one turn off: turn_offset = our steps − servo steps (a multiple
 // of 4096), set by setup_multi_turn(). REG_READ / REG_WRITE stay raw.
-int32_t turn_offset[N_SERVOS] = {0};
+int32_t turn_offset[MAX_JOINTS] = {0};
 
 inline int32_t servo_signed(uint16_t raw) { return (raw & 0x8000) ? -(int32_t)(raw & 0x7FFF) : raw; }
 
@@ -53,8 +56,8 @@ inline uint16_t pos_to_servo(int j, uint16_t pos) {
 }
 
 // Values as the servos take them: goal positions of multi-turn joints in servo steps.
-inline void to_servo(uint8_t addr, const uint16_t v[N_SERVOS], uint16_t out[N_SERVOS]) {
-    for (int j = 0; j < N_SERVOS; j++) out[j] = addr == REG_GOAL_POSITION ? pos_to_servo(j, v[j]) : v[j];
+inline void to_servo(uint8_t addr, const uint16_t v[], uint16_t out[], int n) {
+    for (int j = 0; j < n; j++) out[j] = addr == REG_GOAL_POSITION ? pos_to_servo(j, v[j]) : v[j];
 }
 
 void bus_begin() {
@@ -83,18 +86,19 @@ int bus_recv(uint8_t* out, int n, uint32_t timeout_us) {
     return got;
 }
 
-// SYNC READ `len` bytes at `addr` from servos 1..6 into data[j][0..len). Returns a bitmask of
+// SYNC READ `len` bytes at `addr` from servos 1..n into data[j][0..len). Returns a bitmask of
 // the servos that replied with a valid packet.
-uint8_t sync_read(uint8_t addr, uint8_t len, uint8_t data[N_SERVOS][16]) {
-    uint8_t params[2 + N_SERVOS] = {addr, len, 1, 2, 3, 4, 5, 6};
-    bus_send(0xFE, 0x82, params, sizeof(params));
-    uint8_t rx[N_SERVOS * 22];
-    int got = bus_recv(rx, N_SERVOS * (6 + len), 3000);
+uint8_t sync_read(uint8_t addr, uint8_t len, uint8_t data[][16], int n) {
+    uint8_t params[2 + MAX_JOINTS] = {addr, len};
+    for (int j = 0; j < n; j++) params[2 + j] = j + 1;
+    bus_send(0xFE, 0x82, params, 2 + n);
+    uint8_t rx[MAX_JOINTS * 22];
+    int got = bus_recv(rx, n * (6 + len), 3000);
     uint8_t mask = 0;
     for (int i = 0; i + 6 + len <= got;) {
         if (rx[i] == 0xFF && rx[i + 1] == 0xFF && rx[i + 3] == len + 2) {
             uint8_t id = rx[i + 2];
-            if (id >= 1 && id <= N_SERVOS && ft_checksum(rx + i + 2, 3 + len) == rx[i + 5 + len]) {
+            if (id >= 1 && id <= n && ft_checksum(rx + i + 2, 3 + len) == rx[i + 5 + len]) {
                 memcpy(data[id - 1], rx + i + 5, len);
                 mask |= 1 << (id - 1);
             }
@@ -106,22 +110,22 @@ uint8_t sync_read(uint8_t addr, uint8_t len, uint8_t data[N_SERVOS][16]) {
     return mask;
 }
 
-void sync_write_u16(uint8_t addr, const uint16_t v[N_SERVOS]) {
-    uint16_t s[N_SERVOS];
-    to_servo(addr, v, s);
-    uint8_t params[2 + N_SERVOS * 3] = {addr, 2};
-    for (int j = 0; j < N_SERVOS; j++) {
+void sync_write_u16(uint8_t addr, const uint16_t v[], int n) {
+    uint16_t s[MAX_JOINTS];
+    to_servo(addr, v, s, n);
+    uint8_t params[2 + MAX_JOINTS * 3] = {addr, 2};
+    for (int j = 0; j < n; j++) {
         params[2 + 3 * j] = j + 1;
         params[3 + 3 * j] = s[j] & 0xFF;
         params[4 + 3 * j] = s[j] >> 8;
     }
-    bus_send(0xFE, 0x83, params, sizeof(params));
+    bus_send(0xFE, 0x83, params, 2 + 3 * n);
 }
 
-void sync_write_u8(uint8_t addr, uint8_t v) {
-    uint8_t params[2 + N_SERVOS * 2] = {addr, 1};
-    for (int j = 0; j < N_SERVOS; j++) { params[2 + 2 * j] = j + 1; params[3 + 2 * j] = v; }
-    bus_send(0xFE, 0x83, params, sizeof(params));
+void sync_write_u8(uint8_t addr, uint8_t v, int n) {
+    uint8_t params[2 + MAX_JOINTS * 2] = {addr, 1};
+    for (int j = 0; j < n; j++) { params[2 + 2 * j] = j + 1; params[3 + 2 * j] = v; }
+    bus_send(0xFE, 0x83, params, 2 + 2 * n);
 }
 
 inline uint16_t u16le(const uint8_t* p) { return p[0] | (p[1] << 8); }
@@ -131,54 +135,58 @@ inline uint16_t u16le(const uint8_t* p) { return p[0] | (p[1] << 8); }
 // Write, read the register back, retry. Returns false if it never took.
 volatile uint32_t write_retries = 0;
 
-bool sync_write_u16_verified(uint8_t addr, const uint16_t v[N_SERVOS], int attempts = 5) {
-    uint16_t s[N_SERVOS];
-    to_servo(addr, v, s);
+bool sync_write_u16_verified(uint8_t addr, const uint16_t v[], int n, int attempts = 5) {
+    uint16_t s[MAX_JOINTS];
+    to_servo(addr, v, s, n);
     for (int a = 0; a < attempts; a++) {
         if (a) write_retries++;
-        sync_write_u16(addr, v);
+        sync_write_u16(addr, v, n);
         delayMicroseconds(300);
-        uint8_t d[N_SERVOS][16];
-        if (sync_read(addr, 2, d) != (1 << N_SERVOS) - 1) continue;
+        uint8_t d[MAX_JOINTS][16];
+        if (sync_read(addr, 2, d, n) != all_mask(n)) continue;
         bool ok = true;
-        for (int j = 0; j < N_SERVOS; j++) ok &= u16le(d[j]) == s[j];
+        for (int j = 0; j < n; j++) ok &= u16le(d[j]) == s[j];
         if (ok) return true;
     }
     return false;
 }
 
-bool sync_write_u8_verified(uint8_t addr, uint8_t v, int attempts = 5) {
+bool sync_write_u8_verified(uint8_t addr, uint8_t v, int n, int attempts = 5) {
     for (int a = 0; a < attempts; a++) {
         if (a) write_retries++;
-        sync_write_u8(addr, v);
+        sync_write_u8(addr, v, n);
         delayMicroseconds(300);
-        uint8_t d[N_SERVOS][16];
-        if (sync_read(addr, 1, d) != (1 << N_SERVOS) - 1) continue;
+        uint8_t d[MAX_JOINTS][16];
+        if (sync_read(addr, 1, d, n) != all_mask(n)) continue;
         bool ok = true;
-        for (int j = 0; j < N_SERVOS; j++) ok &= d[j][0] == v;
+        for (int j = 0; j < n; j++) ok &= d[j][0] == v;
         if (ok) return true;
     }
     return false;
 }
 
-// Present position/speed/load (raw registers) of all servos. Returns true if all replied.
-bool read_state(uint16_t pos[N_SERVOS], uint16_t spd[N_SERVOS], uint16_t load[N_SERVOS]) {
-    uint8_t d[N_SERVOS][16];
-    uint8_t mask = sync_read(REG_PRESENT_POSITION, 6, d);
-    for (int j = 0; j < N_SERVOS; j++) {
+// Present position/speed/load (raw registers) of servos 1..n. Returns the bitmask of the servos that
+// replied; the values of the others stay as they were.
+uint8_t read_state(uint16_t pos[], uint16_t spd[], uint16_t load[], int n) {
+    uint8_t d[MAX_JOINTS][16];
+    uint8_t mask = sync_read(REG_PRESENT_POSITION, 6, d, n);
+    for (int j = 0; j < n; j++) {
         if (mask & (1 << j)) {
             pos[j] = pos_from_servo(j, u16le(d[j])); spd[j] = u16le(d[j] + 2); load[j] = u16le(d[j] + 4);
         }
     }
-    return mask == (1 << N_SERVOS) - 1;
+    return mask;
 }
 
-// Goals = present positions and goal speed 0: torque on, nothing can move.
-bool hold_pose() {
-    uint16_t zero[N_SERVOS] = {0}, pos[N_SERVOS], spd[N_SERVOS], load[N_SERVOS];
-    if (!sync_write_u16_verified(REG_GOAL_SPEED, zero)) return false;
-    if (!read_state(pos, spd, load)) return false;
-    return sync_write_u16_verified(REG_GOAL_POSITION, pos);
+// Goals = present positions and goal speed 0 on servos 1..n: torque on, nothing can move. The goals
+// written go to held (if given).
+bool hold_pose(int n, uint16_t held[] = nullptr) {
+    uint16_t zero[MAX_JOINTS] = {0}, pos[MAX_JOINTS], spd[MAX_JOINTS], load[MAX_JOINTS];
+    if (!sync_write_u16_verified(REG_GOAL_SPEED, zero, n)) return false;
+    if (read_state(pos, spd, load, n) != all_mask(n)) return false;
+    if (!sync_write_u16_verified(REG_GOAL_POSITION, pos, n)) return false;
+    if (held) memcpy(held, pos, n * sizeof(uint16_t));
+    return true;
 }
 
 // READ `len` bytes at `addr` from one servo into `out`. Returns true on a valid reply.

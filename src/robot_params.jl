@@ -3,13 +3,16 @@
 "Bus ID of each joint servo."
 const SERVO_IDS = UInt8.([1, 2, 3, 4, 5, 6])
 
-"Joint angle direction against the servo position: angle = sign × (step − 2048) / STEPS_PER_DEG."
-const JOINT_SIGN = (-1, -1, +1, -1, -1, -1)
+"Joint angle direction against the servo position: angle = sign × (step − 2048) / STEPS_PER_DEG. J1-J6, then J7 (the gripper)."
+const JOINT_SIGN = (-1, -1, +1, -1, -1, -1, +1)
 
 const STEPS_PER_DEG = 4096 / 360
 
-"Joints whose servo reads and moves past one turn (the firmware sets phase bit 4 at power-up)."
-const MULTI_TURN = (false, false, false, false, false, true)
+"Joints whose servo reads and moves past one turn (the firmware sets phase bit 4 at power-up). J1-J6, then J7."
+const MULTI_TURN = (false, false, false, false, false, true, false)
+
+"Joint limits (°) of J1-J7 as the controller firmware uses them (J7: the gripper's end stops)."
+const JOINT_LIMITS_DEG = ((-165.0, 165.0), (-140.0, 140.0), (-150.0, 150.0), (-150.0, 150.0), (-160.0, 160.0), (-225.0, 135.0), (-51.5039, 0.0))
 
 "Acceleration limits of the controller firmware (°/s²), below the servo limits `SERVO_AMAX`."
 const FIRMWARE_AMAX = [400.0, 400.0, 400.0, 2000.0, 2000.0, 2000.0]

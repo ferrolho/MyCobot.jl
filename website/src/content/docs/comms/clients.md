@@ -46,7 +46,8 @@ Firmware 4.1 fixes this.
   u16 speed[6], u16 load[6], u8 temperature[6] (°C), u8 voltage[6] (0.1 V),
   u8 servo status[6] (register 65), i16 acc[3], i16 gyro[3]`. Temperature,
   voltage and status are read once a second while idle, and keep their last
-  values while a plan plays.
+  values while a plan plays. Firmware 5.0 changes the layout (n joints, with the
+  goals): see [the STREAM packet](/mycobot-280-lab/comms/websocket-api/#the-stream-packet-50).
 
 ## The bridge (proposed)
 

@@ -99,19 +99,24 @@ decode_imu(acc, gyro) = vcat(acc ./ 4096, gyro ./ 16.4)
 """
     atom_state(link)
 
-Joint state read by the ATOM, plus the IMU: `(ok, q, dq, load, imu)` in degrees, °/s, %, and g / °/s.
+Joint state read by the ATOM, plus the IMU: `(ok, q, goal, dq, load, imu)` in degrees, °/s, %, and
+g / °/s. `goal` is the goal each joint holds or follows: the measured pose while the robot holds, except
+J7 on an object (its grasp goal). The joint vectors have 6 entries, or 7 with J7 (the gripper) while the
+ATOM finds it (firmware 5.0+). `ok`: J1-J6 replied.
 """
 function atom_state(link::AtomLink)
     drain!(link)
     send(link, UInt8[0x02])
     m = receive(link, 0x82; timeout=0.5)
     m === nothing && error("no STATE reply")
-    raw(k, j) = rd(UInt16, m, 3 + 12k + 2(j - 1))
-    q = [position_to_angle(j, raw(0, j)) for j in 1:6]
-    dq = [JOINT_SIGN[j] * decode_signed15(raw(1, j)) / STEPS_PER_DEG for j in 1:6]
-    load = [JOINT_SIGN[j] * decode_load(raw(2, j)) for j in 1:6]
-    imu = decode_imu([rd(Int16, m, 39 + 2k) for k in 0:2], [rd(Int16, m, 45 + 2k) for k in 0:2])
-    return (ok=m[2] == 1, q=q, dq=dq, load=load, imu=imu)
+    n = Int(m[3])   # 5.0+: u8 ok, u8 n, u16 pos[n], goal[n], spd[n], load[n], i16 acc[3], gyro[3]
+    raw(k, j) = rd(UInt16, m, 4 + 2n * k + 2(j - 1))
+    q = [position_to_angle(j, raw(0, j)) for j in 1:n]
+    goal = [position_to_angle(j, raw(1, j)) for j in 1:n]
+    dq = [JOINT_SIGN[j] * decode_signed15(raw(2, j)) / STEPS_PER_DEG for j in 1:n]
+    load = [JOINT_SIGN[j] * decode_load(raw(3, j)) for j in 1:n]
+    imu = decode_imu([rd(Int16, m, 4 + 8n + 2k) for k in 0:2], [rd(Int16, m, 10 + 8n + 2k) for k in 0:2])
+    return (ok=m[2] == 1, q=q, goal=goal, dq=dq, load=load, imu=imu)
 end
 
 const REG_STATUS = Dict(0 => "ok", -1 => "busy or bad request", -4 => "no reply from the servo",
@@ -175,28 +180,32 @@ atom_stop(link::AtomLink) = send(link, UInt8[0x08])
 """
     atom_upload_plan(link, t, q_ref, q_cmd; rate=50, cubic=true)
 
-Resample the plan (degrees, rows = samples at times `t`) to `rate` Hz, convert to servo steps,
-and upload it with per-chunk ACKs and a CRC-32C check. The ATOM interpolates between samples:
+Resample the plan (degrees, rows = samples at times `t`; 6 columns, or 7 with J7 on firmware 5.0+)
+to `rate` Hz, convert to servo steps, and upload it with per-chunk ACKs and a CRC-32C check. With a
+6-column plan, J7 (if found) holds its goal. The ATOM interpolates between samples:
 Catmull-Rom with `cubic` (firmware 3.1+; older firmware interpolates linearly). Cubic at 25–50 Hz
 reproduces our plans to within half a servo step (0.05°), with 5–10× less memory than 250 Hz.
 """
 function atom_upload_plan(link::AtomLink, t::AbstractVector, q_ref::AbstractMatrix, q_cmd::AbstractMatrix;
                           rate::Integer=50, cubic::Bool=true)
+    nj = size(q_cmd, 2)
+    nj in (6, 7) && size(q_ref, 2) == nj || throw(ArgumentError("a plan has 6 or 7 joint columns (cmd and ref the same)"))
+    sz = 4nj                                          # bytes per sample: cmd[nj], ref[nj]
     ts = collect(t[1]:1/rate:t[end])
     n = length(ts)
-    data = Vector{UInt8}(undef, 24n)
+    data = Vector{UInt8}(undef, sz * n)
     for (i, ti) in enumerate(ts)
         c = sample_trajectory(t, q_cmd, ti)
         r = sample_trajectory(t, q_ref, ti)
-        steps = vcat([angle_to_position(j, c[j]) for j in 1:6], [angle_to_position(j, r[j]) for j in 1:6])
-        data[24(i-1)+1:24i] = reinterpret(UInt8, htol.(UInt16.(steps)))
+        steps = vcat([angle_to_position(j, c[j]) for j in 1:nj], [angle_to_position(j, r[j]) for j in 1:nj])
+        data[sz*(i-1)+1:sz*i] = reinterpret(UInt8, htol.(UInt16.(steps)))
     end
-    st = request_ack(link, vcat(0x04, le(UInt32(n)), le(UInt16(rate)), UInt8(cubic)))
+    st = request_ack(link, vcat(0x04, le(UInt32(n)), le(UInt16(rate)), UInt8(cubic), UInt8(nj)))
     st == 0 || error("PLAN_BEGIN refused ($st$(st == -3 ? ": not enough memory" : ""))")
     chunk = 50
     for off in 0:chunk:n-1
         cnt = min(chunk, n - off)
-        msg = vcat(0x05, le(UInt32(off)), le(UInt16(cnt)), data[24off+1:24(off+cnt)])
+        msg = vcat(0x05, le(UInt32(off)), le(UInt16(cnt)), data[sz*off+1:sz*(off+cnt)])
         request_ack(link, msg; timeout=0.3, retries=5) == 0 || error("PLAN_DATA refused at sample $off")
     end
     request_ack(link, vcat(0x06, le(UInt32(CRC32c.crc32c(data))))) == 0 || error("plan CRC mismatch on the ATOM")
@@ -214,13 +223,22 @@ Returns `(samples, done)`: raw telemetry samples and the result summary.
 function atom_play(link::AtomLink; rate::Integer=500, speed_cap::Integer=2000,
                    max_tracking_error::Real=20.0, start_tolerance::Real=3.0, timeout::Real=120.0,
                    signal::Union{Nothing,SignalParams}=nothing)
-    sz = atom_ping(link).version >= v"4.0.0" ? 77 : 53   # telemetry sample size
     drain!(link)
     kind = signal === nothing ? 0x07 : 0x0B
     msg = vcat(kind, le(UInt16(rate)), le(UInt16(speed_cap)),
                le(UInt16(round(Int, max_tracking_error * STEPS_PER_DEG))), le(UInt16(round(Int, start_tolerance * STEPS_PER_DEG))))
     signal === nothing || append!(msg, pack_signal(signal))
     send(link, msg)
+    return collect_run(link, kind; timeout=timeout)
+end
+
+"""
+    collect_run(link, kind; timeout) -> (samples, done)
+
+After a command that starts a run (PLAY, PLAY_SIGNAL, MOVE_TO over UDP): its ACK, the telemetry
+samples and DONE. A sample has 17 + 10n bytes for n joints (77 with 6; 53 before firmware 4.0).
+"""
+function collect_run(link::AtomLink, kind::UInt8; timeout::Real=120.0)
     samples = Dict{UInt32,Vector{UInt8}}()
     acked = false
     deadline = time() + timeout
@@ -230,10 +248,12 @@ function atom_play(link::AtomLink; rate::Integer=500, speed_cap::Integer=2000,
         isempty(m) && continue
         if m[1] == 0x83 && m[2] == kind
             st = reinterpret(Int8, m[3])
-            st == 0 || st == -3 || st == -4 || error((kind == 0x07 ? "PLAY" : "PLAY_SIGNAL") * " refused ($st)")
+            st == 0 || st == -3 || st == -4 || error(get(RUN_NAMES, kind, "run") * " refused ($st$(st == -7 ? ": J7 given, but no gripper found" : ""))")
             acked = true
         elseif m[1] == 0x84
             seq, cnt = rd(UInt32, m, 2), m[6]
+            cnt == 0 && continue
+            sz = (length(m) - 6) ÷ cnt                    # bytes per sample
             for k in 0:cnt-1
                 samples[seq+k] = m[7+sz*k:6+sz*(k+1)]
             end
@@ -244,8 +264,10 @@ function atom_play(link::AtomLink; rate::Integer=500, speed_cap::Integer=2000,
             return [samples[k] for k in sort!(collect(keys(samples)))], done
         end
     end
-    error(acked ? "no DONE from the ATOM within $(timeout) s" : "the ATOM didn't acknowledge PLAY")
+    error(acked ? "no DONE from the ATOM within $(timeout) s" : "the ATOM didn't acknowledge $(get(RUN_NAMES, kind, "the run"))")
 end
+
+const RUN_NAMES = Dict(0x07 => "PLAY", 0x0B => "PLAY_SIGNAL", 0x0E => "MOVE_TO")
 
 """
     atom_play_trajectory(link, t_plan, q_plan; lag=DEFAULT_LAG, q_cmd=nothing, rate=500, plan_rate=250, kwargs...)
@@ -271,25 +293,27 @@ end
 """
     decode_telemetry(samples; ref=nothing, cmd=nothing)
 
-Telemetry samples to recording rows (`RECORDING_HEADER` + `IMU_HEADER`). Firmware 4.0+ sends
-the command and reference it used (77-byte samples); for older firmware (53 bytes) they come
-from the functions `ref(t)` and `cmd(t)`.
+Telemetry samples to recording rows (`recording_header(n)` + `IMU_HEADER`). Firmware 4.0+ sends
+the command and reference it used, for the n joints of the run's command (17 + 10n bytes: 77 with
+6 joints, 87 with J7); for older firmware (53 bytes, 6 joints) they come from the functions `ref(t)`
+and `cmd(t)`.
 """
 function decode_telemetry(samples; ref=nothing, cmd=nothing)
     rows = Vector{Vector{Float64}}()
     for b in samples
-        v4 = length(b) == 77
-        o = v4 ? 24 : 0                                   # cmd and ref come first in 4.0+
+        v4 = length(b) != 53
+        n = v4 ? (length(b) - 17) ÷ 10 : 6
+        o = v4 ? 4n : 0                                   # cmd[n] and ref[n] come first in 4.0+
         t = rd(UInt32, b, 1) / 1e6
-        raw(k, j) = rd(UInt16, b, 5 + o + 12k + 2(j - 1))
+        raw(k, j) = rd(UInt16, b, 5 + o + 2n * k + 2(j - 1))
         ok = b[end] == 1
-        q = ok ? [position_to_angle(j, raw(0, j)) for j in 1:6] : fill(NaN, 6)
-        dq = ok ? [JOINT_SIGN[j] * decode_signed15(raw(1, j)) / STEPS_PER_DEG for j in 1:6] : fill(NaN, 6)
-        load = ok ? [JOINT_SIGN[j] * decode_load(raw(2, j)) for j in 1:6] : fill(NaN, 6)
-        imu = decode_imu([rd(Int16, b, 41 + o + 2k) for k in 0:2], [rd(Int16, b, 47 + o + 2k) for k in 0:2])
+        q = ok ? [position_to_angle(j, raw(0, j)) for j in 1:n] : fill(NaN, n)
+        dq = ok ? [JOINT_SIGN[j] * decode_signed15(raw(1, j)) / STEPS_PER_DEG for j in 1:n] : fill(NaN, n)
+        load = ok ? [JOINT_SIGN[j] * decode_load(raw(2, j)) for j in 1:n] : fill(NaN, n)
+        imu = decode_imu([rd(Int16, b, 5 + o + 6n + 2k) for k in 0:2], [rd(Int16, b, 11 + o + 6n + 2k) for k in 0:2])
         if v4
-            c = [position_to_angle(j, rd(UInt16, b, 5 + 2(j - 1))) for j in 1:6]
-            r = [position_to_angle(j, rd(UInt16, b, 17 + 2(j - 1))) for j in 1:6]
+            c = [position_to_angle(j, rd(UInt16, b, 5 + 2(j - 1))) for j in 1:n]
+            r = [position_to_angle(j, rd(UInt16, b, 5 + 2n + 2(j - 1))) for j in 1:n]
         else
             c, r = cmd(t), ref(t)
         end
@@ -313,11 +337,12 @@ function atom_play_signal(link::AtomLink, p::SignalParams; timeout::Real=signal_
     return decode_telemetry(samples), done
 end
 
-"Write an ATOM recording (`RECORDING_HEADER` + `IMU_HEADER` columns)."
+"Write an ATOM recording (`recording_header(n)` + `IMU_HEADER` columns; n = 6, or 7 with J7)."
 function write_atom_recording_csv(path::AbstractString, recording::AbstractMatrix)
     mkpath(dirname(path))
+    n = (size(recording, 2) - 7) ÷ 5
     open(path, "w") do io
-        println(io, join(vcat(RECORDING_HEADER, IMU_HEADER), ','))
+        println(io, join(vcat(recording_header(n), IMU_HEADER), ','))
         DelimitedFiles.writedlm(io, recording, ',')
     end
     return path
@@ -327,20 +352,52 @@ end
     atom_move_to(link, q_goal; duration=4.0, rate=500)
 
 MOVES THE ROBOT. Move smoothly (minimum-jerk in joint space) from the current pose to `q_goal`
-(degrees) over `duration` seconds, played on the ATOM. Returns the result summary.
+(degrees: J1-J6, or J1-J7 with the gripper) over `duration` seconds, as a plan played on the ATOM.
+J7 starts from its goal (a grasp stays closed); with 6 goals it holds. Returns the result summary.
+For a move computed on the ATOM (no upload), see `atom_move!`.
 """
 function atom_move_to(link::AtomLink, q_goal::AbstractVector; duration::Real=4.0, rate::Integer=500,
                       mechanism=load_mechanism(), kwargs...)
     s = atom_state(link)
     s.ok || error("not every servo replied")
+    n = length(q_goal)
+    n in (6, 7) || throw(ArgumentError("a goal has 6 or 7 joints"))
+    n <= length(s.q) || error("J7 given, but the ATOM finds no gripper")
     lo, hi = joint_limits_deg(mechanism)
-    all(lo .< q_goal .< hi) || throw(ArgumentError("goal outside the joint limits"))
+    all(lo .< q_goal[1:6] .< hi) || throw(ArgumentError("goal outside the joint limits"))
+    n == 7 && !(JOINT_LIMITS_DEG[7][1] <= q_goal[7] <= JOINT_LIMITS_DEG[7][2]) &&   # J7: no margin, end stop to end stop
+        throw(ArgumentError("J7 goal outside its end stops"))
     minjerk(x) = (x = clamp(x, 0, 1); x^3 * (10 - 15x + 6x^2))
     t = collect(0:0.004:duration)
-    q = reduce(vcat, permutedims(s.q .+ minjerk(ti / duration) .* (q_goal .- s.q)) for ti in t)
+    # From the goals the joints hold, as the ATOM starts a run (5.0: a goal more than 3° from the
+    # position starts from the position); J7 from its goal.
+    q0 = [j == 7 || abs(s.goal[j] - s.q[j]) <= 3 ? s.goal[j] : s.q[j] for j in 1:n]
+    q = reduce(vcat, permutedims(q0 .+ minjerk(ti / duration) .* (q_goal .- q0)) for ti in t)
     speed = maximum(abs, diff(q; dims=1) ./ diff(t))
     speed < 90 || throw(ArgumentError("move too fast ($(round(speed, digits=1)) °/s); use a longer duration"))
     atom_upload_plan(link, t, q, q)
     _, done = atom_play(link; rate=rate, kwargs...)
     return done
+end
+
+"""
+    atom_move!(link, q_goal; duration=0, timeout=30) -> (recording, done)
+
+MOVES THE ROBOT. MOVE_TO (firmware 4.2+): the ATOM computes a minimum-jerk move from the goals it
+holds to `q_goal` (degrees: J1-J6, or J1-J7 with the gripper, 5.0+). `duration` 0: the shortest
+within the speed and acceleration limits. With 6 goals J7 holds its goal. Nothing is uploaded, so it
+does not replace an uploaded plan. Returns the telemetry (as `decode_telemetry`) and the result.
+
+The goals are angles as this package reports them (with the encoder correction, as `atom_state`).
+The ATOM takes uncorrected angles, so they go through `angle_to_position`: a goal from `atom_state`
+gives back the same servo step.
+"""
+function atom_move!(link::AtomLink, q_goal::AbstractVector; duration::Real=0, timeout::Real=30)
+    n = length(q_goal)
+    n in (6, 7) || throw(ArgumentError("a goal has 6 or 7 joints"))
+    raw = [JOINT_SIGN[j] * (angle_to_position(j, q_goal[j]) - 2048) / STEPS_PER_DEG for j in 1:n]   # the ATOM's degrees
+    drain!(link)
+    send(link, vcat(0x0E, reduce(vcat, le(Int16(round(Int, 100 * x))) for x in raw), le(UInt16(round(Int, 1000 * duration)))))
+    samples, done = collect_run(link, 0x0E; timeout=timeout)
+    return decode_telemetry(samples), done
 end

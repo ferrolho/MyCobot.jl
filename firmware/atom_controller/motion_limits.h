@@ -9,7 +9,10 @@ using robot::AMAX_DPS2;
 constexpr const float (&MODEL_MIN_DEG)[robot::N_JOINTS] = robot::LIMIT_MIN_DEG;
 constexpr const float (&MODEL_MAX_DEG)[robot::N_JOINTS] = robot::LIMIT_MAX_DEG;
 const float SIGNAL_MARGIN = 10;   // test signals stay this far inside the model limits
-const float JOG_MARGIN = 2;       // JOG stops and MOVE_TO goals stay this far inside
+const float JOG_MARGIN = 2;       // J1-J6: JOG stops and MOVE_TO goals stay this far inside
+// The margin of joint j: J7 (the gripper) has none. It uses its whole range, end stop to end stop:
+// grasps drive the jaws against the object or the stops (the user's choice, 2026-10-09).
+inline float margin(int j) { return j < robot::N_ARM ? JOG_MARGIN : 0.0f; }
 const float MOVE_VMAX = robot::VMAX_DPS;   // °/s, MOVE_TO and TRACK
 const float JOG_VMAX = 30;        // °/s, JOG
 const float JOG_AMAX = 200;       // °/s², JOG (also the deadman ramp)

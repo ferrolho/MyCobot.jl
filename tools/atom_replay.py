@@ -16,13 +16,15 @@ REG_READ/REG_WRITE work on gains (21-23), voltage (62) and temperature (63).
 import argparse
 import asyncio
 import math
+import os
 import struct
+import sys
 import time
 
 import numpy as np
 
-SIGN = (-1, -1, 1, -1, -1, -1)
-STEPS_PER_DEG = 4096 / 360
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from robot_params import SIGN, STEPS_PER_DEG  # noqa: E402  (generated; J1-J7)
 HOLDING, READY, PLAYING = 1, 2, 3
 
 

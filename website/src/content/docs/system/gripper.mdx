@@ -1,6 +1,6 @@
 ---
 title: Gripper
-description: The adaptive gripper (myCobot_gripper_ag) — size, mount, cable, model and how to control it. Mounted, in the model (shape only), controlled by firmware 4.6.
+description: The adaptive gripper (myCobot_gripper_ag) — size, mount, cable, model and how to control it. Mounted, in the model (shape only), joint J7 of firmware 5.0.
 ---
 
 import Gripper from '../../../components/Gripper.astro';
@@ -9,7 +9,7 @@ import ArmEnd from '../../../components/ArmEnd.astro';
 :::note[Mounted, in the model, controlled]
 The gripper is on the arm since 2026-10-06 (see [Mount and cable](#mount-and-cable)).
 The robot model has its shape, but not its mass (see [Model](#model-urdf)). Controller
-firmware 4.6 finds it and moves it (see [Control](#control)). This page records what is known
+firmware 4.6 finds it and moves it; from 5.0 it is joint J7 (see [Control](#control)). This page records what is known
 from the gripper, its label, Elephant's 3D model and Elephant's software. The items marked "not
 checked" need a test.
 :::
@@ -137,21 +137,19 @@ Other values, from the front of the flange:
 | 90 | Bottom right, top left | Bottom left |
 | 180 | Bottom left, top right (the two fingers change places) | Bottom right |
 
-### Opening in the 3D view
+### J7 in the 3D view
 
-The Control page's 3D view (`viewer3d.ts`) shows the opening as a fraction. It sets
-`gripper_controller` linearly between its limits:
+The Control page's 3D view (`viewer3d.ts`) sets `gripper_controller` linearly from J7
+(the gripper servo angle): J7's limits (the end stops) go to the joint's URDF limits.
 
-| Opening | `gripper_controller` | Pad gap (model) |
+| J7 (servo) | `gripper_controller` | Pad gap (model) |
 | --- | --- | --- |
-| 0 (closed) | −0.70 rad | 6.0 mm |
-| 1 (open) | +0.15 rad | 43.4 mm |
+| −51.5° (closed end stop, step 1462) | −0.70 rad | 6.0 mm |
+| 0° (open end stop, step 2048) | +0.15 rad | 43.4 mm |
 
 :::note[Partly calibrated]
-The servo end stops are measured (see [Control](#control)), and firmware 4.6 reports the
-opening between them. The 3D view sets the model joint linearly from that opening. The
-model angles are not compared with the gripper, and the pad gap is not linear in the
-joint angle.
+The servo end stops are measured (see [Control](#control)). The model angles are not
+compared with the gripper, and the pad gap is not linear in the joint angle.
 :::
 
 ### In the software
@@ -159,35 +157,42 @@ joint angle.
 | Use | How |
 | --- | --- |
 | Julia | `load_mechanism(urdf=...)` with `mycobot_280_arduino_gripper.urdf`. RigidBodyDynamics.jl ignores `mimic`: the six finger joints are free joints, so the mechanism has 12 positions instead of 6. The default is the arm without the gripper. |
-| Control page | `ArmView.setGripper(present)` swaps the 3D view (solid arm and goal ghost) to the URDF with the gripper. `setGripperOpening(fraction)` sets the measured opening, `setGoalGripperOpening(fraction or null)` the opening of the ghost. urdf-loader applies the `mimic` tags. |
+| Control page | `ArmView.setGripper(present)` swaps the 3D view (solid arm and goal ghost) to the URDF with the gripper. `setPose(q)` and `setGoal(q)` take J7 as the 7th angle. urdf-loader applies the `mimic` tags. |
 
 ## Control
 
-### With our controller firmware (4.6+)
+### With our controller firmware (5.0+): joint J7
 
 The gripper is a Feetech bus servo, **ID 7**, model `0x070A` (registers 3–4), on the same
-bus as J1–J6 (checked 2026-10-06). Our firmware:
+bus as J1–J6 (checked 2026-10-06). It is of the same family as the joint servos (J4 is
+`0x0709`), with the same register map. Firmware 5.0 uses it as a seventh joint, **J7**
+(see [J7 in the WebSocket API](/mycobot-280-lab/comms/websocket-api/#joints-j1j6-and-j7-50)):
 
-- looks for it at power-up and then once a second, so it can be connected later; it
-  reads its position 10 times a second while it is there;
-- reports it in the STREAM (present, opening, load) and takes the GRIPPER command
-  (`0x11`): opening 0 (closed) to 1000 (open) in 0.1 %, or `0xFFFF` to turn its torque
-  off. See [WebSocket API](/mycobot-280-lab/comms/websocket-api/#gripper-46);
-- works also during MOVE_TO, JOG and TRACK (Live mode), but not during PLAY or PLAY_SIGNAL.
+- The ATOM looks for it at power-up and then once a second while the robot is idle, so
+  you can connect it later. When it finds it, it writes the gains and the torque (below)
+  and holds the gripper where it is.
+- J7 is in every read and write of the joints, in the same units as J1–J6 (degrees,
+  `angle = sign × (step − 2048) × 360 / 4096` with sign +1, so the angle grows as the
+  gripper opens). MOVE_TO, JOG and TRACK move it with the other joints.
+- **Grasps:** J7 has no following-error check (on an object it stops short of its goal),
+  and a hold keeps its goal. So the gripper keeps squeezing through HOLD, STOP and the
+  end of a move.
+- Plans (PLAY) can have J7 (7 columns). With a 6-joint plan or PLAY_SIGNAL, it holds its goal.
 
-The opening maps linearly to servo steps (`servos.yaml`, key `gripper`):
+Firmware 4.6 and 4.7 had a separate GRIPPER command with the opening in 0.1 %; 5.0 removes it.
 
-| Item | Value |
+| Item | Value (`servos.yaml`, key `gripper`) |
 | --- | --- |
-| End stops (slow scan at 15 % torque, 2026-10-06) | 1462 closed, 2048 open (51.5°; the model joint range is 48.7°) |
-| Opening 0 (closed) | 1477 (15 steps inside the stop at 1462) |
-| Opening 1000 (open) | 2033 (15 steps inside the stop at 2048) |
-| Goal speed | 1000 steps/s: the full stroke in about 0.6 s |
-| Torque (registers 16, 28, 48) | **1000 (100 %)** from firmware 4.7, set by the ATOM when it finds the gripper (`servos.yaml`, key `gripper`, `torque`). Elephant's values: 140 / 300 / 300 (30 %). Register 28 (protection current) caps register 48. |
+| End stops = J7 limits (slow scan at 15 % torque, 2026-10-06) | 1462 closed (−51.5°), 2048 open (0°); 51.5° (the model joint range is 48.7°) |
+| Goals | The whole range, end stop to end stop: −51.5° to 0° (steps 1462–2048). J7 has no margin (J1–J6 stay 2° inside their limits): grasps drive the jaws against the object or the stops. |
+| Speed and acceleration | 90 °/s and 2000 °/s², as J4–J6: a full stroke in about 0.7 s |
+| Gains (registers 21–23) | 150 / 150 / 0, the values found on it, written when found |
+| Torque (registers 16, 28, 48) | **1000 (100 %)** from firmware 4.7, set by the ATOM when it finds the gripper (`torque`). Elephant's values: 140 / 300 / 300 (30 %). Register 28 (protection current) caps register 48. |
 | Thermal derating | Above 70 °C the torque limit drops to 500; below 60 °C it is 1000 again (firmware 4.7). Measured at 1000: 45–53 °C in 1–2 min holds. The servo's own limit (register 13) is 80 °C. |
 
-Checked with the camera on 2026-10-06: at 2033 the jaws are wide open, at 1477 the
-pads almost touch. The stock calibration point (2048) is the open end.
+Checked with the camera on 2026-10-06: at step 2033 the jaws are wide open, at 1477 the
+pads almost touch. The stock calibration point (2048) is the open end. Firmware 4.6 and 4.7
+used 1477–2033 (15 steps inside the stops); 5.0 uses the joint rule (2°, 22.8 steps).
 
 Servo registers as found (2026-10-06): firmware 3.40, angle limits 0–4095, P/D/I
 150/150/0, offset −889 (the stock calibration), torque off, goal speed 0.

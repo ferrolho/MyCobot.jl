@@ -63,7 +63,8 @@ def robot():
     s.settimeout(0.2)
     with open(os.path.join(args.out, "robot.csv"), "a", buffering=1) as f:
         if f.tell() == 0:
-            f.write("t,state," + ",".join(f"pos{j}" for j in range(1, 7)) + ",gripper,opening,gload\n")
+            # Servo steps of J1-J7 (J7, the gripper, empty while the ATOM does not find it) and J7's raw load.
+            f.write("t,state," + ",".join(f"pos{j}" for j in range(1, 8)) + ",load7\n")
         renew = 0.0
         while not stop.is_set():
             if time.time() >= renew:
@@ -73,10 +74,11 @@ def robot():
                 m = s.recv(256)
             except OSError:
                 continue
-            if len(m) >= 79 and m[0] == 0x88:
-                pos = struct.unpack_from("<6H", m, 7)
-                g, op, gl = m[74], *struct.unpack_from("<2h", m, 75)
-                f.write(f"{time.time():.3f},{m[5]}," + ",".join(map(str, pos)) + f",{g},{op},{gl}\n")
+            if len(m) > 79 and m[0] == 0x88:   # firmware 5.0: u8 n at 8, then u16 pos[n], goal[n], spd[n], load[n], ...
+                n = m[8]
+                pos = list(struct.unpack_from(f"<{n}H", m, 9)) + [""] * (7 - n)
+                load7 = struct.unpack_from("<H", m, 9 + 6 * n + 12)[0] if n == 7 else ""
+                f.write(f"{time.time():.3f},{m[5]}," + ",".join(map(str, pos)) + f",{load7}\n")
         s.sendto(b"\x0c" + struct.pack("<H", 0), (args.atom, 5006))
 
 

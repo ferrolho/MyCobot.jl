@@ -13,7 +13,7 @@ use. Do not edit a generated file: edit the source and run the generator.
 | --- | --- | --- |
 | `urdf/mycobot_280_arduino/mycobot_280_arduino.urdf.xacro` | URDF in [xacro](https://github.com/ros/xacro) | Links, meshes, joint origins and axes; the gripper (with `gripper:=true`) |
 | `config/mycobot_280_arduino/joint_limits.yaml` | ros2_control `joint_limits` | Position, speed, acceleration and effort limits |
-| `config/mycobot_280_arduino/servos.yaml` | Our own | Servo IDs, directions, models, gains, acceleration registers, servo model (ωn, ζ) |
+| `config/mycobot_280_arduino/servos.yaml` | Our own | Servo IDs, directions, models, gains, acceleration registers, servo model (ωn, ζ); the gripper as J7 (ID, direction, end stops = limits, torque, thermal derating) |
 | `config/mycobot_280_arduino/calibration.yaml` | Our own | This robot only: encoder corrections. Only the Julia package uses it (`ENCODER_CORRECTION`). |
 
 The generator `tools/gen_robot.py` writes:

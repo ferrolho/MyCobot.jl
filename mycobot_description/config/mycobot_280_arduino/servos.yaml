@@ -25,19 +25,22 @@ joints:
   joint6_to_joint5:      { id: 5, sign: -1, model: 0x0209, gains: [32, 8, 0],  max_acceleration_register: 250, wn: 52.4, zeta: 0.77 }
   joint6output_to_joint6: { id: 6, sign: -1, model: 0x0209, gains: [32, 8, 0],  max_acceleration_register: 250, wn: 54.9, zeta: 0.83, multi_turn: true }
 
-# Adaptive gripper (myCobot_gripper_ag; docs: system/gripper), on the same bus. Our firmware (4.6+)
-# finds it by its model number and maps the opening (0 = closed, 1000 = open, in permille) to steps.
+# J7: the adaptive gripper (myCobot_gripper_ag; docs: system/gripper), on the same bus. Our firmware (5.0+)
+# finds it by its model number and then treats it as a seventh joint: J7, after J6 in every message.
+#   id, sign, model, gains, max_acceleration_register   as for the joints above. sign 1: the angle
+#                            grows as the gripper opens. gains: the values found on the servo (2026-10-06).
 #   closed_step, open_step   the two end stops found by a slow scan at 15 % torque (2026-10-06):
 #                            the fingers stall at 1462 (closed) and 2048 (open, the stock calibration
-#                            point), 51.5°. Checked with the camera on 2026-10-06.
-#   margin                   the opening range stays this many steps inside the end stops
-#   speed                    goal speed (steps/s): the full stroke in about 0.6 s
-#   torque                   0-1000, written at power-up and when the gripper is found to registers 16 (max torque),
+#                            point), 51.5°. Checked with the camera on 2026-10-06. They are the J7 limits:
+#                            −51.5° (closed) to 0° (open). Goals stay 2° inside, as for every joint.
+#   max_acceleration         the planning limit of our firmware (°/s²), as J4–J6 (joint_limits.yaml)
+#   torque                   0-1000, written when the gripper is found to registers 16 (max torque),
 #                            28 (protection current) and 48 (torque limit). Elephant's values are 140 / 300 / 300
 #                            (30 %); soft objects (a plush head, a cup handle) held only at 1000 (2026-10-06).
 #                            Full capability by default: guard against heat, not with a low limit.
 #   hot_c, cool_c, hot_torque  thermal derating: above hot_c (°C) the torque limit drops to hot_torque, back to
 #                            torque below cool_c. At 1000 the servo stayed at 45-53 °C in 1-2 min holds. The
 #                            servo's own limit (register 13, 80 °C) stays as the last guard.
-gripper: { id: 7, model: 0x070A, closed_step: 1462, open_step: 2048, margin: 15, speed: 1000,
+gripper: { id: 7, sign: 1, model: 0x070A, gains: [150, 150, 0], max_acceleration_register: 250,
+           closed_step: 1462, open_step: 2048, max_acceleration: 2000,
            torque: 1000, hot_c: 70, cool_c: 60, hot_torque: 500 }

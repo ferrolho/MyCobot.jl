@@ -7,8 +7,10 @@ import DelimitedFiles
 "Measured per-joint lag of the servos in position mode (s), from the smooth-motion recordings."
 const DEFAULT_LAG = [0.120, 0.113, 0.120, 0.054, 0.038, 0.028]
 
-const RECORDING_HEADER = vcat("t", ["q_plan_$j" for j in 1:6], ["q_cmd_$j" for j in 1:6],
-                              ["q_$j" for j in 1:6], ["dq_$j" for j in 1:6], ["load_$j" for j in 1:6])
+"Recording columns for `n` joints (6, or 7 with J7, the gripper; the ATOM's telemetry has the joints of the run's command)."
+recording_header(n::Integer=6) = vcat("t", ["q_plan_$j" for j in 1:n], ["q_cmd_$j" for j in 1:n],
+                                      ["q_$j" for j in 1:n], ["dq_$j" for j in 1:n], ["load_$j" for j in 1:n])
+const RECORDING_HEADER = recording_header(6)
 
 """
     sample_trajectory(t_plan, q_plan, t)

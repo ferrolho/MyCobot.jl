@@ -3,19 +3,16 @@
 #include <stdint.h>
 
 namespace robot {
-const int N_JOINTS = 6;
-const float LIMIT_MIN_DEG[N_JOINTS] = {-165, -140, -150, -150, -160, -225};   // model joint limits (°)
-const float LIMIT_MAX_DEG[N_JOINTS] = {165, 140, 150, 150, 160, 135};
-const bool MULTI_TURN[N_JOINTS] = {false, false, false, false, false, true};   // phase bit 4 and angle limits 0/0 at power-up
+const int N_ARM = 6;      // J1-J6
+const int N_JOINTS = 7;   // with J7, the adaptive gripper (bus ID 7), when it is found
+const float LIMIT_MIN_DEG[N_JOINTS] = {-165, -140, -150, -150, -160, -225, -51.5039};   // joint limits (°); J7: the end stops
+const float LIMIT_MAX_DEG[N_JOINTS] = {165, 140, 150, 150, 160, 135, 0};
+const bool MULTI_TURN[N_JOINTS] = {false, false, false, false, false, true, false};   // phase bit 4 and angle limits 0/0 at power-up
 const float VMAX_DPS = 90;   // speed limit (°/s)
-const float AMAX_DPS2[N_JOINTS] = {400, 400, 400, 2000, 2000, 2000};   // acceleration limits (°/s²)
-const int8_t JOINT_SIGN[N_JOINTS] = {-1, -1, 1, -1, -1, -1};   // angle = sign × (step − 2048) × 360 / 4096
-const uint8_t GAINS[N_JOINTS][3] = {{32, 4, 16}, {32, 4, 16}, {32, 4, 16}, {32, 8, 0}, {32, 8, 0}, {32, 8, 0}};   // P, D, I (registers 21, 22, 23)
-const uint8_t GRIPPER_ID = 7;   // adaptive gripper: bus ID, model (registers 3-4)
-const uint16_t GRIPPER_MODEL = 0x070A;
-const int GRIPPER_CLOSED_STEP = 1477;   // opening 0 (end stop 1462, the margin inside)
-const int GRIPPER_OPEN_STEP = 2033;   // opening 1000 (end stop 2048, the margin inside)
-const uint16_t GRIPPER_SPEED = 1000;   // goal speed (steps/s)
+const float AMAX_DPS2[N_JOINTS] = {400, 400, 400, 2000, 2000, 2000, 2000};   // acceleration limits (°/s²)
+const int8_t JOINT_SIGN[N_JOINTS] = {-1, -1, 1, -1, -1, -1, 1};   // angle = sign × (step − 2048) × 360 / 4096
+const uint8_t GAINS[N_JOINTS][3] = {{32, 4, 16}, {32, 4, 16}, {32, 4, 16}, {32, 8, 0}, {32, 8, 0}, {32, 8, 0}, {150, 150, 0}};   // P, D, I (registers 21, 22, 23)
+const uint16_t GRIPPER_MODEL = 0x070A;   // J7 (registers 3-4)
 const uint16_t GRIPPER_TORQUE = 1000;   // registers 16, 28 and 48 (0-1000), set when found
 const uint8_t GRIPPER_HOT_C = 70, GRIPPER_COOL_C = 60;   // derate above, restore below (°C)
 const uint16_t GRIPPER_HOT_TORQUE = 500;   // torque limit while derated

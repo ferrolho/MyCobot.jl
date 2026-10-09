@@ -1,10 +1,11 @@
 ---
 title: WebSocket API (browser)
-description: How a web page talks to the ATOM directly — the same messages as the UDP protocol over a WebSocket, plus control, move and jog commands (firmware 4.2+).
+description: How a web page talks to the ATOM directly — the same messages as the UDP protocol over a WebSocket, plus control, move and jog commands (firmware 4.2+), with the gripper as joint J7 (5.0+).
 ---
 
 Controller firmware **4.2.0** and later implement this API (tested on the robot on
-2026-10-04). The [simulated ATOM](#simulated-atom) implements it for development.
+2026-10-04). Firmware **5.0.0** adds the gripper as a seventh joint, [J7](#joints-j1j6-and-j7-50).
+The [simulated ATOM](#simulated-atom) implements it for development.
 
 The [Control page](/mycobot-280-lab/control/) on this site talks to the ATOM
 directly. The user needs only the arm and a browser: no Raspberry Pi and no laptop
@@ -68,29 +69,63 @@ REG_WRITE, MOVE_TO, JOG and TRACK. If **nobody** has control, such a command tak
 for its sender first (as CONTROL 1). So older UDP clients that never send CONTROL
 still work. If another client has control, the ATOM replies ACK with status **−2**.
 
+## Joints: J1–J6 and J7 (5.0+)
+
+The [gripper](/mycobot-280-lab/system/gripper/#control) is a bus servo of the same
+family as the joint servos. Firmware 5.0 uses it as a seventh joint, **J7**:
+
+- The ATOM looks for it (bus ID 7, model `0x070A`) at power-up and then once a second
+  while the robot is idle, so you can connect it later. It counts as removed after 5
+  missed reads in a row.
+- While the ATOM finds it, every joint message has **n = 7** joints: J1–J6, then J7.
+  Without it, n = 6. The STREAM tells n.
+- J7 uses the same units as the other joints: degrees, from the same formula. Its
+  limits are the end stops: −51.5° (closed) to 0° (open). The opening in % is a
+  display value of the Control page only.
+- The commands MOVE_TO, JOG and TRACK take 6 or 7 values. The message length tells
+  the number. With 6 values, J7 holds its goal. With 7 values and no gripper, the
+  ATOM refuses the command with status **−7**.
+- Plans (PLAY) have 6 or 7 joints (PLAN_BEGIN tells the number). With a 6-joint plan
+  or a test signal (PLAY_SIGNAL, J1–J6), J7 holds its goal. TELEM has the joints of the
+  command (the plan or the MOVE_TO): a 6-joint client gets the 77-byte samples as before.
+  See [ATOM link](/mycobot-280-lab/comms/atom-link/#telemetry-sample-40).
+- STATE has the goal of each joint (as the STREAM).
+
+Two rules apply only to J7, because it grasps:
+
+1. **No following-error check.** On an object J7 stops short of its goal, as intended.
+2. **A hold keeps its goal.** HOLD, STOP, the end of a run and an abort set J1–J6 to
+   their measured positions, but J7 keeps its goal and speed. So a grasp stays closed.
+   Runs start J7 from its goal, not from its measured position.
+
+The ATOM also sets the gripper's torque (100 %) and its thermal derating when it finds
+it (see [Gripper](/mycobot-280-lab/system/gripper/#control)).
+
 ## New commands (4.2)
 
 Angles use the joint convention of the docs (degrees, 0° = the zero pose). The ATOM
-converts them to servo steps.
+converts them to servo steps. n is 6, or 7 with [J7](#joints-j1j6-and-j7-50) (5.0+).
 
 | Code | Command | Data | Reply |
 | --- | --- | --- | --- |
-| `0x0E` | MOVE_TO | i16 goal[6] (0.01°), u16 duration (ms; 0 = the ATOM chooses it from the speed limit) | ACK: 0 started, −1 busy, −2 no control, −10−j goal of joint j outside the limits. Then DONE (`0x85`) when the move ends. No TELEM over WebSocket (4.3.1+): watch the STREAM. |
-| `0x0F` | JOG | u8 frame (0 = joints), i16 velocity[6] (0.1 °/s) | ACK only if refused: −1 busy, −2 no control |
-| `0x10` | TRACK (4.4+) | i16 goal[6] (0.01°), u16 vmax (0.1 °/s, at most 90 °/s) | ACK only if refused: −1 busy, −2 no control, −10−j goal of joint j outside the limits. See [TRACK](#track-live-mode). |
-| `0x11` | GRIPPER (4.6+) | u16 opening (0.1 %: 0 closed, 1000 open; `0xFFFF` = torque off) | ACK only if refused: −1 bad value or busy (PLAY, PLAY_SIGNAL), −2 no control, −4 no gripper. See [GRIPPER](#gripper-46). |
+| `0x0E` | MOVE_TO | i16 goal[n] (0.01°), u16 duration (ms; 0 = the ATOM chooses it from the speed limit) | ACK: 0 started, −1 busy, −2 no control, −7 J7 given but no gripper, −10−j goal of joint j outside the limits. Then DONE (`0x85`) when the move ends. No TELEM over WebSocket (4.3.1+): watch the STREAM. |
+| `0x0F` | JOG | u8 frame (0 = joints), i16 velocity[n] (0.1 °/s) | ACK only if refused: −1 busy, −2 no control, −7 J7 given but no gripper |
+| `0x10` | TRACK (4.4+) | i16 goal[n] (0.01°), u16 vmax (0.1 °/s, at most 90 °/s) | ACK only if refused: −1 busy, −2 no control, −7 J7 given but no gripper, −10−j goal of joint j outside the limits. See [TRACK](#track-live-mode). |
+
+Firmware 4.6 and 4.7 had a separate GRIPPER command (`0x11`). Firmware 5.0 removes it:
+J7 moves with MOVE_TO, JOG and TRACK.
 
 ### MOVE_TO
 
-The ATOM moves all joints from the current pose to the goal along a minimum-jerk
-path, as `atom_move_to` does. A minimum-jerk move of distance *d* in time *T* has a
+The ATOM moves all joints from their goals (the current pose; J7 from its goal) to
+the new goal along a minimum-jerk path, as `atom_move_to` does. A minimum-jerk move of distance *d* in time *T* has a
 peak speed of 1.875·*d*/*T* and a peak acceleration of 5.77·*d*/*T*². If the
 duration is 0, the ATOM uses the shortest duration that keeps every joint inside
 both limits:
 
 *T* = max over the joints of max(1.875·*d*/90, √(5.77·*d*/*a*ₘₐₓ))
 
-with 90 °/s, and *a*ₘₐₓ = 400 °/s² on J1–J3 and 2000 °/s² on J4–J6. A duration
+with 90 °/s, and *a*ₘₐₓ = 400 °/s² on J1–J3 and 2000 °/s² on J4–J7. A duration
 that is too short for these limits is refused (−1). A STOP or a HOLD ends the move,
 and the robot holds the pose. DONE reports result 0 (done), 1 (tracking
 error) or 2 (stopped).
@@ -104,7 +139,7 @@ JOG sets a joint velocity. The ATOM moves the goal positions at that velocity:
    stall (200–300 ms happen) a short smooth stop, not a jerk. Send JOG every 50 ms
    while the user jogs.
 2. **Limits:** the speed is limited to 30 °/s per joint and the acceleration to
-   200 °/s². The ATOM stops each joint 2° inside its [joint limit](#joint-limits).
+   200 °/s². The ATOM stops each joint 2° inside its [joint limit](#joint-limits) (J7, the gripper: on its end stops).
 3. **Stop:** a JOG with all velocities zero, STOP, HOLD, or a lost connection stops
    the jog.
 
@@ -113,19 +148,20 @@ Frame 0 is the joint space. Other frames (end-effector jogging) are for a later 
 ### TRACK (Live mode)
 
 TRACK (firmware 4.4+) sets a goal pose. The ATOM moves each joint to its goal at up to
-`vmax` and the joint's acceleration limit (400 °/s² on J1–J3, 2000 °/s² on J4–J6, as
+`vmax` and the joint's acceleration limit (400 °/s² on J1–J3, 2000 °/s² on J4–J7, as
 MOVE_TO), and brakes to stop exactly on it. A new TRACK changes the goal at once. The
 Control page's Live mode sends the fader goals with TRACK.
 
 1. **Deadman:** send TRACK again at least every 200 ms (the page sends it every 50 ms
    and at once when a goal changes). After 200 ms without TRACK, the joints brake to
    zero at their acceleration limits and the ATOM holds the pose.
-2. **Limits:** `vmax` is at most 90 °/s (the MOVE_TO limit). Goals must be 2° inside
+2. **Limits:** `vmax` is at most 90 °/s (the MOVE_TO limit). Goals must be 2° inside (J7: within its end stops)
    the [joint limits](#joint-limits); a joint never passes that margin, also when its
-   goal jumps back.
+   goal jumps back. A joint that starts outside the margin (moved by hand, or J7 on
+   its open end stop at 0°) moves back in smoothly and never further out (5.0+).
 3. **Stop:** STOP, HOLD (from any client) and a lost connection brake the joints to
    zero.
-4. **Following error:** if a joint's measured position is too far from its goal
+4. **Following error** (J1–J6, not J7): if a joint's measured position is too far from its goal
    position, the ATOM holds and goes to state error, and sends DONE (result 1,
    tracking error, with the joint and its error in steps). The limit is 20°, plus
    0.15 s × the joint's recent peak speed in TRACK (the peak decays over 0.3 s, so a
@@ -138,36 +174,34 @@ The motion runs on the ATOM at 500 Hz, so WiFi delays do not change the path. Be
 4.4, Live mode sent JOG velocities from the page (at most 30 °/s and 200 °/s², with a
 slow approach to the goal).
 
-### GRIPPER (4.6+)
+## The STREAM packet (5.0)
 
-The ATOM looks for the [gripper](/mycobot-280-lab/system/gripper/#control) (servo ID 7,
-model `0x070A`) at power-up and once a second. GRIPPER sets its goal opening; the
-servo moves there at 1000 steps/s (the full stroke in about 0.6 s) and holds it. On an
-object it squeezes with its torque limit (30 %). `0xFFFF` turns its torque off.
-
-- It needs control, like the motion commands. It works while the arm holds, moves
-  (MOVE_TO), jogs or tracks (Live mode), not during PLAY or PLAY_SIGNAL.
-- The ATOM writes at most one gripper goal per control cycle (2 ms). The Control page
-  sends at most 20 a second.
-- The Control page shows the gripper as **J7**.
-- STREAM (4.6+) has 5 more bytes (79 bytes):
+Firmware 5.0 sends the joints as arrays of n (6, or 7 with J7): 21 + 11·n bytes (87 or
+98). It also sends the goal of each joint: the goal that the joint holds or follows.
 
 | Offset | Field | Values |
 | --- | --- | --- |
-| 74 | u8 gripper | 0 not found, 1 found |
-| 75 | i16 opening | 0.1 %: 0 closed, 1000 open (a little outside 0–1000 at the end stops) |
-| 77 | i16 load | 0.1 % (signed) |
+| 0 | u8 type | `0x88` |
+| 1 | u32 t_ms | ATOM time (ms) |
+| 5 | u8 state | see below |
+| 6 | u8 ok | 1 if J1–J6 replied to the last read |
+| 7 | u8 control | 0 nobody, 1 **you** (the receiver), 2 another client |
+| 8 | u8 n | joints: 6, or 7 with J7 |
+| 9 | u16 pos[n] | position (steps) |
+| 9 + 2n | u16 goal[n] | goal (steps). Equal to pos while the robot holds, except J7 on an object (its grasp goal). |
+| 9 + 4n | u16 speed[n] | sign in bit 15 |
+| 9 + 6n | u16 load[n] | sign in bit 10 |
+| 9 + 8n | u8 temp[n] | °C |
+| 9 + 9n | u8 volt[n] | 0.1 V |
+| 9 + 10n | u8 status[n] | servo status (register 65) |
+| 9 + 11n | i16 acc[3], i16 gyro[3] | IMU |
 
-## State in the STREAM packet (4.2 additions)
+The ATOM reads the temperature, voltage and status of one joint at a time (each joint
+about once a second), also during runs. Before 5.0, STREAM had J1–J6 at fixed offsets:
+73 bytes (4.1), 74 bytes with the control byte at offset 73 (4.2), 79 bytes with 5
+gripper bytes (4.6). The Control page reads both layouts.
 
-Firmware 4.2 adds one byte at the end of STREAM (74 bytes). Clients that read only
-73 bytes still work.
-
-| Offset | Field | Values |
-| --- | --- | --- |
-| 73 | u8 control | 0 nobody, 1 **you** (the receiver), 2 another client |
-
-The controller state byte gets two new values:
+The controller state byte (4.2 adds 6 and 7):
 
 | Value | State |
 | --- | --- |
@@ -184,11 +218,11 @@ The controller state byte gets two new values:
 ## Units
 
 The STREAM packet has raw servo values. Convert them as `src/atom.jl` does.
-`sign` is `(−1, −1, +1, −1, −1, −1)` for J1–J6.
+`sign` is `(−1, −1, +1, −1, −1, −1, +1)` for J1–J7.
 
 | Value | Raw | Conversion |
 | --- | --- | --- |
-| Angle (°) | u16 position, 0–4095 | `sign × (pos − 2048) × 360 / 4096` |
+| Angle (°) | u16 position or goal, 0–4095 (J6: past one turn) | `sign × (pos − 2048) × 360 / 4096` |
 | Speed (°/s) | u16, sign in bit 15 | `sign × (±(v & 0x7FFF)) × 360 / 4096` |
 | Load (%) | u16, sign in bit 10 | `sign × (±(v & 0x3FF)) / 10` |
 | Temperature (°C) | u8 | as is |
@@ -198,13 +232,14 @@ The STREAM packet has raw servo values. Convert them as `src/atom.jl` does.
 
 ### Joint limits
 
-From the URDF (`mycobot_description/urdf/mycobot_280_arduino/`). The firmware keeps
-one table (`limits.h`) for all its checks. JOG stops 2° inside these limits;
-test signals (PLAY_SIGNAL) stay 10° inside them.
+From `mycobot_description/config/mycobot_280_arduino/` (J1–J6: `joint_limits.yaml`, J7:
+the gripper's end stops in `servos.yaml`). The firmware keeps one table
+(`motion_limits.h`) for all its checks. Goals, JOG and TRACK stay 2° inside these (J7: no margin)
+limits; test signals (PLAY_SIGNAL) stay 10° inside them.
 
-| Joint | J1 | J2 | J3 | J4 | J5 | J6 |
-| --- | --- | --- | --- | --- | --- | --- |
-| Limit (°) | ±165 | ±140 | ±150 | ±150 | ±160 | −225 to +135 |
+| Joint | J1 | J2 | J3 | J4 | J5 | J6 | J7 (gripper) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Limit (°) | ±165 | ±140 | ±150 | ±150 | ±160 | −225 to +135 | −51.5 (closed) to 0 (open) |
 
 ## Example
 
@@ -220,22 +255,25 @@ ws.onmessage = (e) => {
   if (typeof e.data === 'string') return console.log(e.data);  // status log
   const v = new DataView(e.data);
   if (v.getUint8(0) === 0x88) {
-    const pos1 = v.getUint16(7, true);                         // J1 position (steps)
-    console.log('J1', (-(pos1 - 2048) * 360) / 4096, '°');
+    const n = v.getUint8(8);                                   // 6, or 7 with the gripper (J7)
+    const pos1 = v.getUint16(9, true);                         // J1 position (steps)
+    console.log(n, 'joints; J1', (-(pos1 - 2048) * 360) / 4096, '°');
   }
 };
 ```
 
 ## Simulated ATOM
 
-`tools/atom_sim.py` implements this API without the robot. It simulates the arm
-(each joint follows its goal with a 0.12 s lag and a 90 °/s speed limit) and uses
-`tools/atom_replay.py` to play a recording for PLAY and PLAY_SIGNAL. Run it on the
-Raspberry Pi:
+`tools/atom_sim.py` implements this API (5.0) without the robot. It simulates the arm
+(each joint follows its goal with a 0.12 s lag and a 90 °/s speed limit), with the
+gripper as J7, and uses `tools/atom_replay.py` to play a recording for PLAY and
+PLAY_SIGNAL. `--no-gripper` simulates the arm without the gripper (6 joints).
+`--object DEG` puts an object between the fingers: J7 stops at DEG when it closes, with
+load, as in a grasp. Run it on the Raspberry Pi:
 
 ```bash
 ~/venvs/control/bin/python tools/atom_sim.py --host 100.69.15.110 --port 8281 \
-    [--recording tools/python/recordings/<recording>.csv]
+    [--recording tools/python/recordings/<recording>.csv] [--no-gripper] [--object -30]
 ```
 
 Then connect the Control page to `100.69.15.110:8281`.
