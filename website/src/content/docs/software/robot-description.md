@@ -48,11 +48,35 @@ The gripper part has two properties in the xacro file:
 | `gripper_closed`, `gripper_open` | −0.7, 0.15 rad | Range of the actuated finger joint `gripper_controller` |
 
 The gripper meshes are `gripper_*.dae` in `urdf/mycobot_280_arduino/`. After you add or
-change a mesh, convert it for the Control page (only the named meshes):
+change a mesh, convert it for the Control page (only the named meshes; see [Meshes](#meshes)):
 
 ```bash
 uv run --with trimesh --with pycollada --with pillow --with scipy python tools/web_meshes.py gripper_base
 ```
+
+## Meshes
+
+The meshes in `urdf/mycobot_280_arduino/` (COLLADA, with PNG textures) are our own. They
+start from Elephant's meshes (Git LFS, commit `7cea001`; the same geometry as every 280 in
+`mycobot_ros` and `mycobot_ros2`). Where this arm differs, `tools/fix_meshes.py` makes our
+mesh from Elephant's ([Changes to Elephant's model](/mycobot-280-lab/software/model-changes/)):
+
+| Mesh | Change |
+| --- | --- |
+| `joint6.dae` (J6 housing) | The ATOM end 6.5 mm further from the J5 axis, the flange-side end 3.7 mm nearer. The decals (USB-C port, connector, pin labels) keep their size. |
+| `joint1.dae` (base) | The top cap with 6 screw holes 60° apart, as on this arm (Elephant: 8) |
+
+Do not edit a mesh by hand: change `tools/fix_meshes.py` and run it, then convert the
+changed meshes for the Control page:
+
+```bash
+uv run tools/fix_meshes.py
+uv run --with trimesh --with pycollada --with pillow --with scipy python tools/web_meshes.py joint1 joint6
+```
+
+`web_meshes.py` also gives the web meshes smooth normals (crease angle 30°). Elephant's
+meshes have one normal per face, which shows each facet of a curved surface (flat
+shading). The COLLADA files keep their normals.
 
 ## Change a value
 

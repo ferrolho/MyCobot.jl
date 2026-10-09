@@ -87,9 +87,12 @@ First result (outline fit only, the base plate screws only): +1.08, −0.20, −
   measured (2026-10-08 and 2026-10-09), 113.0 mm in the model. Open: 95 mm measured, 95.2 mm in
   the model. Fully closed, the foam pads do not touch, as in the model (−0.70 rad: 6 mm between
   the plastic pad faces); the camera fit of the closed finger angle agrees (−0.693 rad).
-- **The J6 housing mesh** is shorter at the ATOM end than the real part (see
-  [Robot model](/mycobot-280-lab/system/robot/#where-the-model-differs-from-this-arm)). Its
-  outline points there do not lie on the edges. The kinematics are not affected.
+- **The J6 housing mesh** was 6.5 mm short at the ATOM end and 3.7 mm long at the flange end.
+  It is now corrected from caliper measurements (see
+  [Changes to Elephant's model](/mycobot-280-lab/software/model-changes/)). The
+  outline fits in this page used the old mesh. A fit that lets the J6 axis move from J5 does
+  not improve the error on new snapshots (palm holes: 2.8 px, 3.2 px with the J6 axis free), so
+  the kinematics stay.
 - A gravity sag term for J2 and J3: the fits did not agree, so it is not in the model.
 - The finger model (the J7 to finger angle map) and the pads that the user added.
 - A camera fit and an arm fit together. The camera is fixed by the screws here.

@@ -49,10 +49,16 @@
 
   <xacro:mesh_link name="g_base" mesh="G_base" xyz="0 0 -0.032" rpy="0 0 0" scale="0.001 0.001 0.001" />
   <xacro:mesh_link name="joint1" mesh="joint1" xyz="0 0 0" rpy="0 0 -3.14159" scale="0.001 0.001 0.001" />
-  <xacro:mesh_link name="joint2" mesh="joint2" xyz="0 0 -0.06096" rpy="0 0 -1.5708" />
+  <!-- joint2: 1.08 mm higher than in Elephant's model (z -0.06096), so that its J2 housing is centred on the J2 axis
+       like the joint3 housing it turns against (2026-10-09). Visual only: the camera fit does not move the J2 axis. -->
+  <xacro:mesh_link name="joint2" mesh="joint2" xyz="0 0 -0.05988" rpy="0 0 -1.5708" />
   <xacro:mesh_link name="joint3" mesh="joint3" xyz="0 0 0.03256" rpy="0 -1.5708 0" />
   <xacro:mesh_link name="joint4" mesh="joint4" xyz="0 0 0.03056" rpy="0 -1.5708 0" />
   <xacro:mesh_link name="joint5" mesh="joint5" xyz="0 0 -0.03356" rpy="-1.5708 0 0" />
+  <!-- joint6.dae (the J6 housing) is Elephant's mesh with its two ends moved along the J6 axis (2026-10-09): the
+       ATOM end 6.5 mm further from the J5 axis (to 28.1 mm), the flange-side end 3.7 mm nearer (to 31.4 mm).
+       Measured on this arm: ATOM face to flange face 73 mm, flange 13-14 mm (caliper); a side photo and Elephant's
+       newer STEP model (myCobot3.3 in mycobot_ros: 27.4 and 32.5 mm) agree within about 1 mm. -->
   <xacro:mesh_link name="joint6" mesh="joint6" xyz="0 0 -0.038" rpy="0 0 0" />
   <xacro:mesh_link name="joint6_flange" mesh="joint7" xyz="0 0 -0.012" rpy="0 0 0" />
 

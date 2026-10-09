@@ -464,8 +464,9 @@ The code is in `website/src/pages/control.astro` and `website/src/control/`:
 ### 3D model
 
 The URDF meshes (`mycobot_description/`, 25 MB of COLLADA) are too large for a web
-page. `tools/web_meshes.py` converts them to compressed GLB files (2 MB in total, the
-gripper 0.2 MB) in `website/public/robot/`. `tools/gen_robot.py` writes the URDF copies
+page. `tools/web_meshes.py` converts them to compressed GLB files (1.7 MB in total, the
+gripper 0.3 MB) in `website/public/robot/`, with smooth normals (crease angle 30°) and no
+simplification ([Meshes](/mycobot-280-lab/software/robot-description/#meshes)). `tools/gen_robot.py` writes the URDF copies
 there ([Robot description](/mycobot-280-lab/software/robot-description/)). Run
 `web_meshes.py` again when a mesh changes:
 

@@ -46,13 +46,13 @@
       <geometry>
         <mesh filename="package://mycobot_description/urdf/mycobot_280_arduino/joint2.dae"/>
       </geometry>
-      <origin rpy="0 0 -1.5708" xyz="0 0 -0.06096"/>
+      <origin rpy="0 0 -1.5708" xyz="0 0 -0.05988"/>
     </visual>
     <collision>
       <geometry>
         <mesh filename="package://mycobot_description/urdf/mycobot_280_arduino/joint2.dae"/>
       </geometry>
-      <origin rpy="0 0 -1.5708" xyz="0 0 -0.06096"/>
+      <origin rpy="0 0 -1.5708" xyz="0 0 -0.05988"/>
     </collision>
   </link>
   <link name="joint3">
