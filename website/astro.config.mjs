@@ -81,6 +81,7 @@ export default defineConfig({
             { label: 'Python tools', slug: 'software/python' },
             { label: 'Raspberry Pi 5', slug: 'software/raspberry-pi' },
             { label: 'Control page', slug: 'software/control-page' },
+            { label: 'Gamepad teleoperation', slug: 'software/gamepad' },
             { label: 'Robot description', slug: 'software/robot-description' },
             { label: "Changes to Elephant's model", slug: 'software/model-changes' },
             { label: 'Trajectory optimisation (TORA)', slug: 'software/tora' },

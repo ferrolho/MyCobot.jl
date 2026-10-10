@@ -6,6 +6,7 @@ import * as P from './protocol';
 import type { Stream } from './protocol';
 import type { ArmView } from './viewer3d';
 import { startSessionLog } from './sessionlog';
+import { setupGamepad } from './gamepad';
 
 const $ = <T extends HTMLElement>(sel: string, root: ParentNode = document) => root.querySelector(sel) as T;
 const fmt = (x: number | null, d = 1) => (x !== null && Number.isFinite(x) ? x.toFixed(d) : '–');
@@ -438,7 +439,7 @@ export function start(): Promise<ArmView> {
     } else if (status === 'connected') hint('');
     if (status === 'connected' && !$('#target').dataset.target) setTarget('real');
     if (status !== 'connected') {
-      setLive(false, 'the connection closed');
+      stopModes('the connection closed');
       setTarget('none');
       $('#fw').textContent = '';
       $('#robot-state').textContent = '';
@@ -483,6 +484,7 @@ export function start(): Promise<ArmView> {
 
   link.on('ack', (a) => {
     if (a.status !== 0 && a.code === P.Code.TRACK) setLive(false, `the robot refused it (${P.ackText(a.code, a.status)})`);
+    if (a.status !== 0 && (a.code === P.Code.JOG || a.code === P.Code.TRACK)) pad.stop(`the robot refused it (${P.ackText(a.code, a.status)})`);
     else if (a.status !== 0) toast(`${P.CODE_NAMES[a.code] ?? a.code}: ${P.ackText(a.code, a.status)}`, 'warning');
     updateControls();
   });
@@ -490,7 +492,7 @@ export function start(): Promise<ArmView> {
   link.on('done', (d) => {
     const r = P.DONE_RESULTS[d.result] ?? `result ${d.result}`;
     const detail = d.result === 1 && d.joint ? ` (J${d.joint} was ${d.errorDeg.toFixed(0)}° from its goal)` : '';
-    if (live) setLive(false, `the robot stopped: ${r}${detail}`);
+    if (live || pad.isActive()) stopModes(`the robot stopped: ${r}${detail}`);
     else toast(`Move ended: ${r}${detail}`, d.result === 0 ? 'info' : 'warning');
   });
 
@@ -508,8 +510,8 @@ export function start(): Promise<ArmView> {
     hist.temp.push(t, s.temp);
     hist.acc.push(t, s.acc);
     hist.gyro.push(t, s.gyro);
-    if (!link.inControl && live) setLive(false, 'control was released');
-    if (live && s.state === P.STATE_ERROR) setLive(false, 'the robot reported an error');
+    if (!link.inControl && (live || pad.isActive())) stopModes('control was released');
+    if ((live || pad.isActive()) && s.state === P.STATE_ERROR) stopModes('the robot reported an error');
     dirty = true;
   });
 
@@ -582,11 +584,12 @@ export function start(): Promise<ArmView> {
     watchBtn.textContent = other ? 'Take over' : 'Take control';
 
     // The controls work only with control. Live mode replaces Move, Go to zero and the jog buttons.
-    root.querySelectorAll<HTMLButtonElement>('.needs-control').forEach((b) => (b.disabled = !mine || busy || (live && b.matches('.not-live'))));
-    faders.forEach((i) => (i.disabled = !mine));
-    goalNums.forEach((i) => (i.disabled = !mine));
+    root.querySelectorAll<HTMLButtonElement>('.needs-control').forEach((b) => (b.disabled = !mine || busy || padActive || (live && b.matches('.not-live'))));
+    faders.forEach((i) => (i.disabled = !mine || padActive)); // the gamepad sets the goals
+    goalNums.forEach((i) => (i.disabled = !mine || padActive));
+    root.dataset.pad = padActive ? 'on' : '';
     speed.disabled = !mine;
-    liveBox.disabled = !mine || busy || !liveSupported();
+    liveBox.disabled = !mine || busy || !liveSupported() || padActive;
     liveBox.parentElement!.title = connected && !liveSupported()
       ? 'Live mode needs controller firmware 4.4 or later. Update it on the Setup page.'
       : 'Live: the arm follows the goals at once (up to the speed setting). Off: set the goals, then Move.';
@@ -595,18 +598,18 @@ export function start(): Promise<ArmView> {
   }
 
   controlBtn.addEventListener('click', () => {
-    if (link.inControl) setLive(false, 'you released control');
+    if (link.inControl) stopModes('you released control');
     link.requestControl(link.inControl ? 0 : 1);
   });
   takeoverBtn.addEventListener('click', () => link.requestControl(2));
   watchBtn.addEventListener('click', () => link.requestControl(link.last?.control === 2 ? 2 : 1));
   const stopAll = () => {
-    setLive(false, '');
+    stopModes('');
     link.stopRobot();
   };
   $('#stop-btn').addEventListener('click', stopAll);
   $('#hold-btn').addEventListener('click', () => {
-    setLive(false, '');
+    stopModes('');
     link.holdPose();
   });
   // Move and Go to zero use the Speed setting too. A minimum-jerk move peaks at 1.875 × distance / T, so
@@ -652,12 +655,12 @@ export function start(): Promise<ArmView> {
     b.addEventListener('contextmenu', (e) => e.preventDefault());
   });
   window.addEventListener('blur', () => {
-    setLive(false, 'the page lost focus');
+    stopModes('the page lost focus');
     link.stopJog();
   });
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) return;
-    setLive(false, 'the page was hidden');
+    stopModes('the page was hidden');
     link.stopJog();
   });
 
@@ -713,15 +716,17 @@ export function start(): Promise<ArmView> {
   // --- Live mode (firmware 4.4+): the ATOM moves the joints to the goals at once (TRACK), at up to the
   // speed setting and the joints' acceleration limits, and stops on them. Never MOVE_TO. ---
   let live = false;
+  let padActive = false; // the gamepad moves the arm (end-effector JOG, firmware 5.1)
   const liveSupported = () => versionAtLeast(link.version, 4, 4);
-  function setLive(on: boolean, why: string) {
+  function setLive(on: boolean, why: string, quiet = false) {
     if (on === live) return;
     if (on) {
-      if (!link.inControl || !link.last || !liveSupported()) return updateControls();
+      const busy = link.last ? [P.STATE_PLAYING, P.STATE_MOVING].includes(link.last.state) : true;
+      if (!link.inControl || !link.last || !liveSupported() || busy) return updateControls();
       setGoals(link.last.goal); // start from where the arm is: no jump to an old goal
       live = true;
       sendLive();
-      toast('Live: the arm follows the faders and the typed goals. Esc stops.', 'warning');
+      if (!quiet) toast('Live: the arm follows the faders and the typed goals. Esc stops.', 'warning');
     } else {
       live = false;
       link.stopTrack(); // HOLD: the arm brakes at once
@@ -729,10 +734,74 @@ export function start(): Promise<ArmView> {
     }
     updateControls();
   }
+  /** Stop Live mode and the gamepad (Esc, Stop, Hold, lost control or focus, an error). */
+  function stopModes(why: string) {
+    setLive(false, why);
+    pad.stop(why);
+  }
   function sendLive() {
     if (live) link.setTrack(goal, Number(speed.value));
   }
   liveBox.addEventListener('change', () => setLive(liveBox.checked, 'you switched it off'));
+
+  // --- Tabs of the joints card: Joints (the faders) and Gamepad. The page remembers the tab. ---
+  const tabs = [...root.querySelectorAll<HTMLButtonElement>('.joints [role=tab]')];
+  function selectTab(tab: HTMLButtonElement, focus = false) {
+    for (const t of tabs) {
+      const on = t === tab;
+      t.setAttribute('aria-selected', String(on));
+      t.tabIndex = on ? 0 : -1;
+      $(`#${t.getAttribute('aria-controls')}`).hidden = !on;
+    }
+    if (focus) tab.focus();
+    root.dataset.tab = tab.id === 'tab-pad' ? 'pad' : 'joints';
+    try {
+      localStorage.setItem('mycobot-control.tab', tab.id);
+    } catch {
+      /* private window */
+    }
+  }
+  tabs.forEach((t, i) => {
+    t.addEventListener('click', () => selectTab(t));
+    t.addEventListener('keydown', (e) => {
+      const d = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+      if (d) selectTab(tabs[(i + d + tabs.length) % tabs.length], true);
+    });
+  });
+  try {
+    const saved = tabs.find((t) => t.id === localStorage.getItem('mycobot-control.tab'));
+    if (saved) selectTab(saved);
+  } catch {
+    /* private window */
+  }
+
+  // --- Gamepad (gamepad.ts): the sticks move the TCP. The joint goals go out with TRACK, as in Live mode,
+  // and show on the faders and the see-through arm. ---
+  const pad = setupGamepad({
+    link,
+    urdfUrl: armEl.dataset.urdf!,
+    cannotStart: () => {
+      const st = link.last?.state;
+      return st === P.STATE_PLAYING || st === P.STATE_MOVING ? 'wait until the robot stops' : st === P.STATE_ERROR ? 'the robot reports an error: click Hold' : '';
+    },
+    onActive: (on) => {
+      if (on) {
+        setLive(false, '');
+        selectTab($<HTMLButtonElement>('#tab-pad'));
+      }
+      padActive = on;
+      updateControls();
+    },
+    showGoals: (q) => {
+      q.forEach((x, j) => {
+        goal[j] = x;
+        faders[j].value = String(x);
+      });
+      updateGoals();
+    },
+    speed: () => Number(speed.value),
+    toast,
+  });
 
   // Toasts for refused commands and finished moves.
   // The same message again within 3 s shows once.

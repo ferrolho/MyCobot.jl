@@ -92,7 +92,7 @@ On a screen of 1440 × 900 pixels or more, the page fits in one screen:
 | Top bar | Robot address and **Connect**; connection, real robot or simulator, robot state; the control lease; **Hold** and **Stop**. A green edge: connected to the real robot. |
 | Camera (left) | The Pi camera or a camera on this computer (see [Camera](#camera)) |
 | 3D view (middle) | The measured pose (solid) and the goal pose (see-through blue). **Reset view** restores the camera. |
-| Joints (right) | One strip per joint: the angle, a vertical fader, the typed goal, jog buttons, the temperature and the voltage. Below: **Live**, the **Speed** setting, **Use current pose**, **Go to zero**, **Move**. |
+| Joints (right) | Two tabs. **Joints**: one strip per joint (the angle, a vertical fader, the typed goal, jog buttons, the temperature and the voltage), and below them **Live**, the **Speed** setting, **Use current pose**, **Go to zero**, **Move**. **Gamepad**: see [Gamepad teleoperation](/mycobot-280-lab/software/gamepad/#the-gamepad-tab). |
 | Plots | The last 20 s: angle, speed, load, temperature (one line per joint, J7 too when the gripper is there), and the IMU acceleration and angular rate (x, y, z) |
 
 On a narrower screen, the areas are stacked and the page scrolls.
@@ -147,6 +147,13 @@ later.
   0.2 s after the last TRACK.
 - The joints panel has an amber frame while Live is on.
 - The jog buttons (▼/▲) use the **Speed** setting, at most 30 °/s.
+
+### Gamepad
+
+With a gamepad (an Xbox controller, paired with this computer), the sticks move the TCP in
+Cartesian space. Use the **Gamepad** tab of the joints card. It needs controller firmware 5.1
+(end-effector JOG). See
+[Gamepad teleoperation](/mycobot-280-lab/software/gamepad/).
 
 ### Gripper (J7)
 

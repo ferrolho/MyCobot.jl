@@ -56,15 +56,20 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 
       <section class="card joints" aria-labelledby="joints-title">
         <header class="card-head">
-          <h2 id="joints-title">Joints</h2>
+          <h2 id="joints-title" class="sr-only">Joint control</h2>
+          <div class="tabs" role="tablist" aria-label="Joint control">
+            <button type="button" role="tab" id="tab-joints" class="tab" aria-controls="panel-joints" aria-selected="true">Joints</button>
+            <button type="button" role="tab" id="tab-pad" class="tab" aria-controls="panel-pad" aria-selected="false" tabindex="-1">Gamepad<i class="tab-dot" aria-hidden="true"></i></button>
+          </div>
           <!-- One message line: the hint, or why the controls are off, or that Live mode is on. -->
           <p class="joints-hint muted small">Drag a blue goal marker or type a goal, then <strong>Move</strong>. Hold ▼ or ▲ to jog. White line: measured angle.</p>
           <div id="watch-banner" class="watch-banner" role="status">
             <span id="watch-text">Not connected.</span>
             <button id="watch-btn" type="button" class="btn small-btn primary" hidden>Take control</button>
           </div>
-          <p id="live-banner" class="live-banner" role="status"><strong>Live</strong>: the arm follows the goals at once. <kbd>Esc</kbd> stops.</p>
+          <p id="live-banner" class="live-banner" role="status"><span class="lb-live"><strong>Live</strong>: the arm follows the goals at once.</span><span class="lb-pad"><strong>Gamepad</strong> on. Menu or</span> <kbd>Esc</kbd> stops.</p>
         </header>
+        <div id="panel-joints" class="tab-panel" role="tabpanel" aria-labelledby="tab-joints">
         <div id="strips" class="strips"></div>
         <template id="strip">
           <div class="strip">
@@ -101,6 +106,41 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
             <button id="goal-move" type="button" class="btn primary needs-control not-live">Move</button>
           </div>
         </footer>
+        </div>
+        <div id="panel-pad" class="tab-panel pad-panel" role="tabpanel" aria-labelledby="tab-pad" hidden>
+          <div class="pad-top">
+            <label class="live-switch" title="Move the gripper with the gamepad (controller firmware 5.1 or later)."><input id="pad-on" type="checkbox" /> Gamepad</label>
+            <label class="pad-field"><span class="sr-only">Mapping</span><select id="pad-map" title="Mapping: which stick does what"></select></label>
+            <span id="pad-name" class="muted"></span>
+          </div>
+          <div class="pad-settings">
+            <div class="pad-field"><span>Frame</span>
+              <div id="pad-frame" class="seg" role="group" aria-label="Frame of the twist (View on the gamepad)">
+                <button type="button" data-v="base" title="The robot's base frame: x ahead, y to the left, z up">Base</button>
+                <button type="button" data-v="tool" title="The flange axes: z points along the fingers">Tool</button>
+              </div>
+            </div>
+            <div class="pad-field"><span>Speed <span class="muted">mm/s</span></span>
+              <div id="pad-speed" class="seg" role="group" aria-label="TCP speed (D-pad up and down)"></div>
+            </div>
+            <div class="pad-field"><span>Ahead</span>
+              <div id="pad-ahead" class="seg" role="group" aria-label="The base axis that points away from you">
+                <button type="button" data-v="0">+x</button>
+                <button type="button" data-v="90">+y</button>
+                <button type="button" data-v="180">−x</button>
+                <button type="button" data-v="-90">−y</button>
+              </div>
+            </div>
+          </div>
+          <p class="pad-readout num"><span id="pad-tcp">TCP –</span> <span class="muted">· joints at most <span id="pad-jspeed"></span> °/s (Speed, Joints tab)</span></p>
+          <p id="pad-note" class="pad-note" role="status"></p>
+          <svg id="pad-diagram" class="pad-diagram" viewBox="0 0 700 300" role="img" aria-label="Gamepad mapping"></svg>
+          <table class="sr-only">
+            <caption>Gamepad mapping</caption>
+            <thead><tr><th scope="col">Control</th><th scope="col">Function</th></tr></thead>
+            <tbody id="pad-rows"></tbody>
+          </table>
+        </div>
       </section>
 
       <section id="camera-card" class="card camera" aria-labelledby="camera-title" hidden data-running="false">
@@ -419,7 +459,7 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
     padding: 0.15rem 0.2rem 0.15rem 0.65rem; border-radius: 0.45rem; font-size: 0.85rem; font-weight: 600;
     background: var(--well); border: 1px solid var(--line); border-inline-start: 4px solid var(--axis); white-space: nowrap;
   }
-  .ctl:not([data-control='mine']) .joints-hint, .ctl[data-live='on'] .joints-hint { display: none; }
+  .ctl:not([data-control='mine']) .joints-hint, .ctl:is([data-live='on'], [data-pad='on']) .joints-hint { display: none; }
   .ctl[data-control='other'] .watch-banner { border-inline-start-color: var(--warning); }
   .ctl:not([data-control='mine']) .joints :is(.jogs, .goal-field, .joints-foot .field, .joints-foot .btn-row) { opacity: 0.45; }
   .ctl:not([data-control='mine']) .joints .joints-foot .btn:disabled, .ctl:not([data-control='mine']) .joints .jog:disabled { opacity: 1; }
@@ -428,7 +468,7 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
   .ctl .live-banner { display: none; padding: 0.2rem 0.65rem; border-radius: 0.45rem; font-size: 0.85rem; white-space: nowrap; background: color-mix(in srgb, var(--warning) 16%, var(--well)); border-inline-start: 4px solid var(--warning); }
   .ctl .live-banner kbd { font: 600 0.7rem var(--sl-font-mono); padding: 0.05rem 0.3rem; border-radius: 0.25rem; border: 1px solid var(--sl-color-gray-3); }
   .ctl[data-live='on'] .live-banner { display: block !important; }
-  .ctl[data-live='on'] .joints { border-color: var(--warning); box-shadow: inset 0 0 0 1px var(--warning); }
+  .ctl:is([data-live='on'], [data-pad='on']) .joints { border-color: var(--warning); box-shadow: inset 0 0 0 1px var(--warning); }
   .ctl .live-switch { display: inline-flex; align-items: center; gap: 0.3rem; font-weight: 700; padding: 0.15rem 0.5rem; border-radius: 0.4rem; border: 1px solid var(--sl-color-gray-4); cursor: pointer; }
   .ctl .live-switch input { accent-color: var(--warning); margin: 0; }
   .ctl[data-live='on'] .live-switch { border-color: var(--warning); color: var(--warning); }
@@ -436,6 +476,47 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
   .ctl .j-meta { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 0.1rem 0.5rem; font-size: 0.7rem; }
   .ctl .j-meta > * { white-space: nowrap; }
 
+  /* Tabs of the joints card: Joints (faders) and Gamepad */
+  .ctl .tabs { display: flex; gap: 0.15rem; flex: none; }
+  .ctl .tab { font: inherit; font-weight: 700; font-size: 1rem; background: none; border: none; border-bottom: 2px solid transparent; padding: 0.1rem 0.5rem; color: var(--sl-color-gray-3); cursor: pointer; display: inline-flex; align-items: center; gap: 0.35rem; }
+  .ctl .tab[aria-selected='true'] { color: var(--sl-color-white); border-bottom-color: var(--sl-color-accent); }
+  .ctl .tab:focus-visible { outline: 2px solid var(--sl-color-accent); outline-offset: 2px; }
+  .ctl .tab-dot { display: none; width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--warning); }
+  .ctl[data-pad='on'] .tab-dot { display: inline-block; }
+  .ctl .tab-panel { display: flex; flex-direction: column; gap: 0.5rem; flex: 1 1 auto; min-height: 0; }
+  .ctl .tab-panel[hidden] { display: none; }
+  .ctl[data-tab='pad'] .joints-hint { display: none; }
+  .ctl .live-banner .lb-pad, .ctl[data-pad='on'] .live-banner .lb-live { display: none; }
+  .ctl[data-pad='on'] .live-banner .lb-pad { display: inline; }
+  .ctl[data-pad='on'] .live-banner { display: block !important; }
+  /* Gamepad tab */
+  .ctl .pad-panel { overflow: auto; font-size: 0.85rem; gap: 0.45rem; }
+  .ctl .pad-top { display: flex; flex-wrap: wrap; gap: 0.3rem 0.7rem; align-items: center; }
+  .ctl[data-pad='on'] .pad-top .live-switch { border-color: var(--warning); color: var(--warning); }
+  .ctl .pad-settings { display: flex; flex-wrap: wrap; gap: 0.35rem 0.9rem; align-items: center; }
+  .ctl .pad-field { display: inline-flex; gap: 0.4rem; align-items: center; white-space: nowrap; }
+  .ctl .joints .card-head > .tabs { margin-inline-start: 0; }
+  .ctl .seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--sl-color-gray-4); border-radius: 0.45rem; overflow: hidden; }
+  .ctl .seg button { font: inherit; font-size: 0.8rem; padding: 0.15rem 0.6rem; background: var(--well); color: inherit; border: none; border-inline-start: 1px solid var(--sl-color-gray-5); cursor: pointer; white-space: nowrap; }
+  .ctl .seg button:first-child { border-inline-start: none; }
+  .ctl .seg button[aria-pressed='true'] { background: var(--sl-color-accent); color: var(--sl-color-black); font-weight: 600; }
+  .ctl .seg button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .ctl .pad-readout, .ctl .pad-note, .ctl .pad-frame-text { margin: 0; }
+  /* Its own line, always one line high: a note that comes and goes does not move the diagram. */
+  .ctl .pad-note { color: var(--warning); min-height: 1.5em; line-height: 1.5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* The gamepad diagram (gamepad.ts): a plain outline, a callout per control; a control in use lights up. */
+  .ctl .pad-diagram { width: 100%; display: block; flex: 1 1 12rem; min-height: 11rem; }
+  .ctl .pad-diagram .pd-body { fill: var(--sl-color-gray-5); stroke: var(--sl-color-gray-4); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+  .ctl .pad-diagram .pd-guide { fill: var(--well); stroke: var(--sl-color-gray-4); }
+  .ctl .pad-diagram .pd-part { fill: var(--card); stroke: var(--sl-color-gray-3); stroke-width: 1.2; vector-effect: non-scaling-stroke; }
+  .ctl .pad-diagram .pd-key { font: 700 10px var(--sl-font-system); fill: var(--sl-color-gray-2); pointer-events: none; }
+  .ctl .pad-diagram .pd-line { fill: none; stroke: var(--sl-color-gray-4); stroke-width: 1; }
+  .ctl .pad-diagram .pd-label { font: 16px var(--sl-font-system); fill: var(--sl-color-gray-2); }
+  .ctl .pad-diagram .pd-unused .pd-part { opacity: 0.45; }
+  .ctl .pad-diagram .pd-on .pd-part { fill: var(--sl-color-accent); stroke: var(--sl-color-accent); }
+  .ctl .pad-diagram .pd-on .pd-key { fill: var(--sl-color-black); }
+  .ctl .pad-diagram .pd-on .pd-line { stroke: var(--sl-color-accent); stroke-width: 2; }
+  .ctl .pad-diagram .pd-on .pd-label { fill: var(--sl-color-white); font-weight: 700; }
   .ctl .joints-foot { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.4rem 0.9rem; align-items: center; }
   .ctl .joints-foot .btn { font-size: 0.85rem; padding: 0.35rem 0.7rem; }
   .ctl .field { display: flex; gap: 0.5rem; align-items: center; font-size: 0.85rem; min-width: 0; white-space: nowrap; }

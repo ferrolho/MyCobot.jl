@@ -24,6 +24,16 @@ They do not need the robot.
 | Robot description | The generated URDFs and parameter tables are up to date (`uv run tools/gen_robot.py --check`; skipped without `uv`). |
 | IMU calibration | On simulated poses with a known tilt, offset, mounting and accelerometer error, the gravity fit finds them again. |
 
+## Control page and end-effector JOG
+
+- `node scripts/test-kinematics.mjs` (in `website/`): the Control page's forward kinematics against
+  `src/kinematics.jl` (the poses in `tools/firmware-tests/fk_reference.h`).
+- `tools/firmware-tests/test_twist_check.cpp`: the firmware's end-effector controller (`twist.h`) on
+  the laptop: FK against the same poses, straight lines, turns about the TCP, the joint limits, the stops
+  before singular poses and random input. See [Gamepad teleoperation](/mycobot-280-lab/software/gamepad/#tests-2026-10-09).
+- `tools/firmware-tests/twist_ws_test.py`: end-effector JOG over the WebSocket API, on the simulated ATOM
+  (which runs `twist.h`) or on the robot.
+
 ## The simulated bus
 
 `test/simulated_bus.jl` implements the transport functions for a fake bus with

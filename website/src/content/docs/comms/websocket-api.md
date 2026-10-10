@@ -150,7 +150,7 @@ Frame 0 is the joint space. Frames 1 and 2 (firmware 5.1) move the TCP: see
 
 JOG with frame 1 or 2 sets a **twist of the TCP** (the tool point): a linear and an angular
 velocity. The ATOM turns it into joint goals at 500 Hz (`twist.h`). The
-gamepad on the Control page uses it.
+[gamepad](/mycobot-280-lab/software/gamepad/) on the Control page uses it.
 
 | Offset | Field | Unit |
 | --- | --- | --- |

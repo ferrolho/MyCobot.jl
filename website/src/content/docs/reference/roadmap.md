@@ -10,7 +10,10 @@ description: Open work, grouped by topic. Done items move to the results and his
 - [x] Browser flasher with Improv WiFi setup and a Search button (Setup page, firmware 4.3.0). Tested on the real ATOM on 2026-10-05: install with Erase, WiFi set up over USB, Search found 4.3.0 at `mycobot.local`, and the Control page moved the arm.
 - [ ] Test the CI firmware build (it runs on the first push to GitHub) and an update over 4.3.0 that keeps the WiFi network.
 - [ ] An address sweep when `mycobot.local` does not resolve.
-- [ ] End-effector jog (the page has joint jog only).
+- [x] End-effector jog: [gamepad teleoperation](/mycobot-280-lab/software/gamepad/) on the Control page (2026-10-09). A first version (the controller in the browser, TRACK) moved the real arm.
+- [x] End-effector JOG in the firmware (JOG frames 1 and 2, firmware 5.1): the twist integrated on the ATOM at 500 Hz (2026-10-09, tested on the laptop and the simulator).
+- [x] Flash 5.1 and test end-effector JOG on the arm with `twist_ws_test.py` (2026-10-10: 40.15 mm for 40, a 10.11° turn with the TCP within 0.06 mm; `twist_us` about 450 µs).
+- [ ] Test the gamepad on the arm with 5.1 (straight lines, turns about the TCP, the stops before J3 = 0° and J5 = ±90°, a WiFi stall).
 - [ ] Live mode with TRACK (firmware 4.4): used on the real arm on 2026-10-05, up to 90 °/s; a blocked joint stops the arm with a following error. Still to check: the joints settle on the goal without hunting.
 - [x] Test Chrome's local-network prompt for real users on GitHub Pages (2026-10-05: works from the public page; the laptop webcam works too).
 - [ ] The page assumes the real robot until the first status-log line arrives (the simulator's starts with "atom-sim").

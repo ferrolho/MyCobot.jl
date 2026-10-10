@@ -189,6 +189,19 @@ export function jog(velDegS: number[]): Bytes {
   return new Uint8Array(b.buffer);
 }
 
+/** End-effector JOG (firmware 5.1): a twist of the TCP in the base frame (frame 1) or the tool frame (frame 2):
+ *  linear mm/s, angular °/s; the J7 velocity (°/s, 0 without the gripper); the joint speed cap (°/s). The ATOM
+ *  turns it into joint goals at 500 Hz (twist.h). Send it at least every 200 ms (deadman). */
+export function eeJog(frame: 1 | 2, linMmS: readonly number[], angDegS: readonly number[], j7DegS: number, vmaxDegS: number): Bytes {
+  const b = new DataView(new ArrayBuffer(18));
+  b.setUint8(0, Code.JOG);
+  b.setUint8(1, frame);
+  const i16 = (x: number) => Math.max(-32768, Math.min(32767, Math.round(x * 10)));
+  [...linMmS, ...angDegS, j7DegS].forEach((x, i) => b.setInt16(2 + 2 * i, i16(x), true));
+  b.setUint16(16, Math.round(Math.max(0, Math.min(MOVE_VMAX, vmaxDegS)) * 10), true);
+  return new Uint8Array(b.buffer);
+}
+
 // --- Addresses ---------------------------------------------------------------------------------
 
 /**
