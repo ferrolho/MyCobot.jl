@@ -23,6 +23,7 @@ import math
 import json
 import os
 import sys
+import xml.etree.ElementTree as ET
 
 import xacro
 import yaml
@@ -44,6 +45,44 @@ def num(x):
 def urdf(mesh_uri, mesh_ext, gripper=False):
     doc = xacro.process_file(XACRO, mappings={"mesh_uri": mesh_uri, "mesh_ext": mesh_ext, "gripper": str(gripper).lower()})
     return doc.toprettyxml(indent="  ").replace(ROOT + os.sep, "")   # the same output in every checkout
+
+
+def _mat(a, b):
+    return [[sum(a[i][k] * b[k][j] for k in range(3)) for j in range(3)] for i in range(3)]
+
+
+def _rpy(r, p, y):
+    cr, sr, cp, sp, cy, sy = math.cos(r), math.sin(r), math.cos(p), math.sin(p), math.cos(y), math.sin(y)
+    return [[cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr],
+            [sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr],
+            [-sp, cp * sr, cp * cr]]   # URDF: Rz(y) Ry(p) Rx(r)
+
+
+def kinematic_chain(tip="joint6_flange"):
+    """The serial chain of the URDF from the root to `tip`, for FK on the ATOM (end-effector JOG, 5.1).
+    Joint i: rotation R and position p (mm) from the frame of joint i-1 after its rotation (the root for
+    J1) to the frame of joint i, fixed joints folded in, and the axis of joint i in its own frame. Then the
+    transform from J6's frame to the flange. The same convention as src/kinematics.jl (RigidBodyDynamics)."""
+    root = ET.fromstring(urdf("", "glb"))
+    by_child = {j.find("child").get("link"): j for j in root.findall("joint")}
+    joints, name = [], tip
+    while name in by_child:
+        joints.insert(0, by_child[name])
+        name = by_child[name].find("parent").get("link")
+    out, R, p = [], [[1, 0, 0], [0, 1, 0], [0, 0, 1]], [0.0, 0.0, 0.0]
+    for j in joints:
+        o = j.find("origin")
+        xyz = [float(x) * 1000 for x in (o.get("xyz") if o is not None else "0 0 0").split()]
+        Ro = _rpy(*[float(x) for x in (o.get("rpy") if o is not None else "0 0 0").split()])
+        p = [p[i] + sum(R[i][k] * xyz[k] for k in range(3)) for i in range(3)]
+        R = _mat(R, Ro)
+        if j.get("type") == "revolute":
+            axis = [float(x) for x in j.find("axis").get("xyz").split()]
+            out.append((R, p, axis))
+            R, p = [[1, 0, 0], [0, 1, 0], [0, 0, 1]], [0.0, 0.0, 0.0]
+        elif j.get("type") != "fixed":
+            sys.exit(f"URDF joint {j.get('name')}: type {j.get('type')} is not supported")
+    return out, (R, p)
 
 
 def params():
@@ -137,7 +176,27 @@ def c_params(p):
             f"const uint16_t GRIPPER_TORQUE = {p['gripper']['torque']};   // registers 16, 28 and 48 (0-1000), set when found\n"
             f"const uint8_t GRIPPER_HOT_C = {p['gripper']['hot_c']}, GRIPPER_COOL_C = {p['gripper']['cool_c']};   // derate above, restore below (°C)\n"
             f"const uint16_t GRIPPER_HOT_TORQUE = {p['gripper']['hot_torque']};   // torque limit while derated\n"
-            "}  // namespace robot\n")
+            + c_chain(p) + "}  // namespace robot\n")
+
+
+def c_chain(p):
+    """The kinematic chain and the gripper TCP for end-effector JOG (5.1), from the URDF."""
+    joints, (Rf, pf) = kinematic_chain()
+    if len(joints) != len(p["names"]):
+        sys.exit("the URDF chain to joint6_flange must have one revolute joint per joint in servos.yaml")
+    def f(x):   # a C float literal: 1.0f, -3.7e-06f
+        t = f"{x:.7g}"
+        return (t if any(c in t for c in ".e") else t + ".0") + "f"
+    m9 = lambda R: "{" + ", ".join(f(x) for row in R for x in row) + "}"
+    v3 = lambda v: "{" + ", ".join(f(x) for x in v) + "}"
+    return ("// Kinematic chain from the URDF (end-effector JOG, 5.1). Joint i: rotation (row-major) and position (mm) from\n"
+            "// the frame of joint i-1 after its rotation (the base for J1) to joint i, and its axis. Then J6 to the flange.\n"
+            f"const float CHAIN_R[N_ARM][9] = {{{', '.join(m9(R) for R, _, _ in joints)}}};\n"
+            f"const float CHAIN_P_MM[N_ARM][3] = {{{', '.join(v3(q) for _, q, _ in joints)}}};\n"
+            f"const float CHAIN_AXIS[N_ARM][3] = {{{', '.join(v3(a) for _, _, a in joints)}}};\n"
+            f"const float FLANGE_R[9] = {m9(Rf)};\n"
+            f"const float FLANGE_P_MM[3] = {v3(pf)};\n"
+            f"const float GRIPPER_TCP_MM[3] = {v3(p['gripper']['tcp_mm'])};   // the TCP with the gripper, flange frame\n")
 
 
 def ts_params(p):
@@ -150,7 +209,8 @@ def ts_params(p):
             f"export const LIMIT_MIN = {arr(all7(p, 'limit_min'))} as const; // joint limits (°); J7: the end stops\n"
             f"export const LIMIT_MAX = {arr(all7(p, 'limit_max'))} as const;\n"
             f"export const VMAX = {num(p['vmax_dps'])}; // speed limit (°/s)\n"
-            f"export const AMAX = {arr(all7(p, 'amax_dps2'))} as const; // acceleration limits (°/s²)\n")
+            f"export const AMAX = {arr(all7(p, 'amax_dps2'))} as const; // acceleration limits (°/s²)\n"
+            f"export const GRIPPER_TCP_MM = {arr(p['gripper']['tcp_mm'])} as const; // the TCP with the gripper, flange frame (mm)\n")
 
 
 def py_params(p):
@@ -164,7 +224,8 @@ def py_params(p):
             f"LIMIT_MAX = {tup(all7(p, 'limit_max'))}\n"
             f"MULTI_TURN = ({', '.join('True' if m else 'False' for m in p['multi_turn'] + [False])})   # servo reads and moves past one turn\n"
             f"VMAX = {num(p['vmax_dps'])}   # speed limit (°/s)\n"
-            f"AMAX = {tup(all7(p, 'amax_dps2'))}   # acceleration limits (°/s²)\n")
+            f"AMAX = {tup(all7(p, 'amax_dps2'))}   # acceleration limits (°/s²)\n"
+            f"GRIPPER_TCP_MM = {tup(p['gripper']['tcp_mm'])}   # the TCP with the gripper, flange frame (mm)\n")
 
 
 def jl_correction(p):

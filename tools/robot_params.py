@@ -8,3 +8,4 @@ LIMIT_MAX = (165, 140, 150, 150, 160, 135, 0)
 MULTI_TURN = (False, False, False, False, False, True, False)   # servo reads and moves past one turn
 VMAX = 90   # speed limit (°/s)
 AMAX = (400, 400, 400, 2000, 2000, 2000, 2000)   # acceleration limits (°/s²)
+GRIPPER_TCP_MM = (-0.6, 8.2, 100)   # the TCP with the gripper, flange frame (mm)

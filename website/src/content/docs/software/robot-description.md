@@ -24,7 +24,7 @@ The generator `tools/gen_robot.py` writes:
 | `website/public/robot/mycobot_280_arduino.urdf` | Control page 3D view, meshes as `*.glb` |
 | `mycobot_description/urdf/mycobot_280_arduino/mycobot_280_arduino_gripper.urdf` | Julia, the arm with the gripper (`load_mechanism(urdf=...)`) |
 | `website/public/robot/mycobot_280_arduino_gripper.urdf` | Control page 3D view with the gripper (`ArmView.setGripper(true)`) |
-| `firmware/atom_controller/robot_params.h` | Controller firmware (`motion_limits.h`, joint directions, gains) |
+| `firmware/atom_controller/robot_params.h` | Controller firmware (`motion_limits.h`, joint directions, gains; the kinematic chain from the URDF and the gripper TCP `tcp_mm` for end-effector JOG, 5.1) |
 | `website/src/control/robot_params.ts` | Control page (`protocol.ts`) |
 | `tools/robot_params.py` | Simulator (`tools/atom_sim.py`) |
 | `src/robot_params.jl` | Julia package (`SERVO_IDS`, `JOINT_SIGN`, `GAINS`, `SERVO_WN`, …) |

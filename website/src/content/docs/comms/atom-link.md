@@ -31,7 +31,7 @@ From 4.2 the same messages also go over a WebSocket (`ws://<ATOM>/ws`), and comm
 | `0x0B` | PLAY_SIGNAL (3.1+) | the PLAY parameters, then `sig::Params` (38 bytes: u8 joint, u8 kind, f32 amp, f0, f1, duration, vmax, amax, i16 base[6] in 0.01°) | ACK (−11…−18 invalid parameters, −29/−30 bad start pose), then TELEM and DONE |
 | `0x0D` | CONTROL (4.2+) | u8 action: 0 release, 1 take, 2 take over | ACK: 0, −2 another client has control, −1 robot moving |
 | `0x0E` | MOVE_TO (4.2+) | i16 goal[n] (0.01°; n = 6, or 7 with J7, 5.0+), u16 duration (ms, 0 = shortest) | ACK, TELEM (UDP only), DONE |
-| `0x0F` | JOG (4.2+) | u8 frame (0 = joints), i16 velocity[n] (0.1°/s); 200 ms deadman | ACK only if refused |
+| `0x0F` | JOG (4.2+) | u8 frame (0 = joints), i16 velocity[n] (0.1°/s); 200 ms deadman. Frames 1 (base) and 2 (tool), 5.1+: i16 linear[3] (0.1 mm/s), i16 angular[3] (0.1 °/s), i16 J7 velocity, u16 joint speed cap ([end-effector JOG](/mycobot-280-lab/comms/websocket-api/#end-effector-jog-51)) | ACK only if refused |
 | `0x10` | TRACK (4.4+) | i16 goal[n] (0.01°), u16 vmax (0.1°/s, ≤ 90 °/s); 200 ms deadman | ACK only if refused |
 | `0x0C` | SUBSCRIBE (4.1+) | u16 rate (Hz, 1–100; 0 = stop), renew at least once a second | `0x88` STREAM packets to the sender; see [the STREAM packet](/mycobot-280-lab/comms/websocket-api/#the-stream-packet-50) |
 

@@ -1,5 +1,5 @@
 """
-A simulated ATOM that speaks the WebSocket API of controller firmware 5.0. Use it to develop the
+A simulated ATOM that speaks the WebSocket API of controller firmware 5.1. Use it to develop the
 Control page without the robot. Docs: website/src/content/docs/comms/websocket-api.md.
 
     python3 tools/atom_sim.py [--host 127.0.0.1] [--port 8281] [--recording RECORDING.csv]
@@ -9,16 +9,19 @@ The arm is simulated: each joint follows its goal with a 0.12 s lag and a 90 °/
 gripper is J7 (as the firmware finds it); --no-gripper leaves it off (6 joints). --object DEG puts an
 object between the fingers: J7 cannot close past DEG (it stalls there, with load, as in a grasp).
 MOVE_TO, JOG and TRACK (with the 200 ms deadman), CONTROL, SUBSCRIBE/STREAM, HOLD, STOP, PING, STATE,
-REG_READ and REG_WRITE work as specified. PLAY and PLAY_SIGNAL play the recording (if given) as
+REG_READ and REG_WRITE work as specified. End-effector JOG (JOG frames 1 and 2, 5.1) runs the firmware's own
+controller (firmware/atom_controller/twist.h), built with a C++ compiler into build/twist_lib.so on first use. PLAY and PLAY_SIGNAL play the recording (if given) as
 500 Hz telemetry with tools/atom_replay.py, and the simulated arm follows it.
 Needs: pip install websockets numpy
 """
 import argparse
 import asyncio
+import ctypes
 import math
 import os
 import random
 import struct
+import subprocess
 import sys
 import time
 
@@ -29,7 +32,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import atom_replay  # noqa: E402
 import robot_params  # noqa: E402  (generated from mycobot_description/config)
 
-VERSION = (5, 0, 0)
+VERSION = (5, 1, 0)
 SIGN = robot_params.SIGN
 STEPS_PER_DEG = robot_params.STEPS_PER_DEG
 LIMIT_MIN = robot_params.LIMIT_MIN   # model joint limits (°)
@@ -53,6 +56,36 @@ def margin(j):
     """As lim::margin: J7 (the gripper) has none, it uses its whole range, end stop to end stop."""
     return JOG_MARGIN if j < N_ARM else 0.0
 DEADMAN = 0.2         # s
+SM_JOINTS, SM_BASE, SM_TOOL, SM_TRACK = range(4)   # the mode of a streamed run (5.1), as the firmware
+GRIPPER_TCP = robot_params.GRIPPER_TCP_MM
+
+
+def twist_lib():
+    """The firmware's end-effector JOG controller (twist.h) as a C library: built on first use, rebuilt when a
+    source is newer. None (end-effector JOG refused) if there is no C++ compiler."""
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    fw = os.path.join(root, "firmware", "atom_controller")
+    src = [os.path.join(root, "tools", "twist_lib.cpp")] + [os.path.join(fw, f) for f in ("twist.h", "motion_limits.h", "robot_params.h")]
+    lib = os.path.join(root, "build", "twist_lib.so")
+    try:
+        if not os.path.exists(lib) or os.path.getmtime(lib) < max(map(os.path.getmtime, src)):
+            os.makedirs(os.path.dirname(lib), exist_ok=True)
+            subprocess.run([os.environ.get("CXX", "c++"), "-std=c++17", "-O2", "-shared", "-fPIC", "-I", fw, src[0], "-o", lib], check=True)
+        L = ctypes.CDLL(lib)
+    except (OSError, subprocess.CalledProcessError) as e:
+        print(f"end-effector JOG is off: cannot build {lib} ({e})", file=sys.stderr)
+        return None
+    F = ctypes.POINTER(ctypes.c_float)
+    L.twist_reset.argtypes = [ctypes.c_void_p, F, F, F]
+    L.twist_step.argtypes = [ctypes.c_void_p, F, ctypes.c_int, F, ctypes.c_float, ctypes.c_float, F]
+    L.twist_get.argtypes = [ctypes.c_void_p, F, F]
+    L.twist_stopped.argtypes = [ctypes.c_void_p]
+    L.twist_fk.argtypes = [F, F, F, F]
+    return L
+
+
+def floats(xs):
+    return (ctypes.c_float * len(xs))(*xs)
 LEASE = 2.0           # s
 SUB_TIMEOUT = 2.0     # s
 MAX_SUBS = 8
@@ -120,6 +153,13 @@ class Sim:
         self.jog_last = 0.0
         self.track_goal = [0.0] * 7   # TRACK (4.4): goal pose and speed cap
         self.track_vmax = 0.0
+        self.mode = SM_JOINTS         # the mode of the streamed run (5.1)
+        self.twist_cmd = [0.0] * 6    # end-effector JOG (5.1): mm/s, rad/s; J7 velocity; joint speed cap
+        self.twist_j7 = 0.0
+        self.twist_vmax = 0.0
+        self.twist_lib = twist_lib()
+        self.twist_state = ctypes.create_string_buffer(self.twist_lib.twist_state_size()) if self.twist_lib else None
+        self.twist_on = False         # the twist controller holds the arm's goals (reset it when a run switches to it)
         self.state = HOLDING
         self.plan_samples = 0
         self.gains = {j: [32, 4, 16] if j <= 3 else [32, 8, 0] for j in range(1, 8)}
@@ -189,7 +229,9 @@ class Sim:
                 self.move = None
                 self.state = HOLDING
                 self.done(client, 0)
-        if self.state == JOGGING:
+        if self.state == JOGGING and self.mode in (SM_BASE, SM_TOOL):
+            self.twist_step(now, n)
+        elif self.state == JOGGING:
             if now - self.jog_last > DEADMAN:
                 self.jog_cmd = [0.0] * 7
             for j in range(n):
@@ -220,6 +262,30 @@ class Sim:
             target = 25 + 10 * min(1.0, abs(self.dq[j]) / 60)
             self.temp[j] += (target - self.temp[j]) * DT / 60
 
+    def twist_step(self, now, n):
+        """End-effector JOG (5.1): one step of the firmware's controller (twist.h) for J1-J6, and J7 jogs."""
+        L, st = self.twist_lib, self.twist_state
+        stop = now - self.jog_last > DEADMAN
+        tcp = floats(GRIPPER_TCP if n > N_ARM else [0.0, 0.0, 0.0])
+        if not self.twist_on:   # from another mode: the goals and speeds carry over
+            L.twist_reset(st, floats(self.goal[:N_ARM]), floats(self.jog_v[:N_ARM]), tcp)
+            self.twist_on = True
+        info = floats([0.0] * 5)
+        L.twist_step(st, floats([0.0] * 6 if stop else self.twist_cmd), int(self.mode == SM_TOOL), tcp, self.twist_vmax, DT, info)
+        q, qd = floats([0.0] * N_ARM), floats([0.0] * N_ARM)
+        L.twist_get(st, q, qd)
+        self.goal[:N_ARM], self.jog_v[:N_ARM] = list(q), list(qd)
+        if n > N_ARM:   # J7: as motion::jog_joint_step
+            t = 0.0 if stop else max(-JOG_VMAX, min(JOG_VMAX, self.twist_j7))
+            self.jog_v[J7] += max(-JOG_AMAX * DT, min(JOG_AMAX * DT, t - self.jog_v[J7]))
+            lo, hi = jog_range(J7, self.goal[J7])
+            g = self.goal[J7] + self.jog_v[J7] * DT
+            if g >= hi or g <= lo:
+                g, self.jog_v[J7] = (hi if g >= hi else lo), 0.0
+            self.goal[J7] = g
+        if stop and L.twist_stopped(st) and not self.jog_v[J7]:
+            self.state, self.twist_on = HOLDING, False
+
     def stop_motion(self, result):
         """Stop a move, a jog or a play, and hold the pose."""
         if self.play_task:
@@ -229,6 +295,7 @@ class Sim:
         self.move = None
         self.jog_cmd = [0.0] * 7
         self.jog_v = [0.0] * 7
+        self.twist_on = False
         self.goal[:N_ARM] = self.q[:N_ARM]   # J7 keeps its goal (a grasp stays closed), as in the firmware
         if self.state != PLAYING:   # a cancelled play sets the state when it ends
             self.state = READY if self.plan_samples else HOLDING
@@ -360,6 +427,19 @@ class Sim:
             self.move = (start, goal, now, dur, c)
             self.state = MOVING
             self.ack(c, 0x0E, 0)
+        elif code == 0x0F and len(b) == 18 and b[1] in (SM_BASE, SM_TOOL):   # end-effector JOG (5.1)
+            v = struct.unpack_from("<7hH", b, 2)
+            if not self.twist_lib:
+                return self.ack(c, 0x0F, -1)
+            if v[6] and self.n <= N_ARM:
+                return self.ack(c, 0x0F, -7)
+            if self.state not in (HOLDING, READY, JOGGING, TRACKING):
+                return self.ack(c, 0x0F, -1)
+            self.start_stream(b[1])
+            self.twist_cmd = [x / 10 for x in v[:3]] + [math.radians(x / 10) for x in v[3:6]]
+            self.twist_j7 = v[6] / 10
+            self.twist_vmax = min(MOVE_VMAX, v[7] / 10)
+            self.jog_last = now
         elif code == 0x0F and len(b) in (14, 16):   # JOG: 6 velocities, or 7 with J7 (5.0)
             frame, nj = b[1], (len(b) - 2) // 2
             vel = [v / 10 for v in struct.unpack_from(f"<{nj}h", b, 2)] + [0.0] * (7 - nj)
@@ -369,9 +449,10 @@ class Sim:
                 return self.ack(c, 0x0F, -1)
             self.jog_cmd = [max(-JOG_VMAX, min(JOG_VMAX, v)) for v in vel]
             self.jog_last = now
-            if any(self.jog_cmd) and self.state != JOGGING:
-                self.goal[:N_ARM] = self.q[:N_ARM]   # J7 starts from its goal
-                self.state = JOGGING
+            if self.state in (JOGGING, TRACKING):
+                self.start_stream(SM_JOINTS)   # switch a running stream (5.1)
+            elif any(self.jog_cmd):
+                self.start_stream(SM_JOINTS)
         elif code == 0x10 and len(b) in (15, 17):   # TRACK (4.4): goal pose (0.01°; 6 or 7 joints) and speed cap (0.1°/s)
             nj = (len(b) - 3) // 2
             goal = [v / 100 for v in struct.unpack_from(f"<{nj}h", b, 1)]
@@ -381,15 +462,24 @@ class Sim:
             bad = [j for j in range(nj) if not LIMIT_MIN[j] + margin(j) <= goal[j] <= LIMIT_MAX[j] - margin(j)]
             if bad:
                 return self.ack(c, 0x10, -10 - (bad[0] + 1))
-            if self.state not in (HOLDING, READY, TRACKING):
+            if self.state not in (HOLDING, READY, TRACKING, JOGGING):
                 return self.ack(c, 0x10, -1)
             if self.state != TRACKING:
-                self.goal[:N_ARM] = self.q[:N_ARM]   # J7 starts from its goal
-                self.jog_v = [0.0] * 7
                 self.track_goal[J7] = self.goal[J7]
-                self.state = TRACKING
+                self.start_stream(SM_TRACK)
             self.track_goal[:nj] = goal              # 6 goals: J7 keeps its last goal
             self.track_vmax, self.jog_last = vmax, now
+
+    def start_stream(self, mode):
+        """Start a streamed run (JOG, end-effector JOG or TRACK), or switch a running one to `mode` (5.1): the
+        goals and joint speeds carry over."""
+        if self.state not in (JOGGING, TRACKING):
+            self.goal[:N_ARM] = self.q[:N_ARM]   # J7 starts from its goal
+            self.jog_v = [0.0] * 7
+        if mode not in (SM_BASE, SM_TOOL):
+            self.twist_on = False
+        self.mode = mode
+        self.state = TRACKING if mode == SM_TRACK else JOGGING
 
     async def play(self, c):
         rec, seq, result = self.rec, 0, 0

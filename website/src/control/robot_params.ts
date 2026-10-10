@@ -7,3 +7,4 @@ export const LIMIT_MIN = [-165, -140, -150, -150, -160, -225, -51.5039] as const
 export const LIMIT_MAX = [165, 140, 150, 150, 160, 135, 0] as const;
 export const VMAX = 90; // speed limit (°/s)
 export const AMAX = [400, 400, 400, 2000, 2000, 2000, 2000] as const; // acceleration limits (°/s²)
+export const GRIPPER_TCP_MM = [-0.6, 8.2, 100] as const; // the TCP with the gripper, flange frame (mm)

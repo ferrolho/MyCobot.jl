@@ -18,4 +18,12 @@ const uint16_t GRIPPER_MODEL = 0x070A;   // J7 (registers 3-4)
 const uint16_t GRIPPER_TORQUE = 1000;   // registers 16, 28 and 48 (0-1000), set when found
 const uint8_t GRIPPER_HOT_C = 70, GRIPPER_COOL_C = 60;   // derate above, restore below (°C)
 const uint16_t GRIPPER_HOT_TORQUE = 500;   // torque limit while derated
+// Kinematic chain from the URDF (end-effector JOG, 5.1). Joint i: rotation (row-major) and position (mm) from
+// the frame of joint i-1 after its rotation (the base for J1) to joint i, and its axis. Then J6 to the flange.
+const float CHAIN_R[N_ARM][9] = {{1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f}, {1.349244e-11f, 1.0f, -3.673205e-06f, 3.673205e-06f, -3.673205e-06f, -1.0f, -1.0f, 0.0f, -3.673205e-06f}, {1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f}, {-3.673205e-06f, 1.0f, 0.0f, -1.0f, -3.673205e-06f, 0.0f, 0.0f, 0.0f, 1.0f}, {-3.673205e-06f, -1.0f, 3.673205e-06f, 0.0f, -3.673205e-06f, -1.0f, 1.0f, -3.673205e-06f, 1.349244e-11f}, {0.7071055f, -0.7071081f, -2.597353e-06f, 0.0f, -3.673205e-06f, 1.0f, -0.7071081f, -0.7071055f, -2.597343e-06f}};
+const float CHAIN_P_MM[N_ARM][3] = {{0.0f, 0.0f, 131.56f}, {0.0f, 0.0f, 0.0f}, {-110.4f, 0.0f, 0.0f}, {-96.0f, 0.0f, 64.62f}, {0.0f, -73.18f, 0.0f}, {0.0f, 43.2f, 0.0f}};
+const float CHAIN_AXIS[N_ARM][3] = {{0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}};
+const float FLANGE_R[9] = {1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f};
+const float FLANGE_P_MM[3] = {0.0f, 0.0f, 0.0f};
+const float GRIPPER_TCP_MM[3] = {-0.6f, 8.2f, 100.0f};   // the TCP with the gripper, flange frame
 }  // namespace robot

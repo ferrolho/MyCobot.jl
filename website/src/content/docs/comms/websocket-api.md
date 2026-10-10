@@ -109,7 +109,7 @@ converts them to servo steps. n is 6, or 7 with [J7](#joints-j1j6-and-j7-50) (5.
 | Code | Command | Data | Reply |
 | --- | --- | --- | --- |
 | `0x0E` | MOVE_TO | i16 goal[n] (0.01°), u16 duration (ms; 0 = the ATOM chooses it from the speed limit) | ACK: 0 started, −1 busy, −2 no control, −7 J7 given but no gripper, −10−j goal of joint j outside the limits. Then DONE (`0x85`) when the move ends. No TELEM over WebSocket (4.3.1+): watch the STREAM. |
-| `0x0F` | JOG | u8 frame (0 = joints), i16 velocity[n] (0.1 °/s) | ACK only if refused: −1 busy, −2 no control, −7 J7 given but no gripper |
+| `0x0F` | JOG | u8 frame (0 = joints), i16 velocity[n] (0.1 °/s). Frames 1 and 2 (5.1+): [end-effector JOG](#end-effector-jog-51) | ACK only if refused: −1 busy or bad length, −2 no control, −7 J7 given but no gripper |
 | `0x10` | TRACK (4.4+) | i16 goal[n] (0.01°), u16 vmax (0.1 °/s, at most 90 °/s) | ACK only if refused: −1 busy, −2 no control, −7 J7 given but no gripper, −10−j goal of joint j outside the limits. See [TRACK](#track-live-mode). |
 
 Firmware 4.6 and 4.7 had a separate GRIPPER command (`0x11`). Firmware 5.0 removes it:
@@ -143,7 +143,53 @@ JOG sets a joint velocity. The ATOM moves the goal positions at that velocity:
 3. **Stop:** a JOG with all velocities zero, STOP, HOLD, or a lost connection stops
    the jog.
 
-Frame 0 is the joint space. Other frames (end-effector jogging) are for a later version.
+Frame 0 is the joint space. Frames 1 and 2 (firmware 5.1) move the TCP: see
+[End-effector JOG](#end-effector-jog-51).
+
+### End-effector JOG (5.1)
+
+JOG with frame 1 or 2 sets a **twist of the TCP** (the tool point): a linear and an angular
+velocity. The ATOM turns it into joint goals at 500 Hz (`twist.h`). The
+gamepad on the Control page uses it.
+
+| Offset | Field | Unit |
+| --- | --- | --- |
+| 0 | u8 code `0x0F` | |
+| 1 | u8 frame: 1 = base frame, 2 = tool frame | |
+| 2 | i16 linear velocity x, y, z | 0.1 mm/s |
+| 8 | i16 angular velocity about x, y, z, through the TCP | 0.1 °/s |
+| 14 | i16 J7 velocity (0 without the gripper) | 0.1 °/s |
+| 16 | u16 joint speed cap (at most 90 °/s) | 0.1 °/s |
+
+The message has 18 bytes. Another length gives ACK −1. A nonzero J7 velocity without the
+gripper gives −7.
+
+- **Frames.** Base frame: the frame of the URDF (x, y, z of the base). Tool frame: the flange
+  axes (z points along the fingers). The rotations turn about the TCP in both frames.
+- **TCP.** With the gripper (n = 7): between the finger pads, (−0.6, 8.2, 100) mm in the flange
+  frame (`tcp_mm` in `servos.yaml`). Without the gripper: the flange.
+- **Limits.** The TCP accelerates at most 300 mm/s² and 230 °/s². The joints stay below the
+  speed cap and 80 % of their acceleration limits, and brake to stop 2.5° inside their
+  limits. One factor scales all joints, so the TCP keeps its direction when a limit slows it.
+- **Singular poses.** The ATOM stops the TCP 10° before J3 = 0° (the arm straight) and
+  J5 = ±90° (J4 and J6 parallel). A joint that starts nearer (the zero pose has J3 = 0°) can
+  move away on either side. If the joints cannot give the twist (more than 20 % off), the arm
+  brakes and stays: it does not move in another direction.
+- **Deadman.** Send the message at least every 200 ms (the page sends it every 20 ms, also
+  with a zero twist). The run continues while the messages come. After 200 ms without one, the
+  TCP brakes along its path, then the ATOM holds the pose. Until then the last twist stays in
+  effect: send a zero twist to stop at once. STOP and HOLD brake at once.
+- **Following error.** As TRACK: 20° plus 0.15 s × the joint's recent peak speed.
+- **Time.** The status log reports `twist_us`: the longest controller step (µs) in the last
+  second: about 450 µs on the ATOM (2026-10-10). The ATOM integrates the measured time
+  between cycles, so a late cycle does not shorten the motion.
+
+### Switching modes (5.1)
+
+JOG (any frame) and TRACK share one run. A message of the other mode switches the running JOG
+or TRACK without a stop: the joint goals and speeds carry over. The state byte shows 7
+(jogging) for JOG and 8 (tracking) for TRACK. The Control page uses this: X on the gamepad
+sends TRACK to the ready pose, and the next end-effector JOG continues from there.
 
 ### TRACK (Live mode)
 

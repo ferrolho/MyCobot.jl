@@ -1,4 +1,4 @@
-// motion.h — MOVE_TO, JOG and TRACK (firmware 4.2+). Plain C++: tested by tools/firmware-tests/.
+// motion.h — MOVE_TO, JOG and TRACK (firmware 4.2+); end-effector JOG is in twist.h (5.1). Plain C++: tested by tools/firmware-tests/.
 // n: the number of joints in use, 6 (J1-J6) or 7 (with J7, the gripper; firmware 5.0+).
 #pragma once
 #include <math.h>
@@ -39,26 +39,30 @@ struct Jog { float q[robot::N_JOINTS]; float v[robot::N_JOINTS]; };
 inline float range_lo(const Jog& s, int j) { return fminf(lim::MODEL_MIN_DEG[j] + lim::margin(j), s.q[j]); }
 inline float range_hi(const Jog& s, int j) { return fmaxf(lim::MODEL_MAX_DEG[j] - lim::margin(j), s.q[j]); }
 
-// One JOG step of dt seconds: each joint's velocity goes toward its target (clamped to JOG_VMAX)
-// at JOG_AMAX, brakes in time to stop JOG_MARGIN inside its limit, and the position integrates.
-inline void jog_step(Jog& s, const float target[], int n, float dt) {
+// One JOG step of joint j for dt seconds: its velocity goes toward the target (clamped to JOG_VMAX) at
+// JOG_AMAX, brakes in time to stop JOG_MARGIN inside its limit, and the position integrates. End-effector
+// JOG (5.1) moves J7 (the gripper) with it.
+inline void jog_joint_step(Jog& s, int j, float target, float dt) {
     const float a = lim::JOG_AMAX, dv_max = a * dt;
     // The fastest speed that can still stop within distance d, braking at a in steps of dt
     // (discrete form of sqrt(2·a·d); the continuous form leaves a speed step at the limit).
     auto stoppable = [&](float d) { return d <= 0 ? 0.0f : dv_max * (sqrtf(0.25f + 2 * d / (a * dt * dt)) - 0.5f); };
-    for (int j = 0; j < n; j++) {
-        const float lo = range_lo(s, j), hi = range_hi(s, j);
-        float t = clampf(target[j], -lim::JOG_VMAX, lim::JOG_VMAX);
-        float up = stoppable(hi - s.q[j]);
-        float dn = stoppable(s.q[j] - lo);
-        t = clampf(t, -dn, up);
-        s.v[j] += clampf(t - s.v[j], -dv_max, dv_max);
-        float qn = s.q[j] + s.v[j] * dt;
-        // Land exactly on the limit (float rounding can leave a small speed there).
-        if (qn > hi) { s.v[j] = (hi - s.q[j]) / dt; qn = hi; }
-        else if (qn < lo) { s.v[j] = (lo - s.q[j]) / dt; qn = lo; }
-        s.q[j] = qn;
-    }
+    const float lo = range_lo(s, j), hi = range_hi(s, j);
+    float t = clampf(target, -lim::JOG_VMAX, lim::JOG_VMAX);
+    float up = stoppable(hi - s.q[j]);
+    float dn = stoppable(s.q[j] - lo);
+    t = clampf(t, -dn, up);
+    s.v[j] += clampf(t - s.v[j], -dv_max, dv_max);
+    float qn = s.q[j] + s.v[j] * dt;
+    // Land exactly on the limit (float rounding can leave a small speed there).
+    if (qn > hi) { s.v[j] = (hi - s.q[j]) / dt; qn = hi; }
+    else if (qn < lo) { s.v[j] = (lo - s.q[j]) / dt; qn = lo; }
+    s.q[j] = qn;
+}
+
+// One JOG step of dt seconds for the first n joints (jog_joint_step).
+inline void jog_step(Jog& s, const float target[], int n, float dt) {
+    for (int j = 0; j < n; j++) jog_joint_step(s, j, target[j], dt);
 }
 
 // One TRACK step (4.4+, the Control page's Live mode): each joint goes toward its goal (clamped

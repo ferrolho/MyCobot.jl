@@ -21,6 +21,10 @@
 //   tells it. With 6, J7 (if found) holds its goal; 7 without a gripper is refused with -7.
 //   0x0E MOVE_TO i16 goal[n] (0.01°), u16 duration_ms (0 = shortest) -> ACK, TELEM (UDP only, 4.3.1+), DONE; state 6 moving
 //   0x0F JOG u8 frame (0 = joints), i16 velocity[n] (0.1°/s); ACK only if refused; 200 ms deadman; state 7
+//        End-effector JOG (5.1): u8 frame (1 = base, 2 = tool), i16 linear[3] (0.1 mm/s), i16 angular[3]
+//        (0.1 °/s), i16 J7 velocity (0.1 °/s; 0 without the gripper), u16 joint speed cap (0.1 °/s, ≤ 90 °/s):
+//        a twist of the TCP (twist.h). The run continues while the messages come (also zero twists).
+//        JOG (any frame) and TRACK switch a running JOG or TRACK to their mode without a stop (5.1).
 //   0x10 TRACK i16 goal[n] (0.01°), u16 vmax (0.1°/s, ≤ 90°/s) (4.4+): the joints go to the goal at up to vmax
 //        and their acceleration limits and stop on it (the Control page's Live mode); send it again at least
 //        every 200 ms (deadman: brake and hold). ACK only if refused (-1 busy, -10-j goal of joint j outside); state 8
@@ -98,6 +102,7 @@
 #include "imu.h"
 #include "test_signal.h"
 #include "motion.h"
+#include "twist.h"
 #include "improv.h"
 #include <Preferences.h>
 #if !defined(PUBLIC_BUILD) && __has_include("wifi_secrets.h")
@@ -122,8 +127,8 @@
 // PATCH for fixes. PING reports MAJOR as its u16 version, then MINOR and PATCH (3.1+).
 // History: docs (firmware/changelog). FW_GIT is set by the build (git describe).
 #define FW_MAJOR 5
-#define FW_MINOR 0
-#define FW_PATCH 1
+#define FW_MINOR 1
+#define FW_PATCH 0
 #define FW_VERSION FW_MAJOR
 #ifndef FW_GIT
 #define FW_GIT "unknown"
@@ -371,7 +376,14 @@ void control_tick() {      // control ends 2 s after the holder's last message, 
 float move_goal[MAX_JOINTS]; uint8_t move_n = N_ARM; uint16_t move_dur_ms = 0;
 float jog_target[MAX_JOINTS]; volatile uint32_t jog_ms = 0;   // JOG velocities, or TRACK goal (jog_vmax)
 uint8_t jog_n = N_ARM;                                          // joints in the last JOG or TRACK
-float jog_vmax = 0;                                             // TRACK speed cap (°/s)
+float jog_vmax = 0;                                             // TRACK speed cap (°/s); end-effector JOG: the joint speed cap
+// The mode of the streamed run (5.1): JOG joints, end-effector JOG (base or tool frame), or TRACK. A message of
+// another mode switches the run; the joint goals and speeds carry over.
+enum StreamMode : uint8_t { SM_JOINTS = 0, SM_BASE = 1, SM_TOOL = 2, SM_TRACK = 3 };
+volatile uint8_t stream_mode = SM_JOINTS;
+float twist_cmd[6];                                             // end-effector JOG: mm/s, rad/s
+float twist_j7 = 0;                                             // end-effector JOG: J7 velocity (°/s)
+volatile uint32_t twist_us_max = 0;                             // the longest twist::step in the last second (µs)
 portMUX_TYPE jog_mux = portMUX_INITIALIZER_UNLOCKED;
 
 // ---- J7, the adaptive gripper (5.0+): the seventh joint while it is on the bus ----------------------
@@ -580,15 +592,32 @@ void handle_command(const uint8_t* b, int n) {
         break;
     }
     case 0x0F: {   // JOG u8 frame (0 = joints), i16 velocity[nj] (0.1°/s); nj = 6 or 7. ACK only if refused.
-        const int nj = (n - 2) / 2;
-        if ((n != 14 && n != 16) || b[1] != 0) { ack(0x0F, -1); break; }
+        // End-effector JOG (5.1): u8 frame (1 base, 2 tool), i16 lin[3] (0.1 mm/s), i16 ang[3] (0.1 °/s),
+        // i16 J7 velocity (0.1 °/s), u16 joint speed cap (0.1 °/s): 18 bytes.
+        const uint8_t frame = n >= 2 ? b[1] : 0xFF;
+        const bool ee = frame == SM_BASE || frame == SM_TOOL;
+        const int nj = ee ? N_ARM : (n - 2) / 2;
+        if (ee ? n != 18 : ((n != 14 && n != 16) || frame != 0)) { ack(0x0F, -1); break; }
         if (nj > n_joints) { ack(0x0F, -7); break; }
-        float v[MAX_JOINTS] = {0};
-        for (int j = 0; j < nj; j++) { int16_t x; memcpy(&x, b + 2 + 2 * j, 2); v[j] = x * 0.1f; }
-        if (state == JOGGING) {
-            portENTER_CRITICAL(&jog_mux); memcpy(jog_target, v, sizeof(v)); jog_n = nj; jog_ms = millis(); portEXIT_CRITICAL(&jog_mux);
-        } else if ((state == HOLDING || state == READY) && request == REQ_NONE) {
-            portENTER_CRITICAL(&jog_mux); memcpy(jog_target, v, sizeof(v)); jog_n = nj; jog_ms = millis(); portEXIT_CRITICAL(&jog_mux);
+        float v[MAX_JOINTS] = {0}, tw[6] = {0}, j7v = 0, vm = 0;
+        if (ee) {
+            for (int i = 0; i < 6; i++) { int16_t x; memcpy(&x, b + 2 + 2 * i, 2); tw[i] = i < 3 ? x * 0.1f : x * 0.1f * twist::D2R; }
+            int16_t x; memcpy(&x, b + 14, 2); j7v = x * 0.1f;
+            uint16_t c; memcpy(&c, b + 16, 2); vm = fminf(c * 0.1f, lim::MOVE_VMAX);
+            if (j7v != 0 && n_joints <= J7) { ack(0x0F, -7); break; }
+        } else {
+            for (int j = 0; j < nj; j++) { int16_t x; memcpy(&x, b + 2 + 2 * j, 2); v[j] = x * 0.1f; }
+        }
+        auto store = [&]() {
+            portENTER_CRITICAL(&jog_mux);
+            if (ee) { memcpy(twist_cmd, tw, sizeof(tw)); twist_j7 = j7v; jog_vmax = vm; }
+            else { memcpy(jog_target, v, sizeof(v)); jog_n = nj; }
+            stream_mode = frame; jog_ms = millis();
+            portEXIT_CRITICAL(&jog_mux);
+        };
+        if (state == JOGGING || state == TRACKING) store();   // a running stream: switch or continue (5.1)
+        else if ((state == HOLDING || state == READY) && request == REQ_NONE) {
+            store();
             stop_requested = false;
             req_from = play_to = cmd_from; telem_on = true;
             request = REQ_JOG;
@@ -604,10 +633,10 @@ void handle_command(const uint8_t* b, int n) {
         uint16_t vm; memcpy(&vm, b + 1 + 2 * nj, 2);
         int err = motion::move_validate(g, nj);
         if (err) { ack(0x10, -10 - err); break; }
-        if (state == TRACKING) {
-            portENTER_CRITICAL(&jog_mux); memcpy(jog_target, g, sizeof(g)); jog_n = nj; jog_vmax = vm * 0.1f; jog_ms = millis(); portEXIT_CRITICAL(&jog_mux);
+        if (state == TRACKING || state == JOGGING) {   // a running stream: switch or continue (5.1)
+            portENTER_CRITICAL(&jog_mux); memcpy(jog_target, g, sizeof(g)); jog_n = nj; jog_vmax = vm * 0.1f; stream_mode = SM_TRACK; jog_ms = millis(); portEXIT_CRITICAL(&jog_mux);
         } else if ((state == HOLDING || state == READY) && request == REQ_NONE) {
-            portENTER_CRITICAL(&jog_mux); memcpy(jog_target, g, sizeof(g)); jog_n = nj; jog_vmax = vm * 0.1f; jog_ms = millis(); portEXIT_CRITICAL(&jog_mux);
+            portENTER_CRITICAL(&jog_mux); memcpy(jog_target, g, sizeof(g)); jog_n = nj; jog_vmax = vm * 0.1f; stream_mode = SM_TRACK; jog_ms = millis(); portEXIT_CRITICAL(&jog_mux);
             stop_requested = false;
             req_from = play_to = cmd_from; telem_on = true;
             request = REQ_TRACK;
@@ -959,10 +988,12 @@ void net_task(void*) {
         if (now - last_log >= 1000) {
             last_log = now;
             char line[256];
-            snprintf(line, sizeof(line), "atom_controller v%d.%d.%d (%s, %s) ip=%s rssi=%d state=%d plan=%lu@%uHz valid=%d imu=%d write_retries=%lu heap=%lu up=%lus wifi_drops=%lu joints=%u%s%s",
+            snprintf(line, sizeof(line), "atom_controller v%d.%d.%d (%s, %s) ip=%s rssi=%d state=%d plan=%lu@%uHz valid=%d imu=%d write_retries=%lu heap=%lu up=%lus wifi_drops=%lu joints=%u twist_us=%lu%s%s",
                      FW_MAJOR, FW_MINOR, FW_PATCH, FW_GIT, FW_VARIANT, WiFi.localIP().toString().c_str(), WiFi.RSSI(), state, (unsigned long)plan_n, plan_rate,
-                     plan_valid, imu_ok, (unsigned long)write_retries, (unsigned long)ESP.getFreeHeap(), (unsigned long)(now / 1000), (unsigned long)wifi_drops, (unsigned)n_joints, j7_derated ? " j7_derated" : "",
+                     plan_valid, imu_ok, (unsigned long)write_retries, (unsigned long)ESP.getFreeHeap(), (unsigned long)(now / 1000), (unsigned long)wifi_drops, (unsigned)n_joints,
+                     (unsigned long)twist_us_max, j7_derated ? " j7_derated" : "",
                      turn_unsure ? " TURN UNKNOWN: move J6 away from ±135° by hand, then HOLD" : "");
+            twist_us_max = 0;   // twist_us: the longest end-effector JOG step (µs) in the last second
             wss.broadcastTXT(line);
             if (WiFi.status() == WL_CONNECTED) {
                 out_udp.beginPacket(IPAddress(255, 255, 255, 255), LOG_PORT);
@@ -1172,13 +1203,19 @@ void setup() {
 // JOG (4.2+): the client streams joint velocities; the goals integrate them at 500 Hz within the
 // speed, acceleration and joint limits (motion.h). No JOG for 200 ms (deadman), STOP, HOLD or a
 // zero velocity: ramp down at the acceleration limit, then hold. The state stream shows the motion.
-// TRACK (4.4+, track = true): the client streams a goal pose; the joints go there (motion::track_step)
+// TRACK (4.4+): the client streams a goal pose; the joints go there (motion::track_step)
 // and stay there while TRACK keeps coming. Deadman, STOP or HOLD: brake to zero, then hold.
+// End-effector JOG (5.1, JOG frames 1 and 2): the client streams a twist of the TCP; twist::step turns it into
+// joint goals, and J7 jogs at its velocity. The run continues while the messages come; the deadman, STOP or
+// HOLD brake the TCP along its path, then the joints, then hold.
+// One run serves all three (5.1): a message of another mode switches it, with the goals and speeds carried over.
 // J7 (5.0+) starts from its goal; with 6 values it holds (JOG: no velocity, TRACK: its last goal).
-void jog_run(bool track = false) {
+void jog_run() {
     int n = n_joints;
     uint16_t pos[MAX_JOINTS], spd[MAX_JOINTS], load[MAX_JOINTS], cmd[MAX_JOINTS], start[MAX_JOINTS];
-    if (!read_joints(pos, spd, load, n)) { ack_from_control(track ? 0x10 : 0x0F, -4); return; }
+    const uint8_t mode0 = stream_mode;
+    const uint8_t code0 = mode0 == SM_TRACK ? 0x10 : 0x0F;
+    if (!read_joints(pos, spd, load, n)) { ack_from_control(code0, -4); return; }
     start_goals(pos, n, start);
     uint16_t caps[MAX_JOINTS]; for (int j = 0; j < n; j++) caps[j] = SPEED_CAP;
     if (!sync_write_u16_verified(REG_GOAL_POSITION, start, n) || !sync_write_u8_verified(REG_ACCELERATION, 0, n) ||
@@ -1186,48 +1223,73 @@ void jog_run(bool track = false) {
     motion::Jog js = {};
     for (int j = 0; j < n; j++) js.q[j] = pos_to_deg(j, start[j]);
     float j7_goal = js.q[J7];   // TRACK: J7's goal while the messages have 6 values
-    state = track ? TRACKING : JOGGING;
-    const float dt = 0.002f;
+    static const float FLANGE_TCP[3] = {0, 0, 0};
+    const float* tcp = n > N_ARM ? robot::GRIPPER_TCP_MM : FLANGE_TCP;   // the TCP: between the finger pads, or the flange
+    twist::State ts;
+    uint8_t mode = 0xFF;   // the mode of the last cycle: a change resets the twist controller
     const int max_err = 227;   // 20° in steps: abort and hold
-    uint32_t next = micros();
+    uint32_t next = micros(), prev = next - 2000;
     bool fault = false;
     uint8_t fault_joint = 0; int16_t fault_err = 0;
     float vpeak[N_ARM] = {0};
-    const float vdecay = expf(-dt / 0.3f);
+    const float vdecay = expf(-0.002f / 0.3f);
     for (;;) {
-        float target[MAX_JOINTS], vmax;
+        // The time since the last goals (s): 2 ms, or more when a cycle ran late. With a fixed 2 ms, a late
+        // cycle shortened the motion (2026-10-10, end-effector JOG at 470 µs per step: 11 % short).
+        const uint32_t now = micros();
+        const float dt = fminf(0.006f, fmaxf(0.0005f, (now - prev) * 1e-6f));
+        prev = now;
+        float target[MAX_JOINTS], vmax, tw[6], j7v;
         portENTER_CRITICAL(&jog_mux);
         memcpy(target, jog_target, sizeof(target));
+        memcpy(tw, twist_cmd, sizeof(tw));
+        j7v = twist_j7;
         vmax = jog_vmax;
         uint32_t last = jog_ms;
         const int tn = jog_n;
+        const uint8_t m = stream_mode;
         portEXIT_CRITICAL(&jog_mux);
-        if (track) { if (tn > J7) j7_goal = target[J7]; target[J7] = j7_goal; }
-        else if (tn <= J7) target[J7] = 0;
-        bool any = false;
         const bool stop = stop_requested || millis() - last > (uint32_t)(lim::JOG_DEADMAN_S * 1000);
-        if (track) {
+        const bool ee = m == SM_BASE || m == SM_TOOL;
+        state = m == SM_TRACK ? TRACKING : JOGGING;
+        bool any = false;
+        if (m == SM_TRACK) {
+            if (tn > J7) j7_goal = target[J7];
+            target[J7] = j7_goal;
             motion::track_step(js, target, n, vmax, stop, dt);
             any = !stop;
+        } else if (ee) {
+            if (mode != SM_BASE && mode != SM_TOOL) twist::reset(ts, js.q, js.v, tcp);   // from another mode: carry on
+            const float zero6[6] = {0, 0, 0, 0, 0, 0};
+            const uint32_t t0 = micros();
+            twist::step(ts, stop ? zero6 : tw, m == SM_TOOL, tcp, vmax, dt);
+            const uint32_t us = micros() - t0;
+            if (us > twist_us_max) twist_us_max = us;
+            memcpy(js.q, ts.q, sizeof(ts.q));
+            memcpy(js.v, ts.qd, sizeof(ts.qd));
+            if (n > N_ARM) { motion::jog_joint_step(js, J7, stop ? 0 : j7v, dt); j7_goal = js.q[J7]; }
+            any = !stop || !twist::stopped(ts);
         } else {
+            if (tn <= J7) target[J7] = 0;
             if (stop) memset(target, 0, sizeof(target));
             for (int j = 0; j < n; j++) any |= target[j] != 0;
             motion::jog_step(js, target, n, dt);
         }
+        mode = m;
         for (int j = 0; j < n; j++) cmd[j] = deg_to_pos(j, js.q[j]);
         sync_write_u16(REG_GOAL_POSITION, cmd, n);
         memcpy(goal_steps, cmd, 2 * n);
         bool ok = read_joints(pos, spd, load, n);
         publish_state(ok, n, pos, spd, load);
         slow_tick();
-        // TRACK at speed: the servos lag their goal by about 0.11 s, and up to twice that with the integral
-        // gain on J1-J3 in fast reversals (2026-10-05: J1 at 90 °/s went past 20°). So in TRACK the allowed
-        // following error grows with the recent peak speed (it decays over 0.3 s, so a reversal through zero
-        // speed keeps it): 20° + 0.15 s × speed, about 33° at 90 °/s. A blocked joint still stops the arm.
+        // TRACK and end-effector JOG at speed: the servos lag their goal by about 0.11 s, and up to twice that
+        // with the integral gain on J1-J3 in fast reversals (2026-10-05: J1 at 90 °/s went past 20°). So there the
+        // allowed following error grows with the recent peak speed (it decays over 0.3 s, so a reversal through
+        // zero speed keeps it): 20° + 0.15 s × speed, about 33° at 90 °/s. A blocked joint still stops the arm.
         // Not J7: on an object it stops short of its goal.
         for (int j = 0; j < N_ARM; j++) vpeak[j] = fmaxf(fabsf(js.v[j]), vpeak[j] * vdecay);
         if (ok) for (int j = 0; j < N_ARM; j++) {
-            const int allowed = track ? max_err + (int)(0.15f * vpeak[j] * (4096.0f / 360.0f)) : max_err;
+            const int allowed = m != SM_JOINTS ? max_err + (int)(0.15f * vpeak[j] * (4096.0f / 360.0f)) : max_err;
             const int e = (int)pos[j] - (int)cmd[j];
             if (abs(e) > allowed && !fault) { fault = true; fault_joint = j + 1; fault_err = e; }
         }
@@ -1297,10 +1359,8 @@ void loop() {
             play(1);
         } else if (r == REQ_MOVE) {
             play(2);
-        } else if (r == REQ_JOG) {
-            jog_run();
-        } else if (r == REQ_TRACK) {
-            jog_run(true);
+        } else if (r == REQ_JOG || r == REQ_TRACK) {
+            jog_run();   // the mode is in stream_mode (5.1)
         } else if (r == REQ_REG) {
             uint8_t id = reg_req[1], addr = reg_req[2], len = reg_req[3];
             if (reg_req[0] == 0x09) {

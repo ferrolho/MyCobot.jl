@@ -45,6 +45,10 @@ joints:
 #   hot_c, cool_c, hot_torque  thermal derating: above hot_c (°C) the torque limit drops to hot_torque, back to
 #                            torque below cool_c. At 1000 the servo stayed at 45-53 °C in 1-2 min holds. The
 #                            servo's own limit (register 13, 80 °C) stays as the last guard.
+#   tcp_mm                   the tool point (TCP) with the gripper, in the flange frame (mm): between the finger
+#                            pads (pad centre x −0.6, y 8.2, from the model and a measurement on the arm,
+#                            2026-10-08), 100 mm out (the fingertips are 115 mm out closed, 97 mm open).
+#                            End-effector JOG (firmware 5.1) moves and turns this point.
 gripper: { id: 7, sign: 1, model: 0x070A, gains: [150, 150, 0], max_acceleration_register: 250,
            closed_step: 1462, open_step: 2048, max_acceleration: 2000,
-           torque: 1000, hot_c: 70, cool_c: 60, hot_torque: 500 }
+           torque: 1000, hot_c: 70, cool_c: 60, hot_torque: 500, tcp_mm: [-0.6, 8.2, 100.0] }
